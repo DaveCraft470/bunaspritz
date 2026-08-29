@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { FadeInUp } from '@/components/common/FadeInUp';
-import { FakeMapBackdrop } from './FakeMapBackdrop';
+import { MapboxMap } from './MapboxMap';
 import { LogoWordmark } from './LogoWordmark';
 import { EventsCaption } from './EventsCaption';
 import { FloatingCircleButton } from './FloatingCircleButton';
@@ -23,7 +23,7 @@ export function MapPlaceholder() {
 
   return (
     <Animated.View style={[styles.container, { backgroundColor: theme.mapBase, opacity: fade }]}>
-      <FakeMapBackdrop />
+      <MapboxMap />
 
       <FadeInUp style={[styles.headerCluster, { top: insets.top + spacing.md }]}>
         <LogoWordmark />
