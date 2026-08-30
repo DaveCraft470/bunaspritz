@@ -113,6 +113,10 @@ function buildHtml(styleUrl: string) {
         });
       });
       map.on('idle', function () { send('debug:idle'); });
+      // 'dragstart' only fires for an actual touch/mouse drag, not for our
+      // own programmatic flyTo — so this is exactly "the user moved the map
+      // away themselves" as opposed to us moving it for them.
+      map.on('dragstart', function () { send('userpanned'); });
       map.on('error', function (e) {
         var msg = (e && e.error && e.error.message) || JSON.stringify(e && e.error) || 'unknown';
         send('error:' + msg);
@@ -145,6 +149,7 @@ function buildHtml(styleUrl: string) {
           curve: 1.3,
           essential: true,
         });
+        map.once('moveend', function () { send('located'); });
       };
     } catch (e) {
       send('error:' + (e && e.message ? e.message : String(e)));
@@ -163,9 +168,14 @@ export type MapboxMapHandle = {
 
 type MapboxMapProps = {
   onReady?: () => void;
+  onLocated?: () => void;
+  onUserPanned?: () => void;
 };
 
-export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function MapboxMap({ onReady }, ref) {
+export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function MapboxMap(
+  { onReady, onLocated, onUserPanned },
+  ref
+) {
   const { scheme } = useAppTheme();
   const styleUrl = scheme === 'dark' ? MAPBOX_STYLE_URL_DARK : MAPBOX_STYLE_URL_LIGHT;
   const html = useMemo(() => buildHtml(styleUrl), [styleUrl]);
@@ -212,6 +222,10 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
     } else if (data.startsWith('event:')) {
       const [, id, originX, originY] = data.split(':');
       router.push({ pathname: '/event/[id]', params: { id, originX, originY } });
+    } else if (data === 'located') {
+      onLocated?.();
+    } else if (data === 'userpanned') {
+      onUserPanned?.();
     }
   };
 

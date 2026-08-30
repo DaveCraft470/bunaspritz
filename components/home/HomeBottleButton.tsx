@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 
 import { colors, shadows } from '@/constants/theme';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
+import { useHaptics } from '@/contexts/HapticsContext';
 
 const SIZE = 68; // noticeably bigger than the 54px profile/messages nav islands
 // The source art (beer-bottle-white.png) is a solid white silhouette (flood-
@@ -13,10 +14,13 @@ const IMAGE_HEIGHT = 60 * 0.92;
 const IMAGE_WIDTH = IMAGE_HEIGHT * 0.322;
 
 export function HomeBottleButton({ active }: { active: boolean }) {
+  const { light } = useHaptics();
   return (
     <AnimatedPressable
       onPress={() => {
-        if (!active) router.replace('/');
+        if (active) return;
+        light();
+        router.replace('/');
       }}
       hitSlop={10}
       accessibilityLabel="Acasă"

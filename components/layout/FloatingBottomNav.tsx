@@ -10,6 +10,7 @@ import { GlassSurface } from '@/components/common/GlassSurface';
 import { FadeInUp } from '@/components/common/FadeInUp';
 import { HomeBottleButton } from '@/components/home/HomeBottleButton';
 import { useNavVisibility } from '@/contexts/NavVisibilityContext';
+import { useHaptics } from '@/contexts/HapticsContext';
 
 const ISLAND_SIZE = 54;
 
@@ -26,11 +27,14 @@ function IconIsland({
   active: boolean;
   delay: number;
 }) {
+  const { light } = useHaptics();
   return (
     <FadeInUp delay={delay} distance={10}>
       <AnimatedPressable
         onPress={() => {
-          if (!active) router.replace(route);
+          if (active) return;
+          light();
+          router.replace(route);
         }}
         hitSlop={10}
         accessibilityLabel={label}

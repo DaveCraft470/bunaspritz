@@ -2,10 +2,12 @@ import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet } from 'react-native';
 
 import { typography } from '@/constants/theme';
+import { useHaptics } from '@/contexts/HapticsContext';
 
 // Two beer mugs slide in from offscreen and meet in the middle, then the
 // payoff line fades up — then the whole thing dismisses itself.
 export function CelebrationOverlay({ onDone }: { onDone: () => void }) {
+  const { medium } = useHaptics();
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const mugLeftX = useRef(new Animated.Value(-160)).current;
   const mugRightX = useRef(new Animated.Value(160)).current;
@@ -19,13 +21,19 @@ export function CelebrationOverlay({ onDone }: { onDone: () => void }) {
         Animated.spring(mugLeftX, { toValue: 0, useNativeDriver: true, friction: 5, tension: 60 }),
         Animated.spring(mugRightX, { toValue: 0, useNativeDriver: true, friction: 5, tension: 60 }),
       ]),
-      Animated.parallel([
-        Animated.timing(textOpacity, { toValue: 1, duration: 320, useNativeDriver: true }),
-        Animated.timing(textTranslateY, { toValue: 0, duration: 320, useNativeDriver: true }),
-      ]),
-      Animated.delay(1300),
-      Animated.timing(overlayOpacity, { toValue: 0, duration: 260, useNativeDriver: true }),
-    ]).start(() => onDone());
+    ]).start(() => {
+      // Right as the mugs finish sliding in and visually meet.
+      medium();
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(textOpacity, { toValue: 1, duration: 320, useNativeDriver: true }),
+          Animated.timing(textTranslateY, { toValue: 0, duration: 320, useNativeDriver: true }),
+        ]),
+        Animated.delay(1300),
+        Animated.timing(overlayOpacity, { toValue: 0, duration: 260, useNativeDriver: true }),
+      ]).start(() => onDone());
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlayOpacity, mugLeftX, mugRightX, textOpacity, textTranslateY, onDone]);
 
   return (

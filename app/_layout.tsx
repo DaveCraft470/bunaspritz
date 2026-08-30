@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -16,6 +16,8 @@ import { FredokaOne_400Regular } from '@expo-google-fonts/fredoka-one';
 import { FloatingBottomNav } from '@/components/layout/FloatingBottomNav';
 import { ThemeProvider, useAppTheme } from '@/contexts/ThemeContext';
 import { NavVisibilityProvider } from '@/contexts/NavVisibilityContext';
+import { HapticsProvider } from '@/contexts/HapticsContext';
+import { AnimatedSplash } from '@/components/common/AnimatedSplash';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -55,9 +57,15 @@ export default function RootLayout() {
     Baloo2_800ExtraBold,
     FredokaOne_400Regular,
   });
+  // Once true, swaps the branded AnimatedSplash out for the real app — see
+  // the render below for why this needs the fonts already loaded.
+  const [splashDone, setSplashDone] = useState(false);
 
   useEffect(() => {
     if (loaded || error) {
+      // Safe to reveal our own JS tree now — it renders AnimatedSplash first
+      // (same solid green as the native splash, so there's no flash), which
+      // needs the fonts to already be loaded to draw the wordmark correctly.
       SplashScreen.hideAsync().catch(() => {});
     }
   }, [loaded, error]);
@@ -69,12 +77,18 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <NavVisibilityProvider>
-          <View style={{ flex: 1 }}>
-            <RootStack />
-            <FloatingBottomNav />
-          </View>
-        </NavVisibilityProvider>
+        <HapticsProvider>
+          <NavVisibilityProvider>
+            {!splashDone ? (
+              <AnimatedSplash onFinish={() => setSplashDone(true)} />
+            ) : (
+              <View style={{ flex: 1 }}>
+                <RootStack />
+                <FloatingBottomNav />
+              </View>
+            )}
+          </NavVisibilityProvider>
+        </HapticsProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

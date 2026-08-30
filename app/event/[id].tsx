@@ -10,6 +10,7 @@ import { getSpritzEvent, SPRITZ_SONGS } from '@/constants/events';
 import { colors, shadows } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useNavVisibility } from '@/contexts/NavVisibilityContext';
+import { useHaptics } from '@/contexts/HapticsContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { CelebrationOverlay } from '@/components/event/CelebrationOverlay';
 
@@ -21,6 +22,7 @@ export default function EventDetail() {
   const insets = useSafeAreaInsets();
   const { scheme, colors: theme } = useAppTheme();
   const { setHidden } = useNavVisibility();
+  const { light, medium } = useHaptics();
   const [celebrating, setCelebrating] = useState(false);
 
   // Grows in from wherever the pin was tapped on the map, instead of a plain
@@ -36,6 +38,7 @@ export default function EventDetail() {
   }, [enterAnim]);
 
   function handleBack() {
+    light();
     Animated.timing(enterAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => router.back());
   }
 
@@ -69,7 +72,11 @@ export default function EventDetail() {
 
   return (
     <View style={styles.root}>
-      <Animated.View style={[styles.animatedRoot, entranceStyle]}>
+      <Animated.View
+        style={[styles.animatedRoot, entranceStyle]}
+        renderToHardwareTextureAndroid
+        shouldRasterizeIOS
+      >
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
         <StatusBar style={theme.statusBar} />
 
@@ -160,7 +167,13 @@ export default function EventDetail() {
         </ScrollView>
 
         <View style={[styles.ctaWrap, { paddingBottom: insets.bottom + 20 }]}>
-          <AnimatedPressable onPress={() => setCelebrating(true)} style={[styles.ctaButton, shadows.glowGreen]}>
+          <AnimatedPressable
+            onPress={() => {
+              medium();
+              setCelebrating(true);
+            }}
+            style={[styles.ctaButton, shadows.glowGreen]}
+          >
             <Text style={styles.ctaText}>Hai la Spritz! 🍻</Text>
           </AnimatedPressable>
         </View>

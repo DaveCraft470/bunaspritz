@@ -5,13 +5,18 @@ import { router } from 'expo-router';
 import { glassButton, shadows } from '@/constants/theme';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
+import { useHaptics } from '@/contexts/HapticsContext';
 
 const SIZE = 44;
 
 export function MenuButton() {
+  const { light } = useHaptics();
   return (
     <AnimatedPressable
-      onPress={() => router.push('/settings')}
+      onPress={() => {
+        light();
+        router.push('/settings');
+      }}
       hitSlop={10}
       accessibilityLabel="Meniu"
       style={[styles.button, shadows.soft, { borderColor: glassButton.border }]}

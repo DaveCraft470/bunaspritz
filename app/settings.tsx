@@ -3,14 +3,30 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
+import { useHaptics } from '@/contexts/HapticsContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
 
 export default function Settings() {
   const { scheme, colors: theme, toggleScheme } = useAppTheme();
+  const { enabled: hapticsEnabled, setEnabled: setHapticsEnabled, light } = useHaptics();
+
+  function handleToggleTheme(value: boolean) {
+    light();
+    toggleScheme();
+  }
+
+  function handleToggleHaptics(value: boolean) {
+    // Unconditional (bypasses the enabled check) so switching either way
+    // always gives one confirming buzz — this is the control for the
+    // feature itself, so it shouldn't go silent when turning it off.
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setHapticsEnabled(value);
+  }
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -18,7 +34,10 @@ export default function Settings() {
 
       <View style={styles.topBar}>
         <AnimatedPressable
-          onPress={() => router.back()}
+          onPress={() => {
+            light();
+            router.back();
+          }}
           hitSlop={10}
           accessibilityLabel="Înapoi"
           style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
@@ -40,7 +59,24 @@ export default function Settings() {
           </View>
           <Switch
             value={scheme === 'dark'}
-            onValueChange={toggleScheme}
+            onValueChange={handleToggleTheme}
+            trackColor={{ false: theme.surfaceMuted, true: colors.green500 }}
+            thumbColor={colors.white}
+          />
+        </View>
+      </View>
+
+      <View style={[styles.card, styles.cardSpaced, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Feedback haptic</Text>
+            <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
+              Vibrații scurte la butoane importante și animații.
+            </Text>
+          </View>
+          <Switch
+            value={hapticsEnabled}
+            onValueChange={handleToggleHaptics}
             trackColor={{ false: theme.surfaceMuted, true: colors.green500 }}
             thumbColor={colors.white}
           />
@@ -75,6 +111,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     padding: spacing.lg,
+  },
+  cardSpaced: {
+    marginTop: spacing.md,
   },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   rowText: { flex: 1 },

@@ -16,6 +16,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useNavVisibility } from '@/contexts/NavVisibilityContext';
+import { useHaptics } from '@/contexts/HapticsContext';
 
 // Chat list / message bubble design by nituraul8 — ported from App.tsx onto
 // its own Expo Router screen so it lives alongside the rest of the app.
@@ -68,6 +69,7 @@ export default function Messages() {
   const insets = useSafeAreaInsets();
   const { colors: theme } = useAppTheme();
   const { setHidden } = useNavVisibility();
+  const { light } = useHaptics();
   // null = showing the group list; a chat only opens once the user taps it.
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [messages, setMessages] = useState(starterMessages);
@@ -127,6 +129,7 @@ export default function Messages() {
   function sendMessage() {
     const text = draft.trim();
     if (!text) return;
+    light();
     setMessages((current) => [...current, { id: String(Date.now()), sender: 'Tu', text, time: 'Acum', mine: true }]);
     setDraft('');
   }
@@ -155,6 +158,7 @@ export default function Messages() {
                 <Pressable
                   key={chat.id}
                   onPress={() => {
+                    light();
                     setHidden(true);
                     setActiveChat(chat.id);
                   }}
@@ -174,7 +178,14 @@ export default function Messages() {
         ) : (
           <>
             <View style={[styles.chatHeader, { borderColor: theme.border }]}>
-              <Pressable onPress={() => setActiveChat(null)} hitSlop={10} accessibilityLabel="Înapoi la grupuri">
+              <Pressable
+                onPress={() => {
+                  light();
+                  setActiveChat(null);
+                }}
+                hitSlop={10}
+                accessibilityLabel="Înapoi la grupuri"
+              >
                 <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
               </Pressable>
               <View style={[styles.avatar, { backgroundColor: selectedChat.color }]}>

@@ -27,7 +27,15 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-splash-screen",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#1FD460",
+          "dark": {
+            "backgroundColor": "#1FD460"
+          }
+        }
+      ],
       [
         "expo-location",
         {

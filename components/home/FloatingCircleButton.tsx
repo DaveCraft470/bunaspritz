@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { glassButton, shadows } from '@/constants/theme';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
+import { useHaptics } from '@/contexts/HapticsContext';
 
 const SIZE = 52;
 
@@ -16,9 +17,13 @@ export function FloatingCircleButton({
   onPress?: () => void;
   accessibilityLabel?: string;
 }) {
+  const { light } = useHaptics();
   return (
     <AnimatedPressable
-      onPress={onPress}
+      onPress={() => {
+        light();
+        onPress?.();
+      }}
       hitSlop={8}
       accessibilityLabel={accessibilityLabel}
       style={[styles.button, shadows.soft, { borderColor: glassButton.border }]}

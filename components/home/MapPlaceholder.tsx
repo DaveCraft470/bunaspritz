@@ -5,6 +5,7 @@ import * as Location from 'expo-location';
 
 import { spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
+import { useHaptics } from '@/contexts/HapticsContext';
 import { FadeInUp } from '@/components/common/FadeInUp';
 import { MapboxMap, type MapboxMapHandle } from './MapboxMap';
 import { LogoWordmark } from './LogoWordmark';
@@ -18,6 +19,21 @@ export function MapPlaceholder() {
   const fade = useRef(new Animated.Value(1)).current;
   const mapRef = useRef<MapboxMapHandle>(null);
   const isLocatingRef = useRef(false);
+  // Tracks where we last flew to and whether the user has since dragged the
+  // map away from it, so mashing the locate button while already centered on
+  // your spot doesn't keep re-running the flyTo animation for nothing.
+  const lastFlownRef = useRef<{ lng: number; lat: number } | null>(null);
+  const hasPannedAwayRef = useRef(false);
+  const { medium } = useHaptics();
+
+  const ALREADY_THERE_DEGREES = 0.0005; // ~55m — comfortably inside GPS jitter
+
+  function isAlreadyThere(lng: number, lat: number) {
+    if (!lastFlownRef.current || hasPannedAwayRef.current) return false;
+    const dLng = lng - lastFlownRef.current.lng;
+    const dLat = lat - lastFlownRef.current.lat;
+    return Math.sqrt(dLng * dLng + dLat * dLat) < ALREADY_THERE_DEGREES;
+  }
 
   useEffect(() => {
     fade.setValue(0.35);
@@ -55,7 +71,10 @@ export function MapPlaceholder() {
       if (!coords) {
         coords = (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })).coords;
       }
+      if (isAlreadyThere(coords.longitude, coords.latitude)) return;
       mapRef.current?.flyToLocation(coords.longitude, coords.latitude);
+      lastFlownRef.current = { lng: coords.longitude, lat: coords.latitude };
+      hasPannedAwayRef.current = false;
     } catch {
       Alert.alert('Nu te găsim', 'Nu am putut lua locația ta. Încearcă din nou.');
     } finally {
@@ -65,7 +84,14 @@ export function MapPlaceholder() {
 
   return (
     <Animated.View style={[styles.container, { backgroundColor: theme.mapBase, opacity: fade }]}>
-      <MapboxMap ref={mapRef} onReady={handleMapReady} />
+      <MapboxMap
+        ref={mapRef}
+        onReady={handleMapReady}
+        onLocated={medium}
+        onUserPanned={() => {
+          hasPannedAwayRef.current = true;
+        }}
+      />
 
       <FadeInUp style={[styles.headerCluster, { top: insets.top + spacing.md }]}>
         <LogoWordmark />
