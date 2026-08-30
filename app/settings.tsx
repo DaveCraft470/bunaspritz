@@ -8,12 +8,14 @@ import * as Haptics from 'expo-haptics';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useDevFlags } from '@/contexts/DevFlagsContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
 
 export default function Settings() {
   const { scheme, colors: theme, toggleScheme } = useAppTheme();
   const { enabled: hapticsEnabled, setEnabled: setHapticsEnabled, light } = useHaptics();
+  const { hostVerified } = useDevFlags();
 
   function handleToggleTheme(value: boolean) {
     light();
@@ -82,6 +84,40 @@ export default function Settings() {
           />
         </View>
       </View>
+
+      {hostVerified ? (
+        <AnimatedPressable
+          onPress={() => {
+            light();
+            router.push('/new-event');
+          }}
+          style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        >
+          <View style={styles.rowText}>
+            <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Adaugă eveniment nou</Text>
+            <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
+              Publică un eveniment nou pe hartă, ca host verificat.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+        </AnimatedPressable>
+      ) : null}
+
+      <AnimatedPressable
+        onPress={() => {
+          light();
+          router.push('/dev-menu');
+        }}
+        style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+      >
+        <View style={styles.rowText}>
+          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Meniu dezvoltator</Text>
+          <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
+            Comută tipuri de profil pentru testare.
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+      </AnimatedPressable>
     </SafeAreaView>
   );
 }
@@ -114,6 +150,12 @@ const styles = StyleSheet.create({
   },
   cardSpaced: {
     marginTop: spacing.md,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
   },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   rowText: { flex: 1 },

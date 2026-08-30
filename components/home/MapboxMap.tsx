@@ -10,13 +10,19 @@ import {
   MAPBOX_STYLE_URL_DARK,
   MAPBOX_STYLE_URL_LIGHT,
 } from '@/constants/mapbox';
-import { SPRITZ_EVENTS } from '@/constants/events';
+import type { SpritzEvent } from '@/constants/events';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { FakeMapBackdrop } from './FakeMapBackdrop';
 
 const LOAD_TIMEOUT_MS = 10000;
 
-function buildHtml(styleUrl: string) {
+type PinData = Pick<SpritzEvent, 'id' | 'emoji' | 'color' | 'lng' | 'lat'>;
+
+function toPinData(events: SpritzEvent[]): PinData[] {
+  return events.map((e) => ({ id: e.id, emoji: e.emoji, color: e.color, lng: e.lng, lat: e.lat }));
+}
+
+function buildHtml(styleUrl: string, initialEvents: PinData[]) {
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -95,22 +101,26 @@ function buildHtml(styleUrl: string) {
         pitch: ${MAPBOX_INITIAL_VIEW.pitch},
       });
       send('debug:map constructed');
+      function addEventPin(ev) {
+        var el = document.createElement('div');
+        el.className = 'event-pin';
+        el.style.background = ev.color;
+        el.innerHTML = '<span>' + ev.emoji + '</span>';
+        el.addEventListener('click', function () {
+          var p = map.project([ev.lng, ev.lat]);
+          send('event:' + ev.id + ':' + Math.round(p.x) + ':' + Math.round(p.y));
+        });
+        new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([ev.lng, ev.lat])
+          .addTo(map);
+      }
+      // Exposed so a newly-created event can get a pin without reloading the
+      // whole map — see MapboxMap's effect watching the events prop grow.
+      window.__addEventPin = addEventPin;
       map.on('load', function () {
         send('loaded');
-        var events = ${JSON.stringify(SPRITZ_EVENTS.map((e) => ({ id: e.id, emoji: e.emoji, color: e.color, lng: e.lng, lat: e.lat })))};
-        events.forEach(function (ev) {
-          var el = document.createElement('div');
-          el.className = 'event-pin';
-          el.style.background = ev.color;
-          el.innerHTML = '<span>' + ev.emoji + '</span>';
-          el.addEventListener('click', function () {
-            var p = map.project([ev.lng, ev.lat]);
-            send('event:' + ev.id + ':' + Math.round(p.x) + ':' + Math.round(p.y));
-          });
-          new mapboxgl.Marker({ element: el, anchor: 'bottom' })
-            .setLngLat([ev.lng, ev.lat])
-            .addTo(map);
-        });
+        var events = ${JSON.stringify(initialEvents)};
+        events.forEach(addEventPin);
       });
       map.on('idle', function () { send('debug:idle'); });
       // 'dragstart' only fires for an actual touch/mouse drag, not for our
@@ -167,22 +177,42 @@ export type MapboxMapHandle = {
 };
 
 type MapboxMapProps = {
+  events: SpritzEvent[];
   onReady?: () => void;
   onLocated?: () => void;
   onUserPanned?: () => void;
 };
 
 export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function MapboxMap(
-  { onReady, onLocated, onUserPanned },
+  { events, onReady, onLocated, onUserPanned },
   ref
 ) {
   const { scheme } = useAppTheme();
   const styleUrl = scheme === 'dark' ? MAPBOX_STYLE_URL_DARK : MAPBOX_STYLE_URL_LIGHT;
-  const html = useMemo(() => buildHtml(styleUrl), [styleUrl]);
+  // Only rebuilds (reloading the whole WebView) when the theme swaps styles —
+  // deliberately NOT reactive to `events` growing, since a full map reload
+  // per new event would be exactly the costly reload the user wants avoided.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const html = useMemo(() => buildHtml(styleUrl, toPinData(events)), [styleUrl]);
   const webviewRef = useRef<WebView>(null);
+  const knownEventCountRef = useRef(events.length);
 
   const [status, setStatus] = useState<Status>('loading');
   const [lastMessage, setLastMessage] = useState<string | null>(null);
+
+  // A new event appended after the map already loaded gets its pin injected
+  // directly instead of waiting for (or forcing) a reload.
+  useEffect(() => {
+    if (events.length > knownEventCountRef.current) {
+      const newOnes = events.slice(knownEventCountRef.current);
+      for (const pin of toPinData(newOnes)) {
+        webviewRef.current?.injectJavaScript(
+          `window.__addEventPin && window.__addEventPin(${JSON.stringify(pin)}); true;`
+        );
+      }
+    }
+    knownEventCountRef.current = events.length;
+  }, [events]);
 
   useImperativeHandle(ref, () => ({
     flyToLocation(lng: number, lat: number) {

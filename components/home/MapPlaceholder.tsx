@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { Alert, Animated, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import * as Location from 'expo-location';
 
 import { spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useEvents } from '@/contexts/EventsContext';
 import { FadeInUp } from '@/components/common/FadeInUp';
 import { MapboxMap, type MapboxMapHandle } from './MapboxMap';
 import { LogoWordmark } from './LogoWordmark';
@@ -25,6 +27,7 @@ export function MapPlaceholder() {
   const lastFlownRef = useRef<{ lng: number; lat: number } | null>(null);
   const hasPannedAwayRef = useRef(false);
   const { medium } = useHaptics();
+  const { events } = useEvents();
 
   const ALREADY_THERE_DEGREES = 0.0005; // ~55m — comfortably inside GPS jitter
 
@@ -86,6 +89,7 @@ export function MapPlaceholder() {
     <Animated.View style={[styles.container, { backgroundColor: theme.mapBase, opacity: fade }]}>
       <MapboxMap
         ref={mapRef}
+        events={events}
         onReady={handleMapReady}
         onLocated={medium}
         onUserPanned={() => {
@@ -104,7 +108,11 @@ export function MapPlaceholder() {
       </FadeInUp>
 
       <FadeInUp delay={140} style={[styles.bottomLeft, { bottom: insets.bottom + 96 }]}>
-        <FloatingCircleButton icon="search-outline" />
+        <FloatingCircleButton
+          icon="search-outline"
+          onPress={() => router.push('/search')}
+          accessibilityLabel="Caută prieteni"
+        />
       </FadeInUp>
       <FadeInUp delay={200} style={[styles.bottomRight, { bottom: insets.bottom + 96 }]}>
         <FloatingCircleButton icon="navigate-outline" onPress={handleLocatePress} accessibilityLabel="Mergi la locația mea" />

@@ -11,6 +11,7 @@ import { colors, shadows } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useEvents } from '@/contexts/EventsContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { CelebrationOverlay } from '@/components/event/CelebrationOverlay';
 
@@ -18,7 +19,8 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function EventDetail() {
   const { id, originX, originY } = useLocalSearchParams<{ id: string; originX?: string; originY?: string }>();
-  const event = getSpritzEvent(id);
+  const { events } = useEvents();
+  const event = getSpritzEvent(events, id);
   const insets = useSafeAreaInsets();
   const { scheme, colors: theme } = useAppTheme();
   const { setHidden } = useNavVisibility();

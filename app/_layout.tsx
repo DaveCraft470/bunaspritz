@@ -17,6 +17,8 @@ import { FloatingBottomNav } from '@/components/layout/FloatingBottomNav';
 import { ThemeProvider, useAppTheme } from '@/contexts/ThemeContext';
 import { NavVisibilityProvider } from '@/contexts/NavVisibilityContext';
 import { HapticsProvider } from '@/contexts/HapticsContext';
+import { EventsProvider } from '@/contexts/EventsContext';
+import { DevFlagsProvider } from '@/contexts/DevFlagsContext';
 import { AnimatedSplash } from '@/components/common/AnimatedSplash';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -78,16 +80,20 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ThemeProvider>
         <HapticsProvider>
-          <NavVisibilityProvider>
-            {!splashDone ? (
-              <AnimatedSplash onFinish={() => setSplashDone(true)} />
-            ) : (
-              <View style={{ flex: 1 }}>
-                <RootStack />
-                <FloatingBottomNav />
-              </View>
-            )}
-          </NavVisibilityProvider>
+          <DevFlagsProvider>
+            <EventsProvider>
+              <NavVisibilityProvider>
+                {!splashDone ? (
+                  <AnimatedSplash onFinish={() => setSplashDone(true)} />
+                ) : (
+                  <View style={{ flex: 1 }}>
+                    <RootStack />
+                    <FloatingBottomNav />
+                  </View>
+                )}
+              </NavVisibilityProvider>
+            </EventsProvider>
+          </DevFlagsProvider>
         </HapticsProvider>
       </ThemeProvider>
     </SafeAreaProvider>

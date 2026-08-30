@@ -144,6 +144,8 @@ export const SPRITZ_EVENTS: SpritzEvent[] = [
   },
 ];
 
-export function getSpritzEvent(id: string | undefined) {
-  return SPRITZ_EVENTS.find((event) => event.id === id);
+// Takes the (possibly-grown, see EventsContext) list explicitly rather than
+// reading SPRITZ_EVENTS directly, so it also finds events created at runtime.
+export function getSpritzEvent(events: SpritzEvent[], id: string | undefined) {
+  return events.find((event) => event.id === id);
 }
