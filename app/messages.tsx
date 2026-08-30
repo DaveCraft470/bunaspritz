@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -72,6 +72,7 @@ export default function Messages() {
   const [messages, setMessages] = useState(starterMessages);
   const [draft, setDraft] = useState('');
   const selectedChat = activeChat ? chats.find((chat) => chat.id === activeChat) : undefined;
+  const messagesScrollRef = useRef<ScrollView>(null);
 
   // Hide the floating home/messages/profile nav while a chat is open, so it
   // doesn't float over the composer — bring it back on returning to the grid
@@ -80,6 +81,15 @@ export default function Messages() {
     setHidden(activeChat !== null);
     return () => setHidden(false);
   }, [activeChat, setHidden]);
+
+  // Jump to the latest message whenever the thread grows (sending a message)
+  // or a chat is first opened, instead of leaving the user scrolled wherever
+  // they were.
+  useEffect(() => {
+    if (!selectedChat) return;
+    const timer = setTimeout(() => messagesScrollRef.current?.scrollToEnd({ animated: true }), 50);
+    return () => clearTimeout(timer);
+  }, [selectedChat, messages]);
 
   function sendMessage() {
     const text = draft.trim();
@@ -93,7 +103,7 @@ export default function Messages() {
       <StatusBar style={theme.statusBar} />
       <KeyboardAvoidingView
         style={[styles.page, { backgroundColor: theme.page }]}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {!selectedChat ? (
           <>
@@ -147,7 +157,12 @@ export default function Messages() {
               <Text style={[styles.more, { color: theme.textSecondary }]}>•••</Text>
             </View>
 
-            <ScrollView style={styles.messages} contentContainerStyle={styles.messagesContent}>
+            <ScrollView
+              ref={messagesScrollRef}
+              style={styles.messages}
+              contentContainerStyle={styles.messagesContent}
+              onContentSizeChange={() => messagesScrollRef.current?.scrollToEnd({ animated: true })}
+            >
               <Text style={[styles.today, { color: theme.textSecondary }]}>ASTĂZI</Text>
               {messages.map((message) => (
                 <View key={message.id} style={[styles.messageRow, message.mine && styles.messageRowMine]}>

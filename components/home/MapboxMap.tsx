@@ -14,6 +14,18 @@ import { FakeMapBackdrop } from './FakeMapBackdrop';
 
 const LOAD_TIMEOUT_MS = 10000;
 
+// Placeholder events scattered around Brașov, just so the map isn't empty —
+// swap for real event data once that exists.
+const FAKE_EVENTS = [
+  { title: 'Seară de jazz', detail: 'Curtea Muzeului · 20:00', emoji: '🎷', color: '#FF9F5A', lng: 25.6203, lat: 45.646 },
+  { title: 'Picnic în parc', detail: 'Parcul Central · 17:30', emoji: '🧺', color: '#5FD98A', lng: 25.6122, lat: 45.6501 },
+  { title: 'Drumeție pe Tâmpa', detail: 'Telecabină · 09:00', emoji: '🥾', color: '#5AA9E6', lng: 25.5975, lat: 45.638 },
+  { title: 'Seară la Poiana', detail: 'Poiana Brașov · 19:00', emoji: '🍻', color: '#FFD25A', lng: 25.556, lat: 45.594 },
+  { title: 'Street food night', detail: 'Piața Sfatului · 18:00', emoji: '🌮', color: '#FF6B81', lng: 25.591, lat: 45.6427 },
+  { title: 'Concert acustic', detail: 'Grădina de vară · 21:00', emoji: '🎸', color: '#B388FF', lng: 25.628, lat: 45.6505 },
+  { title: 'Board games meetup', detail: 'Cafenea centrală · 18:30', emoji: '🎲', color: '#4ED9C9', lng: 25.6055, lat: 45.652 },
+];
+
 function buildHtml(styleUrl: string) {
   return `<!DOCTYPE html>
 <html>
@@ -23,6 +35,38 @@ function buildHtml(styleUrl: string) {
   <link href="https://api.mapbox.com/mapbox-gl-js/v${MAPBOX_GL_JS_VERSION}/mapbox-gl.css" rel="stylesheet" />
   <style>
     html, body, #map { position: absolute; inset: 0; margin: 0; padding: 0; }
+    .event-pin {
+      width: 36px;
+      height: 36px;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+      border: 2px solid rgba(255,255,255,0.92);
+      cursor: pointer;
+    }
+    .event-pin span {
+      display: block;
+      transform: rotate(45deg);
+      font-size: 17px;
+    }
+    .mapboxgl-popup-content {
+      border-radius: 14px;
+      padding: 10px 14px;
+      font-family: -apple-system, Roboto, sans-serif;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.28);
+    }
+    .mapboxgl-popup-content strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 2px;
+    }
+    .mapboxgl-popup-content span {
+      font-size: 11px;
+      color: #6D6D6D;
+    }
   </style>
 </head>
 <body>
@@ -55,7 +99,22 @@ function buildHtml(styleUrl: string) {
         pitch: ${MAPBOX_INITIAL_VIEW.pitch},
       });
       send('debug:map constructed');
-      map.on('load', function () { send('loaded'); });
+      map.on('load', function () {
+        send('loaded');
+        var events = ${JSON.stringify(FAKE_EVENTS)};
+        events.forEach(function (ev) {
+          var el = document.createElement('div');
+          el.className = 'event-pin';
+          el.style.background = ev.color;
+          el.innerHTML = '<span>' + ev.emoji + '</span>';
+          var popup = new mapboxgl.Popup({ offset: 22, closeButton: false })
+            .setHTML('<strong>' + ev.title + '</strong><span>' + ev.detail + '</span>');
+          new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+            .setLngLat([ev.lng, ev.lat])
+            .setPopup(popup)
+            .addTo(map);
+        });
+      });
       map.on('idle', function () { send('debug:idle'); });
       map.on('error', function (e) {
         var msg = (e && e.error && e.error.message) || JSON.stringify(e && e.error) || 'unknown';
