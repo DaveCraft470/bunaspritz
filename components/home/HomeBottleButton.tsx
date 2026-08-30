@@ -1,13 +1,12 @@
 import { Image, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 
-import { colors, glassButton, shadows } from '@/constants/theme';
+import { colors, shadows } from '@/constants/theme';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
-import { GlassSurface } from '@/components/common/GlassSurface';
 
 const SIZE = 68; // noticeably bigger than the 54px profile/messages nav islands
-const IMAGE_WIDTH = 30;
-const IMAGE_HEIGHT = 52;
+const IMAGE_WIDTH = 26;
+const IMAGE_HEIGHT = 46;
 
 export function HomeBottleButton({ active }: { active: boolean }) {
   return (
@@ -18,11 +17,10 @@ export function HomeBottleButton({ active }: { active: boolean }) {
       style={[
         styles.button,
         shadows.soft,
-        { borderColor: active ? colors.green500 : glassButton.border, borderWidth: active ? 2 : 1 },
+        { borderColor: active ? colors.white : 'rgba(255,255,255,0.35)', borderWidth: active ? 2 : 1 },
       ]}
     >
-      <GlassSurface />
-      <Image source={require('@/assets/images/beer-bottle.png')} resizeMode="contain" style={styles.image} />
+      <Image source={require('@/assets/images/beer-bottle-white.png')} resizeMode="contain" style={styles.image} />
     </AnimatedPressable>
   );
 }
@@ -35,6 +33,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.green500,
   },
   image: {
     width: IMAGE_WIDTH,

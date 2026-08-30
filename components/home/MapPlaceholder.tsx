@@ -31,7 +31,7 @@ export function MapPlaceholder() {
         <EventsCaption>12 evenimente azi</EventsCaption>
       </FadeInUp>
 
-      <FadeInUp delay={80} style={[styles.themeToggle, { top: insets.top + spacing.md }]}>
+      <FadeInUp delay={80} style={[styles.themeToggle, { top: insets.top + spacing.md + 44 }]}>
         <MenuButton />
       </FadeInUp>
 
