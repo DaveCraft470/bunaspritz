@@ -38,9 +38,10 @@ function RootStack() {
         contentStyle: { backgroundColor: theme.mapBase },
       }}
     >
-      {/* This one is a real push (from a map pin to its details), not a tab
-          switch, so it gets a normal push transition unlike its siblings. */}
-      <Stack.Screen name="event/[id]" options={{ animation: 'slide_from_right' }} />
+      {/* The screen itself animates in (growing from the tapped map pin —
+          see app/event/[id].tsx), so the native-stack transition is turned
+          off here to avoid the two fighting/compounding. */}
+      <Stack.Screen name="event/[id]" options={{ animation: 'none' }} />
     </Stack>
   );
 }

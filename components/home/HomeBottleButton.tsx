@@ -5,12 +5,12 @@ import { colors, shadows } from '@/constants/theme';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 
 const SIZE = 68; // noticeably bigger than the 54px profile/messages nav islands
-// The source art (beer-bottle-white.png) is now cropped tight to the bottle's
-// own bounding box (aspect ~0.314), so sizing this to the button is a direct
-// scale-up instead of guessing — this is most of the button's diameter with
-// just a few px of breathing room top/bottom.
-const IMAGE_HEIGHT = 60;
-const IMAGE_WIDTH = IMAGE_HEIGHT * 0.314;
+// The source art (beer-bottle-white.png) is a solid white silhouette (flood-
+// filled from the original line-art, not just an outline) cropped tight to
+// its own bounding box, aspect ~0.322 — sizing this is a direct scale-up
+// instead of guessing. 60 * 0.92 = the requested 8% smaller.
+const IMAGE_HEIGHT = 60 * 0.92;
+const IMAGE_WIDTH = IMAGE_HEIGHT * 0.322;
 
 export function HomeBottleButton({ active }: { active: boolean }) {
   return (

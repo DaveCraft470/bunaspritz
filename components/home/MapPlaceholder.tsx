@@ -17,29 +17,55 @@ export function MapPlaceholder() {
   const { scheme, colors: theme } = useAppTheme();
   const fade = useRef(new Animated.Value(1)).current;
   const mapRef = useRef<MapboxMapHandle>(null);
+  const isLocatingRef = useRef(false);
 
   useEffect(() => {
     fade.setValue(0.35);
     Animated.timing(fade, { toValue: 1, duration: 260, useNativeDriver: true }).start();
   }, [scheme, fade]);
 
+  // Called once the map has finished loading — places the "you are here" dot
+  // right away (no camera movement) so it's already there before the user
+  // ever touches the locate button, instead of only appearing on first press.
+  async function handleMapReady() {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const last = await Location.getLastKnownPositionAsync();
+      if (last) mapRef.current?.placeUserLocation(last.coords.longitude, last.coords.latitude);
+    } catch {
+      // Passive/background attempt — fail silently, the button still works.
+    }
+  }
+
   async function handleLocatePress() {
+    // Ignore spam taps instead of racing multiple location lookups.
+    if (isLocatingRef.current) return;
+    isLocatingRef.current = true;
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permisiune necesară', 'Activează locația ca să te putem găsi pe hartă.');
         return;
       }
-      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      mapRef.current?.flyToLocation(position.coords.longitude, position.coords.latitude);
+      // getLastKnownPositionAsync returns a cached fix instantly; only fall
+      // back to the slow, active getCurrentPositionAsync if nothing's cached
+      // yet — that's what was causing the multi-second lag on every press.
+      let coords = (await Location.getLastKnownPositionAsync())?.coords;
+      if (!coords) {
+        coords = (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })).coords;
+      }
+      mapRef.current?.flyToLocation(coords.longitude, coords.latitude);
     } catch {
       Alert.alert('Nu te găsim', 'Nu am putut lua locația ta. Încearcă din nou.');
+    } finally {
+      isLocatingRef.current = false;
     }
   }
 
   return (
     <Animated.View style={[styles.container, { backgroundColor: theme.mapBase, opacity: fade }]}>
-      <MapboxMap ref={mapRef} />
+      <MapboxMap ref={mapRef} onReady={handleMapReady} />
 
       <FadeInUp style={[styles.headerCluster, { top: insets.top + spacing.md }]}>
         <LogoWordmark />

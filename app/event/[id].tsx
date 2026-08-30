@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Dimensions, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -13,13 +13,40 @@ import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { CelebrationOverlay } from '@/components/event/CelebrationOverlay';
 
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 export default function EventDetail() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, originX, originY } = useLocalSearchParams<{ id: string; originX?: string; originY?: string }>();
   const event = getSpritzEvent(id);
   const insets = useSafeAreaInsets();
   const { scheme, colors: theme } = useAppTheme();
   const { setHidden } = useNavVisibility();
   const [celebrating, setCelebrating] = useState(false);
+
+  // Grows in from wherever the pin was tapped on the map, instead of a plain
+  // slide — the origin point comes from the map's own pixel projection of the
+  // marker (see MapboxMap's click handler), and falls back to screen center
+  // if it's ever missing (e.g. reached this route another way).
+  const originXNum = originX ? Number(originX) : SCREEN_WIDTH / 2;
+  const originYNum = originY ? Number(originY) : SCREEN_HEIGHT / 2;
+  const enterAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.spring(enterAnim, { toValue: 1, useNativeDriver: true, friction: 9, tension: 55 }).start();
+  }, [enterAnim]);
+
+  function handleBack() {
+    Animated.timing(enterAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => router.back());
+  }
+
+  const entranceStyle = {
+    opacity: enterAnim,
+    transform: [
+      { translateX: enterAnim.interpolate({ inputRange: [0, 1], outputRange: [originXNum - SCREEN_WIDTH / 2, 0] }) },
+      { translateY: enterAnim.interpolate({ inputRange: [0, 1], outputRange: [originYNum - SCREEN_HEIGHT / 2, 0] }) },
+      { scale: enterAnim.interpolate({ inputRange: [0, 1], outputRange: [0.05, 1] }) },
+    ],
+  };
 
   // A full page, not a tab — the floating nav (and its 68px bottle button)
   // would otherwise collide with the "Hai la Spritz!" button at the bottom.
@@ -42,12 +69,13 @@ export default function EventDetail() {
 
   return (
     <View style={styles.root}>
+      <Animated.View style={[styles.animatedRoot, entranceStyle]}>
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
         <StatusBar style={theme.statusBar} />
 
         <View style={styles.topBar}>
           <AnimatedPressable
-            onPress={() => router.back()}
+            onPress={handleBack}
             hitSlop={10}
             accessibilityLabel="Înapoi"
             style={[styles.backButton, shadows.soft, { backgroundColor: theme.surface, borderColor: theme.border }]}
@@ -137,9 +165,11 @@ export default function EventDetail() {
           </AnimatedPressable>
         </View>
       </SafeAreaView>
+      </Animated.View>
 
-      {/* Rendered outside the SafeAreaView so it covers the whole screen,
-          notch/status-bar included, instead of just the safe-area content box. */}
+      {/* Rendered outside the animated wrapper so it covers the whole screen,
+          notch/status-bar included, and isn't shrunk by the entrance/exit
+          transform (it's a separate, later, user-triggered overlay). */}
       {celebrating ? <CelebrationOverlay onDone={() => setCelebrating(false)} /> : null}
     </View>
   );
@@ -147,6 +177,7 @@ export default function EventDetail() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  animatedRoot: { flex: 1 },
   safeArea: { flex: 1 },
   topBar: {
     flexDirection: 'row',

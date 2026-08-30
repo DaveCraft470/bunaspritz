@@ -103,7 +103,10 @@ function buildHtml(styleUrl: string) {
           el.className = 'event-pin';
           el.style.background = ev.color;
           el.innerHTML = '<span>' + ev.emoji + '</span>';
-          el.addEventListener('click', function () { send('event:' + ev.id); });
+          el.addEventListener('click', function () {
+            var p = map.project([ev.lng, ev.lat]);
+            send('event:' + ev.id + ':' + Math.round(p.x) + ':' + Math.round(p.y));
+          });
           new mapboxgl.Marker({ element: el, anchor: 'bottom' })
             .setLngLat([ev.lng, ev.lat])
             .addTo(map);
@@ -116,7 +119,7 @@ function buildHtml(styleUrl: string) {
       });
 
       var userMarker = null;
-      window.__flyToUser = function (lng, lat) {
+      function ensureUserMarker(lng, lat) {
         if (!userMarker) {
           var el = document.createElement('div');
           el.className = 'user-pin';
@@ -125,6 +128,14 @@ function buildHtml(styleUrl: string) {
         } else {
           userMarker.setLngLat([lng, lat]);
         }
+      }
+      // Placed passively (no camera movement) as soon as we have a fix, so the
+      // dot is already on the map before the user ever presses the locate button.
+      window.__placeUser = function (lng, lat) {
+        ensureUserMarker(lng, lat);
+      };
+      window.__flyToUser = function (lng, lat) {
+        ensureUserMarker(lng, lat);
         map.flyTo({
           center: [lng, lat],
           zoom: 16,
@@ -147,9 +158,14 @@ type Status = 'loading' | 'ready' | 'error';
 
 export type MapboxMapHandle = {
   flyToLocation: (lng: number, lat: number) => void;
+  placeUserLocation: (lng: number, lat: number) => void;
 };
 
-export const MapboxMap = forwardRef<MapboxMapHandle>(function MapboxMap(_props, ref) {
+type MapboxMapProps = {
+  onReady?: () => void;
+};
+
+export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function MapboxMap({ onReady }, ref) {
   const { scheme } = useAppTheme();
   const styleUrl = scheme === 'dark' ? MAPBOX_STYLE_URL_DARK : MAPBOX_STYLE_URL_LIGHT;
   const html = useMemo(() => buildHtml(styleUrl), [styleUrl]);
@@ -162,6 +178,11 @@ export const MapboxMap = forwardRef<MapboxMapHandle>(function MapboxMap(_props, 
     flyToLocation(lng: number, lat: number) {
       webviewRef.current?.injectJavaScript(
         `window.__flyToUser && window.__flyToUser(${lng}, ${lat}); true;`
+      );
+    },
+    placeUserLocation(lng: number, lat: number) {
+      webviewRef.current?.injectJavaScript(
+        `window.__placeUser && window.__placeUser(${lng}, ${lat}); true;`
       );
     },
   }));
@@ -183,9 +204,15 @@ export const MapboxMap = forwardRef<MapboxMapHandle>(function MapboxMap(_props, 
     const data = event.nativeEvent.data;
     console.log('[MapboxMap]', data);
     setLastMessage(data);
-    if (data === 'loaded') setStatus('ready');
-    else if (data.startsWith('error:')) setStatus('error');
-    else if (data.startsWith('event:')) router.push(`/event/${data.slice('event:'.length)}`);
+    if (data === 'loaded') {
+      setStatus('ready');
+      onReady?.();
+    } else if (data.startsWith('error:')) {
+      setStatus('error');
+    } else if (data.startsWith('event:')) {
+      const [, id, originX, originY] = data.split(':');
+      router.push({ pathname: '/event/[id]', params: { id, originX, originY } });
+    }
   };
 
   return (
