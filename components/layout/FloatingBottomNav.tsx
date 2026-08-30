@@ -29,7 +29,9 @@ function IconIsland({
   return (
     <FadeInUp delay={delay} distance={10}>
       <AnimatedPressable
-        onPress={() => router.replace(route)}
+        onPress={() => {
+          if (!active) router.replace(route);
+        }}
         hitSlop={10}
         accessibilityLabel={label}
         style={[

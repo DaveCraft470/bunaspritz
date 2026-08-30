@@ -7,9 +7,22 @@ import { GlassSurface } from '@/components/common/GlassSurface';
 
 const SIZE = 52;
 
-export function FloatingCircleButton({ icon }: { icon: keyof typeof Ionicons.glyphMap }) {
+export function FloatingCircleButton({
+  icon,
+  onPress,
+  accessibilityLabel,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress?: () => void;
+  accessibilityLabel?: string;
+}) {
   return (
-    <AnimatedPressable hitSlop={8} style={[styles.button, shadows.soft, { borderColor: glassButton.border }]}>
+    <AnimatedPressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityLabel={accessibilityLabel}
+      style={[styles.button, shadows.soft, { borderColor: glassButton.border }]}
+    >
       <GlassSurface />
       <Ionicons name={icon} size={22} color={glassButton.icon} />
     </AnimatedPressable>

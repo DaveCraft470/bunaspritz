@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { router } from 'expo-router';
@@ -41,6 +41,27 @@ function buildHtml(styleUrl: string) {
       display: block;
       transform: rotate(45deg);
       font-size: 17px;
+    }
+    .user-pin {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #2F86FF;
+      border: 3px solid #FFFFFF;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      position: relative;
+    }
+    .user-pin::after {
+      content: '';
+      position: absolute;
+      inset: -12px;
+      border-radius: 50%;
+      background: rgba(47,134,255,0.35);
+      animation: user-pin-pulse 1.8s ease-out infinite;
+    }
+    @keyframes user-pin-pulse {
+      0% { transform: scale(0.4); opacity: 0.9; }
+      100% { transform: scale(1.6); opacity: 0; }
     }
   </style>
 </head>
@@ -93,6 +114,27 @@ function buildHtml(styleUrl: string) {
         var msg = (e && e.error && e.error.message) || JSON.stringify(e && e.error) || 'unknown';
         send('error:' + msg);
       });
+
+      var userMarker = null;
+      window.__flyToUser = function (lng, lat) {
+        if (!userMarker) {
+          var el = document.createElement('div');
+          el.className = 'user-pin';
+          userMarker = new mapboxgl.Marker({ element: el });
+          userMarker.setLngLat([lng, lat]).addTo(map);
+        } else {
+          userMarker.setLngLat([lng, lat]);
+        }
+        map.flyTo({
+          center: [lng, lat],
+          zoom: 16,
+          pitch: 40,
+          bearing: 0,
+          speed: 0.85,
+          curve: 1.3,
+          essential: true,
+        });
+      };
     } catch (e) {
       send('error:' + (e && e.message ? e.message : String(e)));
     }
@@ -103,13 +145,26 @@ function buildHtml(styleUrl: string) {
 
 type Status = 'loading' | 'ready' | 'error';
 
-export function MapboxMap() {
+export type MapboxMapHandle = {
+  flyToLocation: (lng: number, lat: number) => void;
+};
+
+export const MapboxMap = forwardRef<MapboxMapHandle>(function MapboxMap(_props, ref) {
   const { scheme } = useAppTheme();
   const styleUrl = scheme === 'dark' ? MAPBOX_STYLE_URL_DARK : MAPBOX_STYLE_URL_LIGHT;
   const html = useMemo(() => buildHtml(styleUrl), [styleUrl]);
+  const webviewRef = useRef<WebView>(null);
 
   const [status, setStatus] = useState<Status>('loading');
   const [lastMessage, setLastMessage] = useState<string | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    flyToLocation(lng: number, lat: number) {
+      webviewRef.current?.injectJavaScript(
+        `window.__flyToUser && window.__flyToUser(${lng}, ${lat}); true;`
+      );
+    },
+  }));
 
   // Switching themes swaps the style URL, which reloads the WebView — treat
   // that like a fresh load so the timeout/debug state track the reload
@@ -140,6 +195,7 @@ export function MapboxMap() {
           over it, and it stays as the fallback if the real map errors out. */}
       <FakeMapBackdrop />
       <WebView
+        ref={webviewRef}
         source={{ html, baseUrl: 'https://localhost' }}
         style={styles.webview}
         androidLayerType="hardware"
@@ -158,7 +214,7 @@ export function MapboxMap() {
       ) : null}
     </>
   );
-}
+});
 
 const styles = StyleSheet.create({
   webview: {

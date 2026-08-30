@@ -27,7 +27,13 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-splash-screen"
+      "expo-splash-screen",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Spritz folosește locația ta ca să centreze harta pe poziția curentă."
+        }
+      ]
     ],
     "extra": {
       "router": {},

@@ -15,7 +15,9 @@ const IMAGE_WIDTH = IMAGE_HEIGHT * 0.314;
 export function HomeBottleButton({ active }: { active: boolean }) {
   return (
     <AnimatedPressable
-      onPress={() => router.replace('/')}
+      onPress={() => {
+        if (!active) router.replace('/');
+      }}
       hitSlop={10}
       accessibilityLabel="Acasă"
       style={[
