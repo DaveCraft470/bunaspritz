@@ -5,8 +5,8 @@ import { colors, shadows } from '@/constants/theme';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 
 const SIZE = 68; // noticeably bigger than the 54px profile/messages nav islands
-const IMAGE_WIDTH = 26;
-const IMAGE_HEIGHT = 46;
+const IMAGE_WIDTH = 36;
+const IMAGE_HEIGHT = 62;
 
 export function HomeBottleButton({ active }: { active: boolean }) {
   return (

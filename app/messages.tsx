@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView,
+  Animated,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
@@ -73,6 +74,38 @@ export default function Messages() {
   const [draft, setDraft] = useState('');
   const selectedChat = activeChat ? chats.find((chat) => chat.id === activeChat) : undefined;
   const messagesScrollRef = useRef<ScrollView>(null);
+  const restingComposerOffset = insets.bottom + 16;
+  const composerOffset = useRef(new Animated.Value(restingComposerOffset)).current;
+
+  // Track the keyboard ourselves instead of KeyboardAvoidingView — it kept
+  // over-shooting (resize windowSoftInputMode plus its own height-shrinking
+  // stacked on top of each other). Just float the composer to sit a little
+  // above wherever the keyboard's top edge actually is.
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const KEYBOARD_GAP = 10;
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      Animated.timing(composerOffset, {
+        toValue: e.endCoordinates.height + KEYBOARD_GAP,
+        duration: Platform.OS === 'ios' ? e.duration || 250 : 200,
+        useNativeDriver: false,
+      }).start();
+    });
+    const hideSub = Keyboard.addListener(hideEvent, (e) => {
+      Animated.timing(composerOffset, {
+        toValue: restingComposerOffset,
+        duration: Platform.OS === 'ios' ? e.duration || 250 : 200,
+        useNativeDriver: false,
+      }).start();
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [composerOffset, restingComposerOffset]);
 
   // Hide the floating home/messages/profile nav while a chat is open, so it
   // doesn't float over the composer — bring it back on returning to the grid
@@ -101,10 +134,7 @@ export default function Messages() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
       <StatusBar style={theme.statusBar} />
-      <KeyboardAvoidingView
-        style={[styles.page, { backgroundColor: theme.page }]}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <View style={[styles.page, { backgroundColor: theme.page }]}>
         {!selectedChat ? (
           <>
             <View style={styles.topBar}>
@@ -192,12 +222,12 @@ export default function Messages() {
               ))}
             </ScrollView>
 
-            {/* The floating bottom nav hides itself while a chat is open (see the
-                effect above), so the composer only needs to clear the safe area. */}
-            <View
+            {/* marginBottom tracks the keyboard directly (see the effect above)
+                instead of KeyboardAvoidingView, which overshot on Android. */}
+            <Animated.View
               style={[
                 styles.composer,
-                { marginBottom: insets.bottom + 16, backgroundColor: theme.surface, borderColor: theme.border },
+                { marginBottom: composerOffset, backgroundColor: theme.surface, borderColor: theme.border },
               ]}
             >
               <View style={[styles.add, { backgroundColor: theme.surfaceMuted }]}>
@@ -218,10 +248,10 @@ export default function Messages() {
               <Pressable onPress={sendMessage} style={[styles.send, !draft.trim() && styles.sendOff]}>
                 <Text style={styles.sendText}>↑</Text>
               </Pressable>
-            </View>
+            </Animated.View>
           </>
         )}
-      </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 }
