@@ -17,3 +17,18 @@ export const MAPBOX_INITIAL_VIEW = {
   bearing: -131.25520763244685,
   pitch: 60.15495229720443,
 };
+
+// Plain public Mapbox styles for the small static preview on the event detail
+// screen — the custom "Faded" 3D Standard style is built for interactive
+// GL JS and isn't a safe bet through the Static Images API.
+const STATIC_STYLE_LIGHT = 'light-v11';
+const STATIC_STYLE_DARK = 'dark-v11';
+
+// Rounding to 3 decimals (~110m) plus a low zoom keeps the exact spot fuzzy —
+// this is a "somewhere around here" preview, not a precise pin.
+export function buildApproxStaticMapUrl(lng: number, lat: number, scheme: 'light' | 'dark', width = 640, height = 300) {
+  const style = scheme === 'dark' ? STATIC_STYLE_DARK : STATIC_STYLE_LIGHT;
+  const roundedLng = Math.round(lng * 1000) / 1000;
+  const roundedLat = Math.round(lat * 1000) / 1000;
+  return `https://api.mapbox.com/styles/v1/mapbox/${style}/static/${roundedLng},${roundedLat},13,0,0/${width}x${height}?access_token=${MAPBOX_ACCESS_TOKEN}`;
+}

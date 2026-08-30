@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
+import { router } from 'expo-router';
 
 import {
   MAPBOX_ACCESS_TOKEN,
@@ -9,22 +10,11 @@ import {
   MAPBOX_STYLE_URL_DARK,
   MAPBOX_STYLE_URL_LIGHT,
 } from '@/constants/mapbox';
+import { SPRITZ_EVENTS } from '@/constants/events';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { FakeMapBackdrop } from './FakeMapBackdrop';
 
 const LOAD_TIMEOUT_MS = 10000;
-
-// Placeholder events scattered around Brașov, just so the map isn't empty —
-// swap for real event data once that exists.
-const FAKE_EVENTS = [
-  { title: 'Seară de jazz', detail: 'Curtea Muzeului · 20:00', emoji: '🎷', color: '#FF9F5A', lng: 25.6203, lat: 45.646 },
-  { title: 'Picnic în parc', detail: 'Parcul Central · 17:30', emoji: '🧺', color: '#5FD98A', lng: 25.6122, lat: 45.6501 },
-  { title: 'Drumeție pe Tâmpa', detail: 'Telecabină · 09:00', emoji: '🥾', color: '#5AA9E6', lng: 25.5975, lat: 45.638 },
-  { title: 'Seară la Poiana', detail: 'Poiana Brașov · 19:00', emoji: '🍻', color: '#FFD25A', lng: 25.556, lat: 45.594 },
-  { title: 'Street food night', detail: 'Piața Sfatului · 18:00', emoji: '🌮', color: '#FF6B81', lng: 25.591, lat: 45.6427 },
-  { title: 'Concert acustic', detail: 'Grădina de vară · 21:00', emoji: '🎸', color: '#B388FF', lng: 25.628, lat: 45.6505 },
-  { title: 'Board games meetup', detail: 'Cafenea centrală · 18:30', emoji: '🎲', color: '#4ED9C9', lng: 25.6055, lat: 45.652 },
-];
 
 function buildHtml(styleUrl: string) {
   return `<!DOCTYPE html>
@@ -51,21 +41,6 @@ function buildHtml(styleUrl: string) {
       display: block;
       transform: rotate(45deg);
       font-size: 17px;
-    }
-    .mapboxgl-popup-content {
-      border-radius: 14px;
-      padding: 10px 14px;
-      font-family: -apple-system, Roboto, sans-serif;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.28);
-    }
-    .mapboxgl-popup-content strong {
-      display: block;
-      font-size: 13px;
-      margin-bottom: 2px;
-    }
-    .mapboxgl-popup-content span {
-      font-size: 11px;
-      color: #6D6D6D;
     }
   </style>
 </head>
@@ -101,17 +76,15 @@ function buildHtml(styleUrl: string) {
       send('debug:map constructed');
       map.on('load', function () {
         send('loaded');
-        var events = ${JSON.stringify(FAKE_EVENTS)};
+        var events = ${JSON.stringify(SPRITZ_EVENTS.map((e) => ({ id: e.id, emoji: e.emoji, color: e.color, lng: e.lng, lat: e.lat })))};
         events.forEach(function (ev) {
           var el = document.createElement('div');
           el.className = 'event-pin';
           el.style.background = ev.color;
           el.innerHTML = '<span>' + ev.emoji + '</span>';
-          var popup = new mapboxgl.Popup({ offset: 22, closeButton: false })
-            .setHTML('<strong>' + ev.title + '</strong><span>' + ev.detail + '</span>');
+          el.addEventListener('click', function () { send('event:' + ev.id); });
           new mapboxgl.Marker({ element: el, anchor: 'bottom' })
             .setLngLat([ev.lng, ev.lat])
-            .setPopup(popup)
             .addTo(map);
         });
       });
@@ -157,6 +130,7 @@ export function MapboxMap() {
     setLastMessage(data);
     if (data === 'loaded') setStatus('ready');
     else if (data.startsWith('error:')) setStatus('error');
+    else if (data.startsWith('event:')) router.push(`/event/${data.slice('event:'.length)}`);
   };
 
   return (
