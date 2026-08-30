@@ -13,7 +13,7 @@ export const MAPBOX_GL_JS_VERSION = '3.27.0';
 
 export const MAPBOX_INITIAL_VIEW = {
   center: [25.6105235817314, 45.64881722195011] as [number, number],
-  zoom: 16.24198898476121,
+  zoom: 12.5,
   bearing: -131.25520763244685,
   pitch: 60.15495229720443,
 };

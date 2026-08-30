@@ -9,7 +9,7 @@ import { MapboxMap } from './MapboxMap';
 import { LogoWordmark } from './LogoWordmark';
 import { EventsCaption } from './EventsCaption';
 import { FloatingCircleButton } from './FloatingCircleButton';
-import { ThemeToggleButton } from './ThemeToggleButton';
+import { MenuButton } from './MenuButton';
 
 export function MapPlaceholder() {
   const insets = useSafeAreaInsets();
@@ -32,7 +32,7 @@ export function MapPlaceholder() {
       </FadeInUp>
 
       <FadeInUp delay={80} style={[styles.themeToggle, { top: insets.top + spacing.md }]}>
-        <ThemeToggleButton />
+        <MenuButton />
       </FadeInUp>
 
       <FadeInUp delay={140} style={[styles.bottomLeft, { bottom: insets.bottom + 96 }]}>

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, StyleSheet } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, Text } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
 import {
@@ -33,7 +33,17 @@ function buildHtml(styleUrl: string) {
       if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(message);
     }
     window.onerror = function (msg) { send('debug:window.onerror ' + msg); };
-    send('debug:script running, mapboxgl=' + (typeof mapboxgl));
+    document.addEventListener('webglcontextcreationerror', function (e) {
+      send('error:webglcontextcreationerror ' + (e.statusMessage || 'unknown'));
+    }, false);
+    send('debug:script running, mapboxgl=' + (typeof mapboxgl) + ', webgl2=' + !!document.createElement('canvas').getContext('webgl2'));
+    (function () {
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { ctrl.abort(); }, 5000);
+      fetch('https://api.mapbox.com/styles/v1/mapbox/streets-v12?access_token=${MAPBOX_ACCESS_TOKEN}', { signal: ctrl.signal })
+        .then(function (r) { clearTimeout(timer); send('debug:network probe status ' + r.status); })
+        .catch(function (err) { clearTimeout(timer); send('debug:network probe failed ' + (err && err.message ? err.message : String(err))); });
+    })();
     try {
       mapboxgl.accessToken = '${MAPBOX_ACCESS_TOKEN}';
       var map = new mapboxgl.Map({
@@ -67,11 +77,11 @@ export function MapboxMap() {
   const html = useMemo(() => buildHtml(styleUrl), [styleUrl]);
 
   const [status, setStatus] = useState<Status>('loading');
-  const fallbackOpacity = useRef(new Animated.Value(1)).current;
+  const [lastMessage, setLastMessage] = useState<string | null>(null);
 
   // Switching themes swaps the style URL, which reloads the WebView — treat
-  // that like a fresh load so the fallback map covers the reload instead of
-  // holding the previous theme's map frozen on screen.
+  // that like a fresh load so the timeout/debug state track the reload
+  // instead of holding onto the previous theme's status.
   useEffect(() => {
     setStatus('loading');
   }, [styleUrl]);
@@ -82,36 +92,37 @@ export function MapboxMap() {
     return () => clearTimeout(timer);
   }, [status]);
 
-  useEffect(() => {
-    Animated.timing(fallbackOpacity, {
-      toValue: status === 'ready' ? 0 : 1,
-      duration: 260,
-      useNativeDriver: true,
-    }).start();
-  }, [status, fallbackOpacity]);
-
   const handleMessage = (event: WebViewMessageEvent) => {
     const data = event.nativeEvent.data;
     console.log('[MapboxMap]', data);
+    setLastMessage(data);
     if (data === 'loaded') setStatus('ready');
     else if (data.startsWith('error:')) setStatus('error');
   };
 
   return (
     <>
+      {/* Sits underneath the real map at all times — the WebView's
+          transparent background lets it show through until tiles paint
+          over it, and it stays as the fallback if the real map errors out. */}
+      <FakeMapBackdrop />
       <WebView
-        source={{ html }}
+        source={{ html, baseUrl: 'https://localhost' }}
         style={styles.webview}
+        androidLayerType="hardware"
         onMessage={handleMessage}
-        onError={() => setStatus('error')}
-        onHttpError={() => setStatus('error')}
+        onError={(e) => {
+          setLastMessage('webview:onError ' + JSON.stringify(e.nativeEvent));
+          setStatus('error');
+        }}
+        onHttpError={(e) => {
+          setLastMessage('webview:onHttpError ' + JSON.stringify(e.nativeEvent));
+          setStatus('error');
+        }}
       />
-      <Animated.View
-        style={[StyleSheet.absoluteFill, { opacity: fallbackOpacity }]}
-        pointerEvents={status === 'ready' ? 'none' : 'auto'}
-      >
-        <FakeMapBackdrop />
-      </Animated.View>
+      {__DEV__ && status !== 'ready' && lastMessage ? (
+        <Text style={styles.debugText}>{lastMessage}</Text>
+      ) : null}
     </>
   );
 }
@@ -124,5 +135,16 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: 'transparent',
+  },
+  debugText: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    bottom: 8,
+    color: '#fff',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    fontSize: 11,
+    padding: 6,
+    borderRadius: 6,
   },
 });

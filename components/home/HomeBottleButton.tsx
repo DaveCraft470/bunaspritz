@@ -1,40 +1,43 @@
 import { Image, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 
-import { shadows } from '@/constants/theme';
+import { colors, glassButton, shadows } from '@/constants/theme';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
+import { GlassSurface } from '@/components/common/GlassSurface';
 
-const WIDTH = 55;
-const HEIGHT = 94;
-const LIFT = 16; // sits this much higher than the profile/messages islands
+const SIZE = 68; // noticeably bigger than the 54px profile/messages nav islands
+const IMAGE_WIDTH = 30;
+const IMAGE_HEIGHT = 52;
 
-export function HomeBottleButton() {
+export function HomeBottleButton({ active }: { active: boolean }) {
   return (
     <AnimatedPressable
       onPress={() => router.replace('/')}
-      hitSlop={12}
+      hitSlop={10}
       accessibilityLabel="Acasă"
-      style={styles.button}
+      style={[
+        styles.button,
+        shadows.soft,
+        { borderColor: active ? colors.green500 : glassButton.border, borderWidth: active ? 2 : 1 },
+      ]}
     >
-      <Image
-        source={require('@/assets/images/beer-bottle.png')}
-        resizeMode="contain"
-        style={[styles.image, shadows.soft]}
-      />
+      <GlassSurface />
+      <Image source={require('@/assets/images/beer-bottle.png')} resizeMode="contain" style={styles.image} />
     </AnimatedPressable>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    width: WIDTH,
-    height: HEIGHT,
-    marginBottom: LIFT,
+    width: SIZE,
+    height: SIZE,
+    borderRadius: SIZE / 2,
+    overflow: 'hidden',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
   },
   image: {
-    width: WIDTH,
-    height: HEIGHT,
+    width: IMAGE_WIDTH,
+    height: IMAGE_HEIGHT,
   },
 });

@@ -13,7 +13,7 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: PropsWithChildren) {
-  const [scheme, setScheme] = useState<Scheme>('dark');
+  const [scheme, setScheme] = useState<Scheme>('light');
 
   const value = useMemo<ThemeContextValue>(
     () => ({

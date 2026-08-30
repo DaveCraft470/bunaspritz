@@ -15,6 +15,7 @@ import { FredokaOne_400Regular } from '@expo-google-fonts/fredoka-one';
 
 import { FloatingBottomNav } from '@/components/layout/FloatingBottomNav';
 import { ThemeProvider, useAppTheme } from '@/contexts/ThemeContext';
+import { NavVisibilityProvider } from '@/contexts/NavVisibilityContext';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -63,10 +64,12 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <View style={{ flex: 1 }}>
-          <RootStack />
-          <FloatingBottomNav />
-        </View>
+        <NavVisibilityProvider>
+          <View style={{ flex: 1 }}>
+            <RootStack />
+            <FloatingBottomNav />
+          </View>
+        </NavVisibilityProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

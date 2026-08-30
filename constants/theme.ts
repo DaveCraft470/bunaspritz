@@ -94,6 +94,13 @@ export type SchemeColors = {
   logoPrimary: string;
   logoAccent: string;
   statusBar: 'light' | 'dark';
+  // Generic app-chrome tokens — used by screens (Messages, Profile, Settings)
+  // that aren't the map, for their page/card/border surfaces.
+  page: string;
+  surface: string;
+  surfaceMuted: string;
+  border: string;
+  accent: string;
 };
 
 export const darkColors: SchemeColors = {
@@ -109,6 +116,11 @@ export const darkColors: SchemeColors = {
   logoPrimary: colors.white,
   logoAccent: colors.green400,
   statusBar: 'light',
+  page: '#12171B',
+  surface: '#1A2420',
+  surfaceMuted: 'rgba(255,255,255,0.06)',
+  border: 'rgba(255,255,255,0.12)',
+  accent: colors.green400,
 };
 
 export const lightColors: SchemeColors = {
@@ -124,4 +136,9 @@ export const lightColors: SchemeColors = {
   logoPrimary: colors.ink,
   logoAccent: colors.green700,
   statusBar: 'dark',
+  page: '#F5FFF8',
+  surface: colors.white,
+  surfaceMuted: '#E2F8E9',
+  border: '#CDEFD8',
+  accent: '#078C3C',
 };
