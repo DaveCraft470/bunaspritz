@@ -44,6 +44,12 @@ export default function EventDetail() {
 
   async function handleJoin() {
     if (!event || !user) return;
+
+    if (!joined && !user.verified) {
+      router.push({ pathname: '/verification', params: { returnTo: `/event/${event.id}` } });
+      return;
+    }
+
     medium();
     setCelebrating(true);
 

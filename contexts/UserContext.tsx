@@ -36,12 +36,13 @@ export function UserProvider({ children }: PropsWithChildren) {
   const [authenticated, setAuthenticated] = useState(false);
   const [user, setUser] = useState<PublicUser | null>(null);
 
-  // authenticated = has a session AND has completed the post-signup
-  // face-photo step — a session alone isn't enough (see contexts/auth.ts).
+  // authenticated = has a session. Identity verification (user.verified) is
+  // a separate, optional gate now — triggered from the profile menu or when
+  // joining an event — not a precondition for entering the app at all.
   async function refresh() {
     const profile = await getCurrentUser();
     setUser(profile);
-    setAuthenticated(profile?.verified ?? false);
+    setAuthenticated(profile !== null);
   }
 
   useEffect(() => {
@@ -78,7 +79,7 @@ export function UserProvider({ children }: PropsWithChildren) {
         const result = await logInUser(email, password);
         if (result.ok) {
           setUser(await getCurrentUser());
-          setAuthenticated(result.verified);
+          setAuthenticated(true);
         }
         return result;
       },

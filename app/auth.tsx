@@ -82,7 +82,7 @@ export default function Auth() {
         return;
       }
 
-      router.push('/verification');
+      router.replace('/');
       return;
     }
 
@@ -100,7 +100,7 @@ export default function Auth() {
       return;
     }
 
-    router.replace(result.verified ? '/' : '/verification');
+    router.replace('/');
   };
 
   const handleDevSkip = async () => {

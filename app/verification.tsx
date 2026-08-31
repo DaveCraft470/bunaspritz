@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -24,6 +24,7 @@ import { colors } from '@/constants/theme';
 export default function Verification() {
   const { colors: theme } = useAppTheme();
   const { completeVerification } = useUser();
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
 
   const [faceImage, setFaceImage] = useState<string | null>(null);
 
@@ -62,7 +63,7 @@ export default function Verification() {
     }
 
     await completeVerification();
-    router.replace('/');
+    router.replace((returnTo as any) || '/');
   };
 
   return (
