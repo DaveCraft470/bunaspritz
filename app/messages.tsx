@@ -29,6 +29,7 @@ import {
   markThreadRead,
   sendDirectMessage,
   subscribeToIncoming,
+  subscribeToReadReceipts,
 } from '@/lib/messaging';
 
 // Chat list / message bubble design by nituraul8 — ported from App.tsx onto
@@ -36,7 +37,7 @@ import {
 // The 3 group chats below stay mock/decorative; real 1:1 friend DMs are a
 // separate, backend-backed capability added alongside them.
 
-type DisplayMessage = { id: string; text: string; time: string; sender: string; mine: boolean };
+type DisplayMessage = { id: string; text: string; time: string; sender: string; mine: boolean; read: boolean };
 type ActiveChat = { kind: 'group'; id: string } | { kind: 'friend'; id: string };
 
 function formatTime(iso: string) {
@@ -122,10 +123,10 @@ function ChatListRow({
 }
 
 const starterMessages: DisplayMessage[] = [
-  { id: '1', sender: 'Mara', text: 'Ce faceți diseară? ✨', time: '18:41', mine: false },
-  { id: '2', sender: 'Vlad', text: 'Mergem la un spriț în centru?', time: '18:42', mine: false },
-  { id: '3', sender: 'Tu', text: 'Eu sunt pentru! Unde ne vedem?', time: '18:43', mine: true },
-  { id: '4', sender: 'Ioana', text: 'La Republicii, pe la 20:00?', time: '18:44', mine: false },
+  { id: '1', sender: 'Mara', text: 'Ce faceți diseară? ✨', time: '18:41', mine: false, read: false },
+  { id: '2', sender: 'Vlad', text: 'Mergem la un spriț în centru?', time: '18:42', mine: false, read: false },
+  { id: '3', sender: 'Tu', text: 'Eu sunt pentru! Unde ne vedem?', time: '18:43', mine: true, read: true },
+  { id: '4', sender: 'Ioana', text: 'La Republicii, pe la 20:00?', time: '18:44', mine: false, read: false },
 ];
 
 export default function Messages() {
@@ -216,6 +217,18 @@ export default function Messages() {
     });
   }, [user]);
 
+  // Flips a sent message's tick from single- to double-check the moment the
+  // recipient reads it, instead of only after the thread list next reloads.
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToReadReceipts(user.id, (message) => {
+      setFriendMessages((prev) => prev.map((m) => (m.id === message.id ? message : m)));
+      setFriendLast((prev) =>
+        prev[message.recipient_id]?.id === message.id ? { ...prev, [message.recipient_id]: message } : prev
+      );
+    });
+  }, [user]);
+
   const displayedMessages: DisplayMessage[] = useMemo(() => {
     if (activeChat?.kind === 'group') return groupMessages;
     if (activeChat?.kind === 'friend' && user) {
@@ -225,6 +238,7 @@ export default function Messages() {
         time: formatTime(m.created_at),
         sender: m.sender_id === user.id ? 'Tu' : activeFriend?.name ?? '',
         mine: m.sender_id === user.id,
+        read: !!m.read_at,
       }));
     }
     return [];
@@ -284,7 +298,7 @@ export default function Messages() {
     setDraft('');
 
     if (activeChat.kind === 'group') {
-      setGroupMessages((current) => [...current, { id: String(Date.now()), sender: 'Tu', text, time: 'Acum', mine: true }]);
+      setGroupMessages((current) => [...current, { id: String(Date.now()), sender: 'Tu', text, time: 'Acum', mine: true, read: false }]);
       return;
     }
 
@@ -426,9 +440,18 @@ export default function Messages() {
                     >
                       {message.text}
                     </Text>
-                    <Text style={[styles.time, message.mine ? styles.timeMine : { color: theme.textSecondary }]}>
-                      {message.time}
-                    </Text>
+                    <View style={styles.bubbleFooter}>
+                      <Text style={[styles.time, message.mine ? styles.timeMine : { color: theme.textSecondary }]}>
+                        {message.time}
+                      </Text>
+                      {message.mine && (
+                        <Ionicons
+                          name={message.read ? 'checkmark-done' : 'checkmark'}
+                          size={13}
+                          color={message.read ? colors.white : 'rgba(255,255,255,0.7)'}
+                        />
+                      )}
+                    </View>
                   </View>
                 </View>
               ))}
@@ -525,7 +548,8 @@ const styles = StyleSheet.create({
   senderMine: { color: '#D6FFE2', textAlign: 'right' },
   messageText: { fontSize: 15, lineHeight: 20, fontWeight: '500' },
   messageTextMine: { color: '#FFFFFF' },
-  time: { fontSize: 9, textAlign: 'right', marginTop: 4 },
+  bubbleFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 },
+  time: { fontSize: 9, textAlign: 'right' },
   timeMine: { color: '#D6FFE2' },
   composer: { marginHorizontal: 16, paddingVertical: 7, paddingHorizontal: 7, borderRadius: 22, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 7 },
   add: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },

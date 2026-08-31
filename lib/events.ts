@@ -93,6 +93,18 @@ export async function hasJoined(eventId: string, userId: string): Promise<boolea
   return !!data;
 }
 
+// joinEvent's "hosting an event auto-joins you as an attendee" means the
+// raw event_attendees count double-counts hosted events — subtract them out
+// so "Evenimente" reflects only spritzuri the user attended as a guest.
+export async function getUserEventStats(userId: string): Promise<{ attended: number; hosted: number }> {
+  const [attendedRows, hostedRows] = await Promise.all([
+    supabase.from('event_attendees').select('event_id', { count: 'exact', head: true }).eq('user_id', userId),
+    supabase.from('events').select('id', { count: 'exact', head: true }).eq('host_id', userId),
+  ]);
+  const hosted = hostedRows.count ?? 0;
+  return { attended: Math.max((attendedRows.count ?? 0) - hosted, 0), hosted };
+}
+
 export async function joinEvent(eventId: string, userId: string): Promise<boolean> {
   const { error } = await supabase.from('event_attendees').insert({ event_id: eventId, user_id: userId });
   if (error) return false;

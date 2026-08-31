@@ -92,3 +92,21 @@ export function subscribeToIncoming(myId: string, onMessage: (message: DbMessage
     supabase.removeChannel(channel);
   };
 }
+
+// Notifies the sender when a friend marks one of their messages read, so the
+// single-check tick can flip to a double-check live instead of only on the
+// next time the thread list happens to reload.
+export function subscribeToReadReceipts(myId: string, onRead: (message: DbMessage) => void) {
+  const channel = supabase
+    .channel(`messages-sender-${myId}`)
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'messages', filter: `sender_id=eq.${myId}` },
+      (payload) => onRead(payload.new as DbMessage)
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
