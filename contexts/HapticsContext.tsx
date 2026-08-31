@@ -1,5 +1,8 @@
-import { createContext, PropsWithChildren, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
+
+const STORAGE_KEY = 'spritz.haptics.enabled';
 
 type HapticsContextValue = {
   enabled: boolean;
@@ -13,7 +16,19 @@ type HapticsContextValue = {
 const HapticsContext = createContext<HapticsContextValue | null>(null);
 
 export function HapticsProvider({ children }: PropsWithChildren) {
-  const [enabled, setEnabled] = useState(true);
+  const [enabled, setEnabledState] = useState(true);
+
+  // Restores the last saved preference — defaults to on until this resolves.
+  useEffect(() => {
+    AsyncStorage.getItem(STORAGE_KEY).then((stored) => {
+      if (stored !== null) setEnabledState(stored === 'true');
+    });
+  }, []);
+
+  const setEnabled = useCallback((value: boolean) => {
+    setEnabledState(value);
+    AsyncStorage.setItem(STORAGE_KEY, String(value)).catch(() => {});
+  }, []);
 
   const light = useCallback(() => {
     if (enabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -25,7 +40,7 @@ export function HapticsProvider({ children }: PropsWithChildren) {
 
   const value = useMemo<HapticsContextValue>(
     () => ({ enabled, setEnabled, light, medium }),
-    [enabled, light, medium]
+    [enabled, setEnabled, light, medium]
   );
 
   return <HapticsContext.Provider value={value}>{children}</HapticsContext.Provider>;

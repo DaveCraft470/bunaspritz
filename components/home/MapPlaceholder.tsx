@@ -165,7 +165,7 @@ export function MapPlaceholder() {
           <Reanimated.View style={[styles.pullTarget, pullStyle]}>
             <LogoWordmark />
             <View style={{ height: spacing.sm }} />
-            <EventsCaption>12 evenimente azi</EventsCaption>
+            <EventsCaption>{events.length === 1 ? '1 eveniment azi' : `${events.length} evenimente azi`}</EventsCaption>
             {reloading && (
               <ActivityIndicator size="small" color={colors.green500} style={styles.reloadSpinner} />
             )}

@@ -1,8 +1,11 @@
-import { createContext, PropsWithChildren, useContext, useMemo, useState } from 'react';
+import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { darkColors, lightColors, SchemeColors } from '@/constants/theme';
 
 export type Scheme = 'dark' | 'light';
+
+const STORAGE_KEY = 'spritz.theme.scheme';
 
 type ThemeContextValue = {
   scheme: Scheme;
@@ -15,11 +18,25 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function ThemeProvider({ children }: PropsWithChildren) {
   const [scheme, setScheme] = useState<Scheme>('light');
 
+  // Restores whatever the user last picked — defaults to light until this
+  // resolves, which the branded splash's own animation comfortably outlasts.
+  useEffect(() => {
+    AsyncStorage.getItem(STORAGE_KEY).then((stored) => {
+      if (stored === 'dark' || stored === 'light') setScheme(stored);
+    });
+  }, []);
+
   const value = useMemo<ThemeContextValue>(
     () => ({
       scheme,
       colors: scheme === 'dark' ? darkColors : lightColors,
-      toggleScheme: () => setScheme((s) => (s === 'dark' ? 'light' : 'dark')),
+      toggleScheme: () => {
+        setScheme((s) => {
+          const next: Scheme = s === 'dark' ? 'light' : 'dark';
+          AsyncStorage.setItem(STORAGE_KEY, next).catch(() => {});
+          return next;
+        });
+      },
     }),
     [scheme]
   );
