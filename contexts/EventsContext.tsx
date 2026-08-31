@@ -7,6 +7,7 @@ import { useUser } from '@/contexts/UserContext';
 type EventsContextValue = {
   events: SpritzEvent[];
   addEvent: (event: SpritzEvent) => void;
+  refresh: () => Promise<void>;
 };
 
 const EventsContext = createContext<EventsContextValue | null>(null);
@@ -38,8 +39,15 @@ export function EventsProvider({ children }: PropsWithChildren) {
       // on the list only ever growing at the end to add just the new pin
       // instead of reloading the whole map.
       addEvent: appendIfNew,
+      // Manual pull-to-reload: re-fetches the full list rather than relying
+      // on Realtime, in case something was missed while disconnected.
+      async refresh() {
+        if (!authenticated) return;
+        const fresh = await fetchEvents();
+        setEvents(fresh);
+      },
     }),
-    [events]
+    [events, authenticated]
   );
 
   return <EventsContext.Provider value={value}>{children}</EventsContext.Provider>;

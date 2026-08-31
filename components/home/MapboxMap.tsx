@@ -174,6 +174,7 @@ type Status = 'loading' | 'ready' | 'error';
 export type MapboxMapHandle = {
   flyToLocation: (lng: number, lat: number) => void;
   placeUserLocation: (lng: number, lat: number) => void;
+  reload: () => void;
 };
 
 type MapboxMapProps = {
@@ -181,24 +182,34 @@ type MapboxMapProps = {
   onReady?: () => void;
   onLocated?: () => void;
   onUserPanned?: () => void;
+  onError?: () => void;
 };
 
 export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function MapboxMap(
-  { events, onReady, onLocated, onUserPanned },
+  { events, onReady, onLocated, onUserPanned, onError },
   ref
 ) {
   const { scheme } = useAppTheme();
   const styleUrl = scheme === 'dark' ? MAPBOX_STYLE_URL_DARK : MAPBOX_STYLE_URL_LIGHT;
-  // Only rebuilds (reloading the whole WebView) when the theme swaps styles —
-  // deliberately NOT reactive to `events` growing, since a full map reload
-  // per new event would be exactly the costly reload the user wants avoided.
+  // Bumped by the explicit reload() below — the only other thing that forces
+  // a rebuild is the theme swapping styles. Deliberately NOT reactive to
+  // `events` growing on its own, since a full reload per new event would be
+  // exactly the costly reload the user wants avoided; a manual reload,
+  // though, should embed whatever `events` currently holds, not a stale
+  // snapshot from first mount — that's what `reloadNonce` is for.
+  const [reloadNonce, setReloadNonce] = useState(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const html = useMemo(() => buildHtml(styleUrl, toPinData(events)), [styleUrl]);
+  const html = useMemo(() => buildHtml(styleUrl, toPinData(events)), [styleUrl, reloadNonce]);
   const webviewRef = useRef<WebView>(null);
   const knownEventCountRef = useRef(events.length);
 
   const [status, setStatus] = useState<Status>('loading');
   const [lastMessage, setLastMessage] = useState<string | null>(null);
+
+  function markError() {
+    setStatus('error');
+    onError?.();
+  }
 
   // A new event appended after the map already loaded gets its pin injected
   // directly instead of waiting for (or forcing) a reload.
@@ -214,6 +225,15 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
     knownEventCountRef.current = events.length;
   }, [events]);
 
+  // Whenever html actually rebuilds from a fresh reload (not from events
+  // growing — see above), the new HTML embeds `events` as of THIS render, so
+  // the catch-up count needs to match that same snapshot, not be reset from
+  // inside the imperative reload() call below, which runs a render earlier.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    knownEventCountRef.current = events.length;
+  }, [reloadNonce]);
+
   useImperativeHandle(ref, () => ({
     flyToLocation(lng: number, lat: number) {
       webviewRef.current?.injectJavaScript(
@@ -224,6 +244,14 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
       webviewRef.current?.injectJavaScript(
         `window.__placeUser && window.__placeUser(${lng}, ${lat}); true;`
       );
+    },
+    // The explicit "classic" reload — swipe-down from the header, not
+    // triggered automatically on remount (see the effect above). Rebuilds
+    // `html` (via reloadNonce) instead of calling the WebView's own
+    // .reload(), which would just re-run the stale HTML from first mount.
+    reload() {
+      setStatus('loading');
+      setReloadNonce((n) => n + 1);
     },
   }));
 
@@ -236,7 +264,7 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
 
   useEffect(() => {
     if (status !== 'loading') return;
-    const timer = setTimeout(() => setStatus('error'), LOAD_TIMEOUT_MS);
+    const timer = setTimeout(markError, LOAD_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [status]);
 
@@ -248,7 +276,7 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
       setStatus('ready');
       onReady?.();
     } else if (data.startsWith('error:')) {
-      setStatus('error');
+      markError();
     } else if (data.startsWith('event:')) {
       const [, id, originX, originY] = data.split(':');
       router.push({ pathname: '/event/[id]', params: { id, originX, originY } });
@@ -273,11 +301,11 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
         onMessage={handleMessage}
         onError={(e) => {
           setLastMessage('webview:onError ' + JSON.stringify(e.nativeEvent));
-          setStatus('error');
+          markError();
         }}
         onHttpError={(e) => {
           setLastMessage('webview:onHttpError ' + JSON.stringify(e.nativeEvent));
-          setStatus('error');
+          markError();
         }}
       />
       {__DEV__ && status !== 'ready' && lastMessage ? (

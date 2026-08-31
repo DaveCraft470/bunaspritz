@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router, usePathname } from 'expo-router';
+import { usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
@@ -11,6 +11,7 @@ import { FadeInUp } from '@/components/common/FadeInUp';
 import { HomeBottleButton } from '@/components/home/HomeBottleButton';
 import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { goToTab } from '@/lib/tabNav';
 
 const ISLAND_SIZE = 54;
 
@@ -20,12 +21,14 @@ function IconIsland({
   icon,
   active,
   delay,
+  pathname,
 }: {
   route: '/profile' | '/messages';
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   active: boolean;
   delay: number;
+  pathname: string;
 }) {
   const { light } = useHaptics();
   return (
@@ -34,7 +37,7 @@ function IconIsland({
         onPress={() => {
           if (active) return;
           light();
-          router.replace(route);
+          goToTab(pathname, route);
         }}
         hitSlop={10}
         accessibilityLabel={label}
@@ -91,6 +94,7 @@ export function FloatingBottomNav() {
         icon="person-outline"
         active={pathname.startsWith('/profile')}
         delay={70}
+        pathname={pathname}
       />
 
       <FadeInUp delay={0} distance={10}>
@@ -103,6 +107,7 @@ export function FloatingBottomNav() {
         icon="chatbubble-ellipses-outline"
         active={pathname.startsWith('/messages')}
         delay={140}
+        pathname={pathname}
       />
     </Animated.View>
   );

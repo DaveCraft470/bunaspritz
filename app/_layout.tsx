@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack, Redirect, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -123,26 +124,28 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <UserProvider>
-          <HapticsProvider>
-            <DevFlagsProvider>
-              <EventsProvider>
-                <NavVisibilityProvider>
-                  {!splashDone ? (
-                    <AnimatedSplash onFinish={() => setSplashDone(true)} />
-                  ) : (
-                    <View style={{ flex: 1 }}>
-                      <AppChrome />
-                    </View>
-                  )}
-                </NavVisibilityProvider>
-              </EventsProvider>
-            </DevFlagsProvider>
-          </HapticsProvider>
-        </UserProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <UserProvider>
+            <HapticsProvider>
+              <DevFlagsProvider>
+                <EventsProvider>
+                  <NavVisibilityProvider>
+                    {!splashDone ? (
+                      <AnimatedSplash onFinish={() => setSplashDone(true)} />
+                    ) : (
+                      <View style={{ flex: 1 }}>
+                        <AppChrome />
+                      </View>
+                    )}
+                  </NavVisibilityProvider>
+                </EventsProvider>
+              </DevFlagsProvider>
+            </HapticsProvider>
+          </UserProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

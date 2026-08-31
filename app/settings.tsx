@@ -24,6 +24,13 @@ export default function Settings() {
   async function handleSignOut() {
     light();
     await signOut();
+    // dismissAll() first: settings can be reached several screens deep
+    // (index -> profile -> settings), and now that index stays mounted
+    // across tab switches, replace() alone would only swap the top of the
+    // stack — leaving the pre-logout index/profile instances buried
+    // underneath /auth, to resurface stale (wrong session's data) the next
+    // time something unwinds the stack back to them.
+    router.dismissAll();
     router.replace('/auth');
   }
 

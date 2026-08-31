@@ -1,10 +1,12 @@
-import { useEffect, useRef } from 'react';
-import { Alert, Animated, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, StyleSheet, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 
-import { spacing } from '@/constants/theme';
+import { colors, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useEvents } from '@/contexts/EventsContext';
@@ -26,8 +28,9 @@ export function MapPlaceholder() {
   // your spot doesn't keep re-running the flyTo animation for nothing.
   const lastFlownRef = useRef<{ lng: number; lat: number } | null>(null);
   const hasPannedAwayRef = useRef(false);
-  const { medium } = useHaptics();
-  const { events } = useEvents();
+  const { medium, light } = useHaptics();
+  const { events, refresh } = useEvents();
+  const [reloading, setReloading] = useState(false);
 
   const ALREADY_THERE_DEGREES = 0.0005; // ~55m — comfortably inside GPS jitter
 
@@ -47,6 +50,7 @@ export function MapPlaceholder() {
   // right away (no camera movement) so it's already there before the user
   // ever touches the locate button, instead of only appearing on first press.
   async function handleMapReady() {
+    setReloading(false);
     try {
       const { status } = await Location.getForegroundPermissionsAsync();
       if (status !== 'granted') return;
@@ -85,6 +89,60 @@ export function MapPlaceholder() {
     }
   }
 
+  // "Classic" pull-to-reload, scoped to the header/logo cluster instead of
+  // the whole screen — the map itself needs every drag for panning, so a
+  // full-screen pull gesture here would fight it. Wraps only this small area.
+  const PULL_THRESHOLD = 56;
+  const pullY = useSharedValue(0);
+  const crossedThreshold = useSharedValue(false);
+
+  async function triggerReload() {
+    if (reloading) return;
+    medium();
+    setReloading(true);
+    // Fetch the latest events BEFORE reloading — MapboxMap's reload rebuilds
+    // its HTML from whatever `events` this component currently holds, so
+    // reloading first would bake in a stale list and silently drop any pin
+    // added since mount. `reloading` itself is cleared by onReady/onError
+    // below, once the map actually finishes, not when this fetch resolves.
+    await refresh();
+    mapRef.current?.reload();
+  }
+
+  const pullGesture = Gesture.Pan()
+    .enabled(!reloading)
+    .activeOffsetY(12)
+    .failOffsetX([-15, 15])
+    .onUpdate((e) => {
+      if (e.translationY <= 0) {
+        pullY.value = 0;
+        crossedThreshold.value = false;
+        return;
+      }
+      // Resistance past the halfway point so it doesn't feel like it just
+      // keeps dragging forever — settles in on approach to the threshold.
+      pullY.value = Math.min(e.translationY * 0.5, PULL_THRESHOLD * 1.3);
+
+      // One haptic tick the moment it crosses "will reload if released now",
+      // same idea as the native pull-to-refresh feel — not one per frame.
+      const nowPast = pullY.value >= PULL_THRESHOLD;
+      if (nowPast !== crossedThreshold.value) {
+        crossedThreshold.value = nowPast;
+        runOnJS(light)();
+      }
+    })
+    .onEnd(() => {
+      if (pullY.value >= PULL_THRESHOLD) {
+        runOnJS(triggerReload)();
+      }
+      pullY.value = withSpring(0);
+      crossedThreshold.value = false;
+    });
+
+  const pullStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: pullY.value }],
+  }));
+
   return (
     <Animated.View style={[styles.container, { backgroundColor: theme.mapBase, opacity: fade }]}>
       <MapboxMap
@@ -95,12 +153,24 @@ export function MapPlaceholder() {
         onUserPanned={() => {
           hasPannedAwayRef.current = true;
         }}
+        onError={() => setReloading(false)}
       />
 
       <FadeInUp style={[styles.headerCluster, { top: insets.top + spacing.md }]}>
-        <LogoWordmark />
-        <View style={{ height: spacing.sm }} />
-        <EventsCaption>12 evenimente azi</EventsCaption>
+        {/* GestureDetector needs a ref-forwarding native view as its direct
+            child — FadeInUp is a plain function component and doesn't
+            forward one, so the gesture wraps this inner Reanimated.View
+            instead, with FadeInUp only handling the entrance animation. */}
+        <GestureDetector gesture={pullGesture}>
+          <Reanimated.View style={[styles.pullTarget, pullStyle]}>
+            <LogoWordmark />
+            <View style={{ height: spacing.sm }} />
+            <EventsCaption>12 evenimente azi</EventsCaption>
+            {reloading && (
+              <ActivityIndicator size="small" color={colors.green500} style={styles.reloadSpinner} />
+            )}
+          </Reanimated.View>
+        </GestureDetector>
       </FadeInUp>
 
       <FadeInUp delay={80} style={[styles.themeToggle, { top: insets.top + spacing.md + 44 }]}>
@@ -130,6 +200,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignSelf: 'center',
     alignItems: 'center',
+  },
+  pullTarget: {
+    alignItems: 'center',
+  },
+  reloadSpinner: {
+    marginTop: spacing.sm,
   },
   themeToggle: {
     position: 'absolute',
