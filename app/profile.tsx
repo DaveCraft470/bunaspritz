@@ -1,8 +1,10 @@
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '@/contexts/ThemeContext';
+import { useUser } from '@/contexts/UserContext';
 
 // Profile design by raulnitu8 — ported from App.tsx's ProfileScreen onto its
 // own Expo Router screen, matching how app/messages.tsx was ported.
@@ -10,6 +12,12 @@ import { useAppTheme } from '@/contexts/ThemeContext';
 export default function Profile() {
   const insets = useSafeAreaInsets();
   const { colors: theme } = useAppTheme();
+  const { user } = useUser();
+
+  const name = user?.name || 'Utilizator';
+  const username = user?.username || 'utilizator';
+  const bio = user?.bio || 'Ieșiri bune, oameni faini și seri de ținut minte. ✨';
+  const avatarLetter = name.trim().charAt(0).toUpperCase() || 'U';
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -21,28 +29,29 @@ export default function Profile() {
       >
         <View style={styles.profileHeader}>
           <View style={[styles.profileAvatar, { borderColor: theme.surface }]}>
-            <Text style={styles.profileAvatarText}>A</Text>
+            <Text style={styles.profileAvatarText}>{avatarLetter}</Text>
           </View>
           <View style={styles.profileTitleBlock}>
             <View style={styles.nameRow}>
-              <Text style={[styles.profileName, { color: theme.textPrimary }]}>Andrei Pop</Text>
+              <Text style={[styles.profileName, { color: theme.textPrimary }]}>{name}</Text>
               <View style={styles.verifiedBadge}>
                 <Text style={styles.verifiedText}>✓</Text>
               </View>
             </View>
-            <Text style={[styles.profileHandle, { color: theme.textSecondary }]}>@andrei.brasov · Brașov</Text>
+            <Text style={[styles.profileHandle, { color: theme.textSecondary }]}>@{username}</Text>
             <View style={styles.hostPill}>
               <Text style={styles.hostPillText}>HOST APROBAT</Text>
             </View>
           </View>
-          <Pressable style={[styles.editButton, { borderColor: theme.border }]}>
+          <Pressable
+            onPress={() => router.push('/edit-profile')}
+            style={[styles.editButton, { borderColor: theme.border }]}
+          >
             <Text style={[styles.editText, { color: theme.accent }]}>Editează</Text>
           </Pressable>
         </View>
 
-        <Text style={[styles.bio, { color: theme.textSecondary }]}>
-          Ieșiri bune, oameni faini și seri de ținut minte. ✨
-        </Text>
+        <Text style={[styles.bio, { color: theme.textSecondary }]}>{bio}</Text>
 
         <View style={styles.scoreCard}>
           <View>

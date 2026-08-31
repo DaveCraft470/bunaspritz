@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, Redirect, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
@@ -19,6 +19,7 @@ import { NavVisibilityProvider } from '@/contexts/NavVisibilityContext';
 import { HapticsProvider } from '@/contexts/HapticsContext';
 import { EventsProvider } from '@/contexts/EventsContext';
 import { DevFlagsProvider } from '@/contexts/DevFlagsContext';
+import { UserProvider, useUser } from '@/contexts/UserContext';
 import { AnimatedSplash } from '@/components/common/AnimatedSplash';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -42,11 +43,56 @@ function RootStack() {
         contentStyle: { backgroundColor: theme.mapBase },
       }}
     >
+      <Stack.Screen name="verification" options={{ animation: 'slide_from_right' }} />
       {/* The screen itself animates in (growing from the tapped map pin —
           see app/event/[id].tsx), so the native-stack transition is turned
           off here to avoid the two fighting/compounding. */}
       <Stack.Screen name="event/[id]" options={{ animation: 'none' }} />
     </Stack>
+  );
+}
+
+// Redirects unauthenticated users to /auth, and authenticated ones away from
+// it. Only mounts once the branded splash finishes (see RootLayout below),
+// by which point UserProvider's one AsyncStorage read has long since
+// resolved, so `loading` is already false and there's no flash of the map
+// before the redirect fires.
+function AuthGate() {
+  const segments = useSegments();
+  const { loading, authenticated } = useUser();
+  const firstSegment = segments[0];
+
+  if (loading) {
+    return null;
+  }
+
+  if (!authenticated) {
+    if (firstSegment !== 'auth' && firstSegment !== 'verification') {
+      return <Redirect href="/auth" />;
+    }
+    return null;
+  }
+
+  if (firstSegment === 'auth') {
+    return <Redirect href="/" />;
+  }
+
+  return null;
+}
+
+// The floating tab bar belongs to the authenticated app shell, not the
+// auth/verification flow — it would otherwise float over the login form.
+function AppChrome() {
+  const segments = useSegments();
+  const firstSegment = segments[0];
+  const showNav = firstSegment !== 'auth' && firstSegment !== 'verification';
+
+  return (
+    <>
+      <AuthGate />
+      <RootStack />
+      {showNav && <FloatingBottomNav />}
+    </>
   );
 }
 
@@ -79,22 +125,23 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <HapticsProvider>
-          <DevFlagsProvider>
-            <EventsProvider>
-              <NavVisibilityProvider>
-                {!splashDone ? (
-                  <AnimatedSplash onFinish={() => setSplashDone(true)} />
-                ) : (
-                  <View style={{ flex: 1 }}>
-                    <RootStack />
-                    <FloatingBottomNav />
-                  </View>
-                )}
-              </NavVisibilityProvider>
-            </EventsProvider>
-          </DevFlagsProvider>
-        </HapticsProvider>
+        <UserProvider>
+          <HapticsProvider>
+            <DevFlagsProvider>
+              <EventsProvider>
+                <NavVisibilityProvider>
+                  {!splashDone ? (
+                    <AnimatedSplash onFinish={() => setSplashDone(true)} />
+                  ) : (
+                    <View style={{ flex: 1 }}>
+                      <AppChrome />
+                    </View>
+                  )}
+                </NavVisibilityProvider>
+              </EventsProvider>
+            </DevFlagsProvider>
+          </HapticsProvider>
+        </UserProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

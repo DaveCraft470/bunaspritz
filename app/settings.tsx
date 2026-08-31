@@ -9,13 +9,23 @@ import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useDevFlags } from '@/contexts/DevFlagsContext';
+import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
+
+const DANGER_COLOR = '#E5484D';
 
 export default function Settings() {
   const { scheme, colors: theme, toggleScheme } = useAppTheme();
   const { enabled: hapticsEnabled, setEnabled: setHapticsEnabled, light } = useHaptics();
   const { hostVerified } = useDevFlags();
+  const { signOut } = useUser();
+
+  async function handleSignOut() {
+    light();
+    await signOut();
+    router.replace('/auth');
+  }
 
   function handleToggleTheme(value: boolean) {
     light();
@@ -117,6 +127,19 @@ export default function Settings() {
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+      </AnimatedPressable>
+
+      <AnimatedPressable
+        onPress={handleSignOut}
+        style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+      >
+        <View style={styles.rowText}>
+          <Text style={[styles.rowLabel, { color: DANGER_COLOR }]}>Ieși din cont</Text>
+          <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
+            Te deconectezi de la contul curent.
+          </Text>
+        </View>
+        <Ionicons name="log-out-outline" size={18} color={DANGER_COLOR} />
       </AnimatedPressable>
     </SafeAreaView>
   );
