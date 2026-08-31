@@ -58,14 +58,18 @@ export async function registerUser(
 ): Promise<AuthResult> {
   const normalizedUsername = username.trim().toLowerCase();
 
-  const { data: existing } = await supabase
-    .from('profiles')
-    .select('username')
-    .eq('username', normalizedUsername)
-    .maybeSingle();
+  // Runs before signUp, while the caller is still anonymous — profiles
+  // itself isn't readable pre-auth, so this goes through a security-definer
+  // RPC that only ever answers yes/no, never exposing the table.
+  const { data: available, error: availabilityError } = await supabase.rpc('is_username_available', {
+    check_username: normalizedUsername,
+  });
 
-  if (existing) {
-    return { ok: false, error: 'Acest username este deja folosit.' };
+  if (availabilityError) {
+    return { ok: false, error: 'Nu am putut verifica username-ul. Încearcă din nou.' };
+  }
+  if (!available) {
+    return { ok: false, error: 'Acest username este deja folosit. Alege altul.' };
   }
 
   const { data, error } = await supabase.auth.signUp({
