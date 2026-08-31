@@ -4,7 +4,6 @@ import { supabase } from '@/lib/supabase';
 import { registerForPushNotifications } from '@/lib/pushTokens';
 import {
   PublicUser,
-  completeSignup,
   devSkipAuth,
   getCurrentUser,
   logInUser,
@@ -22,7 +21,6 @@ type UserContextValue = {
   user: PublicUser | null;
   signUp: (name: string, username: string, email: string, password: string) => Promise<AuthResult>;
   logIn: (email: string, password: string) => Promise<AuthResult & { verified?: boolean }>;
-  completeVerification: () => Promise<void>;
   signOut: () => Promise<void>;
   devSkip: () => Promise<void>;
   updateProfile: (fields: { name?: string; username?: string; bio?: string }) => Promise<AuthResult>;
@@ -63,6 +61,27 @@ export function UserProvider({ children }: PropsWithChildren) {
     }
   }, [authenticated, user?.id]);
 
+  // Keeps `verified` (and any other profile field) live once Didit's webhook
+  // approves a session server-side — the client has no write path to this
+  // field itself (see the profiles RLS/column-grant migration), so this
+  // subscription is the only way the app finds out without a manual refresh.
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`profile-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },
+        () => refresh()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
   const value = useMemo<UserContextValue>(
     () => ({
       loading,
@@ -82,11 +101,6 @@ export function UserProvider({ children }: PropsWithChildren) {
           setAuthenticated(true);
         }
         return result;
-      },
-      async completeVerification() {
-        await completeSignup();
-        setUser(await getCurrentUser());
-        setAuthenticated(true);
       },
       async signOut() {
         await signOutStorage();

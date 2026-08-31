@@ -54,7 +54,8 @@
         {
           "color": "#1FD460"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "extra": {
       "router": {},

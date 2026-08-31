@@ -1,69 +1,52 @@
-import { useState } from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  Pressable,
-  ScrollView,
-  Alert,
-  Image,
-} from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
+import * as WebBrowser from 'expo-web-browser';
 
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useUser } from '@/contexts/UserContext';
+import { supabase } from '@/lib/supabase';
 import { colors } from '@/constants/theme';
 
-// The buletin/ID step was dropped — real ID capture needs OCR/liveness
-// checks that are out of scope for now, so signup only asks for a face
-// photo before handing off to the app.
+// Real KYC via Didit: a session is created server-side (create-verification-session,
+// keeps the Didit API key off the client), the user completes ID + liveness on
+// Didit's hosted page, and Didit's webhook flips profiles.verified once approved.
+// UserContext subscribes to that row over Realtime, so `user.verified` here
+// updates on its own — no polling, no client-side "mark myself verified" path.
+type Status = 'idle' | 'starting' | 'waiting' | 'error';
+
 export default function Verification() {
   const { colors: theme } = useAppTheme();
-  const { completeVerification } = useUser();
+  const { user } = useUser();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
 
-  const [faceImage, setFaceImage] = useState<string | null>(null);
+  const [status, setStatus] = useState<Status>('idle');
 
-  const pickImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  useEffect(() => {
+    if (user?.verified) {
+      router.replace((returnTo as any) || '/');
+    }
+  }, [user?.verified, returnTo]);
 
-    if (!permission.granted) {
-      Alert.alert(
-        'Permisiune necesară',
-        'Permite accesul la fotografii pentru a continua.'
-      );
+  const startVerification = async () => {
+    setStatus('starting');
+
+    const { data, error } = await supabase.functions.invoke('create-verification-session');
+    if (error || !data?.url) {
+      setStatus('error');
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (result.canceled) {
-      return;
+    if (Platform.OS === 'web') {
+      window.open(data.url, '_blank');
+    } else {
+      await WebBrowser.openBrowserAsync(data.url);
     }
 
-    const uri = result.assets[0]?.uri;
-    if (uri) {
-      setFaceImage(uri);
-    }
-  };
-
-  const continueStep = async () => {
-    if (!faceImage) {
-      await pickImage();
-      return;
-    }
-
-    await completeVerification();
-    router.replace((returnTo as any) || '/');
+    setStatus('waiting');
   };
 
   return (
@@ -89,54 +72,54 @@ export default function Verification() {
 
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={[styles.mainIcon, { backgroundColor: 'rgba(34,197,94,0.10)' }]}>
-            <Ionicons name="scan-outline" size={46} color={colors.green500} />
+            <Ionicons name="shield-checkmark-outline" size={46} color={colors.green500} />
           </View>
 
-          <Text style={[styles.title, { color: theme.textPrimary }]}>Verificare facială</Text>
+          <Text style={[styles.title, { color: theme.textPrimary }]}>Verificare identitate</Text>
 
           <Text style={[styles.description, { color: theme.textSecondary }]}>
-            Fă o fotografie a feței pentru verificarea identității.
+            {status === 'waiting'
+              ? 'Se procesează verificarea. Poate dura câteva minute — te trecem automat mai departe imediat ce e gata.'
+              : 'Vei fi dus la pagina noastră de verificare (act de identitate + o poză live) pentru a confirma că ai peste 18 ani.'}
           </Text>
 
-          {faceImage && (
-            <View style={styles.previewContainer}>
-              <Image source={{ uri: faceImage }} style={styles.facePreview} resizeMode="cover" />
-
-              <Pressable
-                onPress={pickImage}
-                style={[styles.changeImageButton, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}
-              >
-                <Ionicons name="camera-outline" size={18} color={colors.green500} />
-                <Text style={[styles.changeImageText, { color: theme.textPrimary }]}>Schimbă fotografia</Text>
-              </Pressable>
-            </View>
-          )}
-
           <View style={[styles.infoBox, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
-            <Ionicons name="shield-checkmark-outline" size={21} color={colors.green500} />
+            <Ionicons name="lock-closed-outline" size={21} color={colors.green500} />
             <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-              Datele de verificare vor fi procesate securizat de serviciul de verificare.
+              Datele tale sunt procesate securizat de furnizorul de verificare, nu sunt stocate de noi.
             </Text>
           </View>
 
-          <Pressable
-            onPress={continueStep}
-            style={({ pressed }) => [
-              styles.continueButton,
-              { backgroundColor: colors.green500, opacity: pressed ? 0.75 : 1 },
-            ]}
-          >
-            <Text style={styles.continueText}>
-              {faceImage ? 'Intră în aplicație' : 'Adaugă fotografia'}
-            </Text>
-            <Ionicons name="arrow-forward" size={20} color={colors.white} />
-          </Pressable>
+          {status === 'error' && (
+            <Text style={styles.errorText}>Nu am putut porni verificarea. Încearcă din nou.</Text>
+          )}
+
+          {status === 'waiting' ? (
+            <View style={styles.waitingRow}>
+              <ActivityIndicator color={colors.green500} />
+              <Text style={[styles.waitingText, { color: theme.textSecondary }]}>Se așteaptă rezultatul...</Text>
+            </View>
+          ) : (
+            <Pressable
+              onPress={startVerification}
+              disabled={status === 'starting'}
+              style={({ pressed }) => [
+                styles.continueButton,
+                { backgroundColor: colors.green500, opacity: pressed || status === 'starting' ? 0.75 : 1 },
+              ]}
+            >
+              <Text style={styles.continueText}>
+                {status === 'starting' ? 'Se pregătește...' : 'Începe verificarea'}
+              </Text>
+              <Ionicons name="arrow-forward" size={20} color={colors.white} />
+            </Pressable>
+          )}
         </View>
 
         <View style={styles.security}>
-          <Ionicons name="lock-closed-outline" size={16} color={theme.textSecondary} />
+          <Ionicons name="information-circle-outline" size={16} color={theme.textSecondary} />
           <Text style={[styles.securityText, { color: theme.textSecondary }]}>
-            Verificarea este necesară pentru accesul la funcțiile 18+.
+            Verificarea este necesară pentru a te alătura unui Spritz.
           </Text>
         </View>
       </ScrollView>
@@ -152,6 +135,7 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
     paddingHorizontal: 20,
+    paddingTop: 45,
     paddingBottom: 30,
   },
 
@@ -224,35 +208,6 @@ const styles = StyleSheet.create({
     marginBottom: 22,
   },
 
-  previewContainer: {
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 22,
-  },
-
-  facePreview: {
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-  },
-
-  changeImageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginTop: 10,
-  },
-
-  changeImageText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
   infoBox: {
     width: '100%',
     borderRadius: 14,
@@ -270,6 +225,14 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
+  errorText: {
+    color: '#E5484D',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+
   continueButton: {
     width: '100%',
     minHeight: 54,
@@ -284,6 +247,19 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 15,
     fontWeight: '800',
+  },
+
+  waitingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    minHeight: 54,
+  },
+
+  waitingText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 
   security: {

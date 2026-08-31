@@ -102,13 +102,6 @@ export async function logInUser(email: string, password: string): Promise<LoginR
   return { ok: true, verified: profile?.verified ?? false };
 }
 
-// Called once the post-signup verification step finishes.
-export async function completeSignup(): Promise<void> {
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) return;
-  await supabase.from('profiles').update({ verified: true }).eq('id', data.user.id);
-}
-
 export async function signOut(): Promise<void> {
   await supabase.auth.signOut();
 }
