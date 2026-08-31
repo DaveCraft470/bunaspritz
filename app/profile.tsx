@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { router } from 'expo-router';
@@ -5,6 +6,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useUser } from '@/contexts/UserContext';
+import { getMutualFriends } from '@/lib/social';
 
 // Profile design by raulnitu8 — ported from App.tsx's ProfileScreen onto its
 // own Expo Router screen, matching how app/messages.tsx was ported.
@@ -13,6 +15,12 @@ export default function Profile() {
   const insets = useSafeAreaInsets();
   const { colors: theme } = useAppTheme();
   const { user } = useUser();
+  const [friendCount, setFriendCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    getMutualFriends(user.id).then((friends) => setFriendCount(friends.length));
+  }, [user]);
 
   const name = user?.name || 'Utilizator';
   const username = user?.username || 'utilizator';
@@ -66,10 +74,10 @@ export default function Profile() {
         </View>
 
         <View style={[styles.statsRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <View style={styles.stat}>
-            <Text style={[styles.statNumber, { color: theme.textPrimary }]}>14</Text>
-            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Grupuri</Text>
-          </View>
+          <Pressable style={styles.stat} onPress={() => router.push('/friends')}>
+            <Text style={[styles.statNumber, { color: theme.textPrimary }]}>{friendCount}</Text>
+            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Prieteni</Text>
+          </Pressable>
           <View style={styles.stat}>
             <Text style={[styles.statNumber, { color: theme.textPrimary }]}>28</Text>
             <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Evenimente</Text>
