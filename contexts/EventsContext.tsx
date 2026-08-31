@@ -2,6 +2,7 @@ import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useSt
 
 import { SpritzEvent } from '@/constants/events';
 import { fetchEvents, subscribeToNewEvents } from '@/lib/events';
+import { useUser } from '@/contexts/UserContext';
 
 type EventsContextValue = {
   events: SpritzEvent[];
@@ -11,16 +12,24 @@ type EventsContextValue = {
 const EventsContext = createContext<EventsContextValue | null>(null);
 
 export function EventsProvider({ children }: PropsWithChildren) {
+  const { authenticated } = useUser();
   const [events, setEvents] = useState<SpritzEvent[]>([]);
 
   function appendIfNew(event: SpritzEvent) {
     setEvents((current) => (current.some((e) => e.id === event.id) ? current : [...current, event]));
   }
 
+  // Gated on auth: the "events" SELECT/Realtime policy requires an
+  // authenticated caller, and a Realtime channel that joins before the
+  // session lands authenticates as anon and silently never gets resubscribed.
   useEffect(() => {
+    if (!authenticated) {
+      setEvents([]);
+      return;
+    }
     fetchEvents().then(setEvents);
     return subscribeToNewEvents(appendIfNew);
-  }, []);
+  }, [authenticated]);
 
   const value = useMemo<EventsContextValue>(
     () => ({

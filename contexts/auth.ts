@@ -1,8 +1,5 @@
 import { supabase } from '@/lib/supabase';
 
-const DEV_EMAIL = 'dev@bunaspritz.local';
-const DEV_PASSWORD = 'DevSkip!2024';
-
 export type PublicUser = {
   id: string;
   name: string;
@@ -159,23 +156,21 @@ export async function setNotifyFriendsOnJoin(value: boolean): Promise<void> {
 
 // Bypass for the login screen, for the current pre-release phase only —
 // remove this (and its button in app/auth.tsx) before a real production
-// release. Still a real, RLS-respecting Supabase session — it just skips
-// the credential/verification steps by reusing (or lazily creating) one
-// fixed seeded account instead of fabricating local state.
+// release. A real, RLS-respecting Supabase session, but backed by a fresh
+// throwaway account with a random password generated on-device each tap —
+// never a fixed credential, since a fixed one would sit readable in the
+// public app bundle/repo and grant anyone a live authenticated session.
 export async function devSkipAuth(): Promise<void> {
-  const signIn = await supabase.auth.signInWithPassword({ email: DEV_EMAIL, password: DEV_PASSWORD });
+  const rand = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const email = `dev-${rand}@bunaspritz.local`;
+  const password = `${rand}Aa1!`;
 
-  if (signIn.error) {
-    const signUp = await supabase.auth.signUp({
-      email: DEV_EMAIL,
-      password: DEV_PASSWORD,
-      options: { data: { name: 'Dev User', username: 'dev' } },
-    });
-    if (signUp.error || !signUp.data.user) return;
-  }
+  const signUp = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { name: 'Dev User', username: `dev_${rand.slice(0, 10)}` } },
+  });
+  if (signUp.error || !signUp.data.user) return;
 
-  const { data } = await supabase.auth.getUser();
-  if (data.user) {
-    await supabase.from('profiles').update({ verified: true }).eq('id', data.user.id);
-  }
+  await supabase.from('profiles').update({ verified: true }).eq('id', signUp.data.user.id);
 }

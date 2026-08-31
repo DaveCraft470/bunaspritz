@@ -129,16 +129,24 @@ export default function Messages() {
     getThread(user.id, activeChat.id).then(setFriendMessages);
   }, [user, activeChat]);
 
-  // Live-append messages that land while a friend thread is open.
+  // Live-append messages that land while a friend thread is open. Subscribed
+  // once per user, not per activeChat — the channel topic is keyed only on
+  // the user's id, so re-subscribing on every open/close of a thread just
+  // churned the same Realtime topic and could drop delivery. activeChat is
+  // read from a ref so the callback still sees whichever thread is current.
+  const activeChatRef = useRef(activeChat);
+  activeChatRef.current = activeChat;
+
   useEffect(() => {
     if (!user) return;
     return subscribeToIncoming(user.id, (message) => {
-      if (activeChat?.kind === 'friend' && message.sender_id === activeChat.id) {
-        setFriendMessages((current) => [...current, message]);
+      const current = activeChatRef.current;
+      if (current?.kind === 'friend' && message.sender_id === current.id) {
+        setFriendMessages((prev) => [...prev, message]);
       }
-      setFriendPreviews((current) => ({ ...current, [message.sender_id]: message.text }));
+      setFriendPreviews((prev) => ({ ...prev, [message.sender_id]: message.text }));
     });
-  }, [user, activeChat]);
+  }, [user]);
 
   const displayedMessages: DisplayMessage[] = useMemo(() => {
     if (activeChat?.kind === 'group') return groupMessages;

@@ -3,12 +3,12 @@ import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from '@/constants/supabase';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY — check .env');
-}
+// .env is gitignored, so EAS Build (which clones from git, never sees .env)
+// and a fresh clone both fall through to the committed constants below.
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || SUPABASE_URL;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY;
 
 // The anon/publishable key is safe to embed client-side (same as the Mapbox
 // token in constants/mapbox.ts) — access is enforced by RLS, not by keeping
