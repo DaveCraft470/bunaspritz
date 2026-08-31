@@ -6,6 +6,7 @@ export type DbMessage = {
   recipient_id: string;
   text: string;
   created_at: string;
+  read_at: string | null;
 };
 
 function threadFilter(myId: string, friendId: string) {
@@ -15,7 +16,7 @@ function threadFilter(myId: string, friendId: string) {
 export async function getThread(myId: string, friendId: string): Promise<DbMessage[]> {
   const { data, error } = await supabase
     .from('messages')
-    .select('id, sender_id, recipient_id, text, created_at')
+    .select('id, sender_id, recipient_id, text, created_at, read_at')
     .or(threadFilter(myId, friendId))
     .order('created_at', { ascending: true });
 
@@ -26,7 +27,7 @@ export async function getThread(myId: string, friendId: string): Promise<DbMessa
 export async function getLastMessage(myId: string, friendId: string): Promise<DbMessage | null> {
   const { data } = await supabase
     .from('messages')
-    .select('id, sender_id, recipient_id, text, created_at')
+    .select('id, sender_id, recipient_id, text, created_at, read_at')
     .or(threadFilter(myId, friendId))
     .order('created_at', { ascending: false })
     .limit(1)
@@ -35,11 +36,34 @@ export async function getLastMessage(myId: string, friendId: string): Promise<Db
   return data ?? null;
 }
 
+export async function getUnreadCount(myId: string, friendId: string): Promise<number> {
+  const { count } = await supabase
+    .from('messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('sender_id', friendId)
+    .eq('recipient_id', myId)
+    .is('read_at', null);
+
+  return count ?? 0;
+}
+
+// Called when a friend's thread is opened — clears their unread badge by
+// marking every message they sent you (that isn't already read) as read,
+// and flips your own sent messages to double-check once they read theirs.
+export async function markThreadRead(myId: string, friendId: string): Promise<void> {
+  await supabase
+    .from('messages')
+    .update({ read_at: new Date().toISOString() })
+    .eq('sender_id', friendId)
+    .eq('recipient_id', myId)
+    .is('read_at', null);
+}
+
 export async function sendDirectMessage(myId: string, friendId: string, text: string): Promise<DbMessage | null> {
   const { data, error } = await supabase
     .from('messages')
     .insert({ sender_id: myId, recipient_id: friendId, text })
-    .select('id, sender_id, recipient_id, text, created_at')
+    .select('id, sender_id, recipient_id, text, created_at, read_at')
     .single();
 
   if (error) return null;

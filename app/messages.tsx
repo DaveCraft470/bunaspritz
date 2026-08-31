@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Keyboard,
@@ -15,12 +15,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { colors } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { Profile, getMutualFriends } from '@/lib/social';
-import { DbMessage, getLastMessage, getThread, sendDirectMessage, subscribeToIncoming } from '@/lib/messaging';
+import {
+  DbMessage,
+  getLastMessage,
+  getThread,
+  getUnreadCount,
+  markThreadRead,
+  sendDirectMessage,
+  subscribeToIncoming,
+} from '@/lib/messaging';
 
 // Chat list / message bubble design by nituraul8 — ported from App.tsx onto
 // its own Expo Router screen so it lives alongside the rest of the app.
@@ -34,40 +43,83 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' });
 }
 
-// Fakes a text-stroke (RN has no such style) by stacking black copies of the
-// label offset by 1px in every direction underneath the real, on-top copy.
-const OUTLINE_OFFSETS: Array<[number, number]> = [
-  [-1, -1], [0, -1], [1, -1],
-  [-1, 0], [1, 0],
-  [-1, 1], [0, 1], [1, 1],
-];
-
-function OutlinedGroupName({ children }: { children: string }) {
-  return (
-    <>
-      {OUTLINE_OFFSETS.map(([dx, dy], i) => (
-        <Text
-          key={i}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.6}
-          style={[styles.groupNameOverlay, styles.groupNameOutline, { transform: [{ translateX: dx }, { translateY: dy }] }]}
-        >
-          {children}
-        </Text>
-      ))}
-      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={styles.groupNameOverlay}>
-        {children}
-      </Text>
-    </>
-  );
+// The list row's timestamp: a time for anything from today, a date otherwise
+// — matches the reference design's mix of "18:41" vs "19/08/2026".
+function formatListTimestamp(iso: string) {
+  const date = new Date(iso);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' });
+  }
+  return date.toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 const chats = [
-  { id: 'brasov', title: 'Brașov azi', detail: '12 persoane active', emoji: '⛰️', color: '#25D960' },
-  { id: 'gasca', title: 'Gașca de sâmbătă', detail: 'Vlad: Ne vedem la 8?', emoji: '🍹', color: '#08B94C' },
-  { id: 'poiana', title: 'Poiana Brașov', detail: 'Ioana: Vin și eu!', emoji: '❄️', color: '#74EB99' },
+  { id: 'brasov', title: 'Brașov azi', detail: '12 persoane active', emoji: '⛰️', color: '#25D960', time: 'Azi' },
+  { id: 'gasca', title: 'Gașca de sâmbătă', detail: 'Vlad: Ne vedem la 8?', emoji: '🍹', color: '#08B94C', time: 'Azi' },
+  { id: 'poiana', title: 'Poiana Brașov', detail: 'Ioana: Vin și eu!', emoji: '❄️', color: '#74EB99', time: 'Azi' },
 ];
+
+// Shared chat-list row — same shape for the mock group chats and the real
+// friend DMs, matching the reference design: avatar, name + timestamp on
+// top, preview (with a read-receipt tick when it's your own last message)
+// and an unread badge on the bottom line.
+function ChatListRow({
+  avatarNode,
+  avatarColor,
+  name,
+  timestamp,
+  preview,
+  mine,
+  read,
+  unreadCount,
+  onPress,
+}: {
+  avatarNode: ReactNode;
+  avatarColor: string;
+  name: string;
+  timestamp: string | null;
+  preview: string;
+  mine: boolean;
+  read: boolean;
+  unreadCount: number;
+  onPress: () => void;
+}) {
+  const { colors: theme } = useAppTheme();
+  return (
+    <Pressable onPress={onPress} style={styles.chatRow}>
+      <View style={[styles.chatAvatar, { backgroundColor: avatarColor }]}>{avatarNode}</View>
+      <View style={styles.chatBody}>
+        <View style={styles.chatTopLine}>
+          <Text numberOfLines={1} style={[styles.chatName, { color: theme.textPrimary }]}>
+            {name}
+          </Text>
+          {timestamp && <Text style={[styles.chatTime, { color: theme.accent }]}>{timestamp}</Text>}
+        </View>
+        <View style={styles.chatBottomLine}>
+          <View style={styles.chatPreviewRow}>
+            {mine && (
+              <Ionicons
+                name={read ? 'checkmark-done' : 'checkmark'}
+                size={14}
+                color={read ? colors.green500 : theme.textSecondary}
+                style={styles.chatTick}
+              />
+            )}
+            <Text numberOfLines={1} style={[styles.chatPreview, { color: theme.textSecondary }]}>
+              {preview}
+            </Text>
+          </View>
+          {unreadCount > 0 && (
+            <View style={styles.unreadBadge}>
+              <Text style={styles.unreadBadgeText}>{unreadCount}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
 
 const starterMessages: DisplayMessage[] = [
   { id: '1', sender: 'Mara', text: 'Ce faceți diseară? ✨', time: '18:41', mine: false },
@@ -97,7 +149,8 @@ export default function Messages() {
   }, [friendId]);
   const [groupMessages, setGroupMessages] = useState<DisplayMessage[]>(starterMessages);
   const [friends, setFriends] = useState<Profile[]>([]);
-  const [friendPreviews, setFriendPreviews] = useState<Record<string, string>>({});
+  const [friendLast, setFriendLast] = useState<Record<string, DbMessage | null>>({});
+  const [friendUnread, setFriendUnread] = useState<Record<string, number>>({});
   const [friendMessages, setFriendMessages] = useState<DbMessage[]>([]);
   const [draft, setDraft] = useState('');
   const messagesScrollRef = useRef<ScrollView>(null);
@@ -107,26 +160,37 @@ export default function Messages() {
   const activeFriend = activeChat?.kind === 'friend' ? friends.find((f) => f.id === activeChat.id) : undefined;
   const selectedGroup = activeChat?.kind === 'group' ? chats.find((c) => c.id === activeChat.id) : undefined;
 
-  // Load your mutual friends + a one-line preview of your last message with
-  // each, for the "PRIETENI" section of the list screen.
+  // Load your mutual friends + their last message and unread count, for the
+  // "PRIETENI" section of the list screen.
   useEffect(() => {
     if (!user) return;
     getMutualFriends(user.id).then(async (list) => {
       setFriends(list);
-      const previews = await Promise.all(list.map((f) => getLastMessage(user.id, f.id)));
-      const map: Record<string, string> = {};
+      const [lastMessages, unreadCounts] = await Promise.all([
+        Promise.all(list.map((f) => getLastMessage(user.id, f.id))),
+        Promise.all(list.map((f) => getUnreadCount(user.id, f.id))),
+      ]);
+      const lastMap: Record<string, DbMessage | null> = {};
+      const unreadMap: Record<string, number> = {};
       list.forEach((f, i) => {
-        const last = previews[i];
-        map[f.id] = last ? (last.sender_id === user.id ? `Tu: ${last.text}` : last.text) : 'Trimite un mesaj';
+        lastMap[f.id] = lastMessages[i];
+        unreadMap[f.id] = unreadCounts[i];
       });
-      setFriendPreviews(map);
+      setFriendLast(lastMap);
+      setFriendUnread(unreadMap);
     });
   }, [user]);
 
-  // Load the full thread whenever a friend conversation is opened.
+  // Load the full thread whenever a friend conversation is opened, and clear
+  // their unread badge — mirrors the "opening a chat marks it read" behavior
+  // the rest of the list is showing via the read-receipt ticks.
   useEffect(() => {
     if (!user || activeChat?.kind !== 'friend') return;
-    getThread(user.id, activeChat.id).then(setFriendMessages);
+    const friendId = activeChat.id;
+    getThread(user.id, friendId).then(setFriendMessages);
+    markThreadRead(user.id, friendId).then(() => {
+      setFriendUnread((prev) => ({ ...prev, [friendId]: 0 }));
+    });
   }, [user, activeChat]);
 
   // Live-append messages that land while a friend thread is open. Subscribed
@@ -141,10 +205,14 @@ export default function Messages() {
     if (!user) return;
     return subscribeToIncoming(user.id, (message) => {
       const current = activeChatRef.current;
-      if (current?.kind === 'friend' && message.sender_id === current.id) {
+      const isOpenThread = current?.kind === 'friend' && message.sender_id === current.id;
+      if (isOpenThread) {
         setFriendMessages((prev) => [...prev, message]);
+        markThreadRead(user.id, message.sender_id);
+      } else {
+        setFriendUnread((prev) => ({ ...prev, [message.sender_id]: (prev[message.sender_id] ?? 0) + 1 }));
       }
-      setFriendPreviews((prev) => ({ ...prev, [message.sender_id]: message.text }));
+      setFriendLast((prev) => ({ ...prev, [message.sender_id]: message }));
     });
   }, [user]);
 
@@ -224,7 +292,7 @@ export default function Messages() {
     const sent = await sendDirectMessage(user.id, activeChat.id, text);
     if (sent) {
       setFriendMessages((current) => [...current, sent]);
-      setFriendPreviews((current) => ({ ...current, [activeChat.id]: `Tu: ${text}` }));
+      setFriendLast((current) => ({ ...current, [activeChat.id]: sent }));
     }
   }
 
@@ -248,56 +316,56 @@ export default function Messages() {
               contentContainerStyle={{ paddingBottom: insets.bottom + 116 }}
               showsVerticalScrollIndicator={false}
             >
-              <View style={styles.groupGrid}>
+              <View style={styles.listSection}>
                 {chats.map((chat) => (
-                  <Pressable
+                  <ChatListRow
                     key={chat.id}
+                    avatarNode={<Text style={styles.avatarEmoji}>{chat.emoji}</Text>}
+                    avatarColor={chat.color}
+                    name={chat.title}
+                    timestamp={chat.time}
+                    preview={chat.detail}
+                    mine={false}
+                    read={false}
+                    unreadCount={0}
                     onPress={() => {
                       light();
                       setHidden(true);
                       setActiveChat({ kind: 'group', id: chat.id });
                     }}
-                    style={[styles.groupCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                  >
-                    <View style={[styles.groupPhoto, { backgroundColor: chat.color }]}>
-                      <Text style={styles.groupEmoji}>{chat.emoji}</Text>
-                      <OutlinedGroupName>{chat.title.toUpperCase()}</OutlinedGroupName>
-                    </View>
-                    <Text numberOfLines={1} style={[styles.groupDetail, { color: theme.textSecondary }]}>
-                      {chat.detail}
-                    </Text>
-                  </Pressable>
+                  />
                 ))}
               </View>
 
               {friends.length > 0 && (
                 <View style={styles.friendsSection}>
                   <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>PRIETENI</Text>
-                  {friends.map((friend) => (
-                    <Pressable
-                      key={friend.id}
-                      onPress={() => {
-                        light();
-                        setHidden(true);
-                        setActiveChat({ kind: 'friend', id: friend.id });
-                      }}
-                      style={[styles.friendRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                    >
-                      <View style={[styles.friendAvatar, { backgroundColor: theme.surfaceMuted }]}>
-                        <Text style={[styles.friendAvatarLetter, { color: theme.textPrimary }]}>
-                          {friend.name.trim().charAt(0).toUpperCase() || '?'}
-                        </Text>
-                      </View>
-                      <View style={styles.friendText}>
-                        <Text style={[styles.friendName, { color: theme.textPrimary }]} numberOfLines={1}>
-                          {friend.name}
-                        </Text>
-                        <Text style={[styles.friendPreview, { color: theme.textSecondary }]} numberOfLines={1}>
-                          {friendPreviews[friend.id] ?? 'Trimite un mesaj'}
-                        </Text>
-                      </View>
-                    </Pressable>
-                  ))}
+                  {friends.map((friend) => {
+                    const last = friendLast[friend.id];
+                    const mine = !!last && !!user && last.sender_id === user.id;
+                    return (
+                      <ChatListRow
+                        key={friend.id}
+                        avatarNode={
+                          <Text style={[styles.friendAvatarLetter, { color: theme.textPrimary }]}>
+                            {friend.name.trim().charAt(0).toUpperCase() || '?'}
+                          </Text>
+                        }
+                        avatarColor={theme.surfaceMuted}
+                        name={friend.name}
+                        timestamp={last ? formatListTimestamp(last.created_at) : null}
+                        preview={last ? last.text : 'Trimite un mesaj'}
+                        mine={mine}
+                        read={mine && !!last?.read_at}
+                        unreadCount={friendUnread[friend.id] ?? 0}
+                        onPress={() => {
+                          light();
+                          setHidden(true);
+                          setActiveChat({ kind: 'friend', id: friend.id });
+                        }}
+                      />
+                    );
+                  })}
                 </View>
               )}
             </ScrollView>
@@ -408,45 +476,36 @@ const styles = StyleSheet.create({
   title: { fontSize: 34, fontWeight: '800', letterSpacing: -1 },
   roundButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#12C854', alignItems: 'center', justifyContent: 'center' },
   roundButtonText: { color: '#FFFFFF', fontSize: 28, fontWeight: '300', marginTop: -2 },
-  groupGrid: {
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 14,
-  },
-  groupCard: { width: '47%', borderRadius: 18, overflow: 'hidden', borderWidth: 1, padding: 10 },
-  groupPhoto: { aspectRatio: 1.3, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  groupEmoji: { fontSize: 34 },
-  groupNameOverlay: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    right: 8,
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 0.4,
-    color: '#FFFFFF',
-  },
-  groupNameOutline: { color: '#000000' },
-  groupDetail: { fontSize: 11, marginTop: 9 },
-  friendsSection: { paddingHorizontal: 18, paddingTop: 26 },
-  sectionLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginBottom: 10 },
-  friendRow: {
+  listSection: { paddingHorizontal: 18, paddingTop: 10 },
+  friendsSection: { paddingHorizontal: 18, paddingTop: 22 },
+  sectionLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginBottom: 6 },
+  chatRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 10,
-    marginBottom: 10,
+    paddingVertical: 10,
   },
-  friendAvatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  chatAvatar: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  avatarEmoji: { fontSize: 22 },
   friendAvatarLetter: { fontSize: 18, fontWeight: '800' },
-  friendText: { flex: 1 },
-  friendName: { fontSize: 14, fontWeight: '700' },
-  friendPreview: { fontSize: 11, marginTop: 2 },
+  chatBody: { flex: 1 },
+  chatTopLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  chatName: { fontSize: 15, fontWeight: '700', flexShrink: 1, marginRight: 8 },
+  chatTime: { fontSize: 11, fontWeight: '700' },
+  chatBottomLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 },
+  chatPreviewRow: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },
+  chatTick: { marginRight: 3 },
+  chatPreview: { fontSize: 13, flexShrink: 1 },
+  unreadBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    backgroundColor: colors.green500,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unreadBadgeText: { color: colors.white, fontSize: 11, fontWeight: '800' },
   avatar: { width: 38, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   emoji: { fontSize: 18 },
   chatHeader: { marginHorizontal: 22, marginTop: 14, paddingVertical: 14, borderTopWidth: 1, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
