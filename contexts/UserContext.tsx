@@ -1,8 +1,7 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { supabase } from '@/lib/supabase';
 import {
-  AUTH_KEY,
   PublicUser,
   completeSignup,
   devSkipAuth,
@@ -20,7 +19,7 @@ type UserContextValue = {
   authenticated: boolean;
   user: PublicUser | null;
   signUp: (name: string, username: string, email: string, password: string) => Promise<AuthResult>;
-  logIn: (email: string, password: string) => Promise<AuthResult>;
+  logIn: (email: string, password: string) => Promise<AuthResult & { verified?: boolean }>;
   completeVerification: () => Promise<void>;
   signOut: () => Promise<void>;
   devSkip: () => Promise<void>;
@@ -34,15 +33,22 @@ export function UserProvider({ children }: PropsWithChildren) {
   const [authenticated, setAuthenticated] = useState(false);
   const [user, setUser] = useState<PublicUser | null>(null);
 
+  // authenticated = has a session AND has completed the post-signup
+  // face-photo step — a session alone isn't enough (see contexts/auth.ts).
   async function refresh() {
-    const value = await AsyncStorage.getItem(AUTH_KEY);
-    const isAuthenticated = value === 'true';
-    setAuthenticated(isAuthenticated);
-    setUser(isAuthenticated ? await getCurrentUser() : null);
+    const profile = await getCurrentUser();
+    setUser(profile);
+    setAuthenticated(profile?.verified ?? false);
   }
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
+
+    const { data: subscription } = supabase.auth.onAuthStateChange(() => {
+      refresh();
+    });
+
+    return () => subscription.subscription.unsubscribe();
   }, []);
 
   const value = useMemo<UserContextValue>(
@@ -61,12 +67,13 @@ export function UserProvider({ children }: PropsWithChildren) {
         const result = await logInUser(email, password);
         if (result.ok) {
           setUser(await getCurrentUser());
-          setAuthenticated(true);
+          setAuthenticated(result.verified);
         }
         return result;
       },
       async completeVerification() {
         await completeSignup();
+        setUser(await getCurrentUser());
         setAuthenticated(true);
       },
       async signOut() {

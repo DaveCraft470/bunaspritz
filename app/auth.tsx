@@ -100,7 +100,7 @@ export default function Auth() {
       return;
     }
 
-    router.replace('/');
+    router.replace(result.verified ? '/' : '/verification');
   };
 
   const handleDevSkip = async () => {
