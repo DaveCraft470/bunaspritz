@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Keyboard,
@@ -12,16 +12,27 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useUser } from '@/contexts/UserContext';
+import { Profile, getMutualFriends } from '@/lib/social';
+import { DbMessage, getLastMessage, getThread, sendDirectMessage, subscribeToIncoming } from '@/lib/messaging';
 
 // Chat list / message bubble design by nituraul8 — ported from App.tsx onto
 // its own Expo Router screen so it lives alongside the rest of the app.
+// The 3 group chats below stay mock/decorative; real 1:1 friend DMs are a
+// separate, backend-backed capability added alongside them.
 
-type Message = { id: string; text: string; time: string; sender?: string; mine?: boolean };
+type DisplayMessage = { id: string; text: string; time: string; sender: string; mine: boolean };
+type ActiveChat = { kind: 'group'; id: string } | { kind: 'friend'; id: string };
+
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' });
+}
 
 // Fakes a text-stroke (RN has no such style) by stacking black copies of the
 // label offset by 1px in every direction underneath the real, on-top copy.
@@ -58,11 +69,11 @@ const chats = [
   { id: 'poiana', title: 'Poiana Brașov', detail: 'Ioana: Vin și eu!', emoji: '❄️', color: '#74EB99' },
 ];
 
-const starterMessages: Message[] = [
-  { id: '1', sender: 'Mara', text: 'Ce faceți diseară? ✨', time: '18:41' },
-  { id: '2', sender: 'Vlad', text: 'Mergem la un spriț în centru?', time: '18:42' },
+const starterMessages: DisplayMessage[] = [
+  { id: '1', sender: 'Mara', text: 'Ce faceți diseară? ✨', time: '18:41', mine: false },
+  { id: '2', sender: 'Vlad', text: 'Mergem la un spriț în centru?', time: '18:42', mine: false },
   { id: '3', sender: 'Tu', text: 'Eu sunt pentru! Unde ne vedem?', time: '18:43', mine: true },
-  { id: '4', sender: 'Ioana', text: 'La Republicii, pe la 20:00?', time: '18:44' },
+  { id: '4', sender: 'Ioana', text: 'La Republicii, pe la 20:00?', time: '18:44', mine: false },
 ];
 
 export default function Messages() {
@@ -70,14 +81,78 @@ export default function Messages() {
   const { colors: theme } = useAppTheme();
   const { setHidden } = useNavVisibility();
   const { light } = useHaptics();
-  // null = showing the group list; a chat only opens once the user taps it.
-  const [activeChat, setActiveChat] = useState<string | null>(null);
-  const [messages, setMessages] = useState(starterMessages);
+  const { user } = useUser();
+  const { friendId } = useLocalSearchParams<{ friendId?: string }>();
+
+  // null = showing the list; a chat only opens once the user taps it, or
+  // this screen was opened directly on a friend's thread (?friendId=...).
+  const [activeChat, setActiveChat] = useState<ActiveChat | null>(friendId ? { kind: 'friend', id: friendId } : null);
+
+  useEffect(() => {
+    if (friendId) {
+      setActiveChat({ kind: 'friend', id: friendId });
+      setHidden(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [friendId]);
+  const [groupMessages, setGroupMessages] = useState<DisplayMessage[]>(starterMessages);
+  const [friends, setFriends] = useState<Profile[]>([]);
+  const [friendPreviews, setFriendPreviews] = useState<Record<string, string>>({});
+  const [friendMessages, setFriendMessages] = useState<DbMessage[]>([]);
   const [draft, setDraft] = useState('');
-  const selectedChat = activeChat ? chats.find((chat) => chat.id === activeChat) : undefined;
   const messagesScrollRef = useRef<ScrollView>(null);
   const restingComposerOffset = insets.bottom + 16;
   const composerOffset = useRef(new Animated.Value(restingComposerOffset)).current;
+
+  const activeFriend = activeChat?.kind === 'friend' ? friends.find((f) => f.id === activeChat.id) : undefined;
+  const selectedGroup = activeChat?.kind === 'group' ? chats.find((c) => c.id === activeChat.id) : undefined;
+
+  // Load your mutual friends + a one-line preview of your last message with
+  // each, for the "PRIETENI" section of the list screen.
+  useEffect(() => {
+    if (!user) return;
+    getMutualFriends(user.id).then(async (list) => {
+      setFriends(list);
+      const previews = await Promise.all(list.map((f) => getLastMessage(user.id, f.id)));
+      const map: Record<string, string> = {};
+      list.forEach((f, i) => {
+        const last = previews[i];
+        map[f.id] = last ? (last.sender_id === user.id ? `Tu: ${last.text}` : last.text) : 'Trimite un mesaj';
+      });
+      setFriendPreviews(map);
+    });
+  }, [user]);
+
+  // Load the full thread whenever a friend conversation is opened.
+  useEffect(() => {
+    if (!user || activeChat?.kind !== 'friend') return;
+    getThread(user.id, activeChat.id).then(setFriendMessages);
+  }, [user, activeChat]);
+
+  // Live-append messages that land while a friend thread is open.
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToIncoming(user.id, (message) => {
+      if (activeChat?.kind === 'friend' && message.sender_id === activeChat.id) {
+        setFriendMessages((current) => [...current, message]);
+      }
+      setFriendPreviews((current) => ({ ...current, [message.sender_id]: message.text }));
+    });
+  }, [user, activeChat]);
+
+  const displayedMessages: DisplayMessage[] = useMemo(() => {
+    if (activeChat?.kind === 'group') return groupMessages;
+    if (activeChat?.kind === 'friend' && user) {
+      return friendMessages.map((m) => ({
+        id: m.id,
+        text: m.text,
+        time: formatTime(m.created_at),
+        sender: m.sender_id === user.id ? 'Tu' : activeFriend?.name ?? '',
+        mine: m.sender_id === user.id,
+      }));
+    }
+    return [];
+  }, [activeChat, groupMessages, friendMessages, user, activeFriend]);
 
   // Track the keyboard ourselves instead of KeyboardAvoidingView — it kept
   // over-shooting (resize windowSoftInputMode plus its own height-shrinking
@@ -121,28 +196,39 @@ export default function Messages() {
   // or a chat is first opened, instead of leaving the user scrolled wherever
   // they were.
   useEffect(() => {
-    if (!selectedChat) return;
+    if (!activeChat) return;
     const timer = setTimeout(() => messagesScrollRef.current?.scrollToEnd({ animated: true }), 50);
     return () => clearTimeout(timer);
-  }, [selectedChat, messages]);
+  }, [activeChat, displayedMessages]);
 
-  function sendMessage() {
+  async function sendMessage() {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || !activeChat) return;
     light();
-    setMessages((current) => [...current, { id: String(Date.now()), sender: 'Tu', text, time: 'Acum', mine: true }]);
     setDraft('');
+
+    if (activeChat.kind === 'group') {
+      setGroupMessages((current) => [...current, { id: String(Date.now()), sender: 'Tu', text, time: 'Acum', mine: true }]);
+      return;
+    }
+
+    if (!user) return;
+    const sent = await sendDirectMessage(user.id, activeChat.id, text);
+    if (sent) {
+      setFriendMessages((current) => [...current, sent]);
+      setFriendPreviews((current) => ({ ...current, [activeChat.id]: `Tu: ${text}` }));
+    }
   }
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
       <StatusBar style={theme.statusBar} />
       <View style={[styles.page, { backgroundColor: theme.page }]}>
-        {!selectedChat ? (
+        {!activeChat ? (
           <>
             <View style={styles.topBar}>
               <View>
-                <Text style={[styles.eyebrow, { color: theme.accent }]}>BUNĂ ANDREI, SPRITZ?</Text>
+                <Text style={[styles.eyebrow, { color: theme.accent }]}>BUNĂ {(user?.name || '').toUpperCase()}, SPRITZ?</Text>
                 <Text style={[styles.title, { color: theme.textPrimary }]}>Mesaje</Text>
               </View>
               <Pressable style={styles.roundButton}>
@@ -151,28 +237,61 @@ export default function Messages() {
             </View>
 
             <ScrollView
-              contentContainerStyle={[styles.groupGrid, { paddingBottom: insets.bottom + 116 }]}
+              contentContainerStyle={{ paddingBottom: insets.bottom + 116 }}
               showsVerticalScrollIndicator={false}
             >
-              {chats.map((chat) => (
-                <Pressable
-                  key={chat.id}
-                  onPress={() => {
-                    light();
-                    setHidden(true);
-                    setActiveChat(chat.id);
-                  }}
-                  style={[styles.groupCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                >
-                  <View style={[styles.groupPhoto, { backgroundColor: chat.color }]}>
-                    <Text style={styles.groupEmoji}>{chat.emoji}</Text>
-                    <OutlinedGroupName>{chat.title.toUpperCase()}</OutlinedGroupName>
-                  </View>
-                  <Text numberOfLines={1} style={[styles.groupDetail, { color: theme.textSecondary }]}>
-                    {chat.detail}
-                  </Text>
-                </Pressable>
-              ))}
+              <View style={styles.groupGrid}>
+                {chats.map((chat) => (
+                  <Pressable
+                    key={chat.id}
+                    onPress={() => {
+                      light();
+                      setHidden(true);
+                      setActiveChat({ kind: 'group', id: chat.id });
+                    }}
+                    style={[styles.groupCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                  >
+                    <View style={[styles.groupPhoto, { backgroundColor: chat.color }]}>
+                      <Text style={styles.groupEmoji}>{chat.emoji}</Text>
+                      <OutlinedGroupName>{chat.title.toUpperCase()}</OutlinedGroupName>
+                    </View>
+                    <Text numberOfLines={1} style={[styles.groupDetail, { color: theme.textSecondary }]}>
+                      {chat.detail}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {friends.length > 0 && (
+                <View style={styles.friendsSection}>
+                  <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>PRIETENI</Text>
+                  {friends.map((friend) => (
+                    <Pressable
+                      key={friend.id}
+                      onPress={() => {
+                        light();
+                        setHidden(true);
+                        setActiveChat({ kind: 'friend', id: friend.id });
+                      }}
+                      style={[styles.friendRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                    >
+                      <View style={[styles.friendAvatar, { backgroundColor: theme.surfaceMuted }]}>
+                        <Text style={[styles.friendAvatarLetter, { color: theme.textPrimary }]}>
+                          {friend.name.trim().charAt(0).toUpperCase() || '?'}
+                        </Text>
+                      </View>
+                      <View style={styles.friendText}>
+                        <Text style={[styles.friendName, { color: theme.textPrimary }]} numberOfLines={1}>
+                          {friend.name}
+                        </Text>
+                        <Text style={[styles.friendPreview, { color: theme.textSecondary }]} numberOfLines={1}>
+                          {friendPreviews[friend.id] ?? 'Trimite un mesaj'}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
             </ScrollView>
           </>
         ) : (
@@ -184,16 +303,20 @@ export default function Messages() {
                   setActiveChat(null);
                 }}
                 hitSlop={10}
-                accessibilityLabel="Înapoi la grupuri"
+                accessibilityLabel="Înapoi la mesaje"
               >
                 <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
               </Pressable>
-              <View style={[styles.avatar, { backgroundColor: selectedChat.color }]}>
-                <Text style={styles.emoji}>{selectedChat.emoji}</Text>
+              <View style={[styles.avatar, { backgroundColor: selectedGroup?.color ?? theme.surfaceMuted }]}>
+                <Text style={selectedGroup ? styles.emoji : [styles.friendAvatarLetter, { color: theme.textPrimary }]}>
+                  {selectedGroup ? selectedGroup.emoji : activeFriend?.name.trim().charAt(0).toUpperCase() ?? '?'}
+                </Text>
               </View>
               <View>
-                <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>{selectedChat.title}</Text>
-                <Text style={[styles.online, { color: theme.accent }]}>● activi acum în Brașov</Text>
+                <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
+                  {selectedGroup ? selectedGroup.title : activeFriend?.name}
+                </Text>
+                {selectedGroup && <Text style={[styles.online, { color: theme.accent }]}>● activi acum în Brașov</Text>}
               </View>
               <Text style={[styles.more, { color: theme.textSecondary }]}>•••</Text>
             </View>
@@ -204,8 +327,8 @@ export default function Messages() {
               contentContainerStyle={styles.messagesContent}
               onContentSizeChange={() => messagesScrollRef.current?.scrollToEnd({ animated: true })}
             >
-              <Text style={[styles.today, { color: theme.textSecondary }]}>ASTĂZI</Text>
-              {messages.map((message) => (
+              {selectedGroup && <Text style={[styles.today, { color: theme.textSecondary }]}>ASTĂZI</Text>}
+              {displayedMessages.map((message) => (
                 <View key={message.id} style={[styles.messageRow, message.mine && styles.messageRowMine]}>
                   {!message.mine && <View style={styles.dot} />}
                   <View
@@ -214,9 +337,11 @@ export default function Messages() {
                       message.mine ? styles.mine : [styles.other, { backgroundColor: theme.surfaceMuted }],
                     ]}
                   >
-                    <Text style={[styles.sender, message.mine ? styles.senderMine : { color: theme.accent }]}>
-                      {message.sender}
-                    </Text>
+                    {selectedGroup && (
+                      <Text style={[styles.sender, message.mine ? styles.senderMine : { color: theme.accent }]}>
+                        {message.sender}
+                      </Text>
+                    )}
                     <Text
                       style={[
                         styles.messageText,
@@ -298,6 +423,22 @@ const styles = StyleSheet.create({
   },
   groupNameOutline: { color: '#000000' },
   groupDetail: { fontSize: 11, marginTop: 9 },
+  friendsSection: { paddingHorizontal: 18, paddingTop: 26 },
+  sectionLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginBottom: 10 },
+  friendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 10,
+    marginBottom: 10,
+  },
+  friendAvatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  friendAvatarLetter: { fontSize: 18, fontWeight: '800' },
+  friendText: { flex: 1 },
+  friendName: { fontSize: 14, fontWeight: '700' },
+  friendPreview: { fontSize: 11, marginTop: 2 },
   avatar: { width: 38, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   emoji: { fontSize: 18 },
   chatHeader: { marginHorizontal: 22, marginTop: 14, paddingVertical: 14, borderTopWidth: 1, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },

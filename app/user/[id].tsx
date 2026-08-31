@@ -131,7 +131,7 @@ export default function PublicProfile() {
           </AnimatedPressable>
 
           <AnimatedPressable
-            onPress={() => status.mutual && router.push(`/messages/${id}`)}
+            onPress={() => status.mutual && router.push({ pathname: '/messages', params: { friendId: id } })}
             disabled={!status.mutual}
             style={[
               styles.actionButton,
