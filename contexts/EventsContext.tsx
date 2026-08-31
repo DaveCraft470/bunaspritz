@@ -1,6 +1,7 @@
-import { createContext, PropsWithChildren, useContext, useMemo, useState } from 'react';
+import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
 
-import { SPRITZ_EVENTS, type SpritzEvent } from '@/constants/events';
+import { SpritzEvent } from '@/constants/events';
+import { fetchEvents, subscribeToNewEvents } from '@/lib/events';
 
 type EventsContextValue = {
   events: SpritzEvent[];
@@ -10,7 +11,16 @@ type EventsContextValue = {
 const EventsContext = createContext<EventsContextValue | null>(null);
 
 export function EventsProvider({ children }: PropsWithChildren) {
-  const [events, setEvents] = useState<SpritzEvent[]>(SPRITZ_EVENTS);
+  const [events, setEvents] = useState<SpritzEvent[]>([]);
+
+  function appendIfNew(event: SpritzEvent) {
+    setEvents((current) => (current.some((e) => e.id === event.id) ? current : [...current, event]));
+  }
+
+  useEffect(() => {
+    fetchEvents().then(setEvents);
+    return subscribeToNewEvents(appendIfNew);
+  }, []);
 
   const value = useMemo<EventsContextValue>(
     () => ({
@@ -18,7 +28,7 @@ export function EventsProvider({ children }: PropsWithChildren) {
       // New events are appended, never inserted/reordered — MapboxMap relies
       // on the list only ever growing at the end to add just the new pin
       // instead of reloading the whole map.
-      addEvent: (event) => setEvents((current) => [...current, event]),
+      addEvent: appendIfNew,
     }),
     [events]
   );

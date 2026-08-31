@@ -11,7 +11,10 @@ import { colors, shadows } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useUser } from '@/contexts/UserContext';
 import { useEvents } from '@/contexts/EventsContext';
+import { EventAttendee, fetchAttendees, hasJoined, joinEvent } from '@/lib/events';
+import { getProfile } from '@/lib/social';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { CelebrationOverlay } from '@/components/event/CelebrationOverlay';
 
@@ -25,7 +28,35 @@ export default function EventDetail() {
   const { scheme, colors: theme } = useAppTheme();
   const { setHidden } = useNavVisibility();
   const { light, medium } = useHaptics();
+  const { user } = useUser();
   const [celebrating, setCelebrating] = useState(false);
+  const [attendees, setAttendees] = useState<EventAttendee[]>([]);
+  const [hostName, setHostName] = useState<string | null>(null);
+  const [joined, setJoined] = useState(false);
+  const [joining, setJoining] = useState(false);
+
+  useEffect(() => {
+    if (!event || !user) return;
+    fetchAttendees(event.id).then(setAttendees);
+    hasJoined(event.id, user.id).then(setJoined);
+    getProfile(event.hostId).then((host) => setHostName(host?.name ?? null));
+  }, [event, user]);
+
+  async function handleJoin() {
+    if (!event || !user) return;
+    medium();
+    setCelebrating(true);
+
+    if (!joined) {
+      setJoining(true);
+      const ok = await joinEvent(event.id, user.id);
+      setJoining(false);
+      if (ok) {
+        setJoined(true);
+        fetchAttendees(event.id).then(setAttendees);
+      }
+    }
+  }
 
   // Grows in from wherever the pin was tapped on the map, instead of a plain
   // slide — the origin point comes from the map's own pixel projection of the
@@ -70,7 +101,6 @@ export default function EventDetail() {
   }
 
   const mapUrl = buildApproxStaticMapUrl(event.lng, event.lat, scheme);
-  const extraAttendees = Math.max(0, event.attendeeCount - event.attendees.length);
 
   return (
     <View style={styles.root}>
@@ -106,6 +136,9 @@ export default function EventDetail() {
           </View>
           <Text style={[styles.title, { color: theme.textPrimary }]}>{event.title}</Text>
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{event.detail}</Text>
+          {hostName && (
+            <Text style={[styles.hostLine, { color: theme.textSecondary }]}>Găzduit de {hostName}</Text>
+          )}
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>LOCAȚIE APROXIMATIVĂ</Text>
@@ -120,26 +153,20 @@ export default function EventDetail() {
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>CINE VINE</Text>
-            <Text style={[styles.attendeeCount, { color: theme.textPrimary }]}>{event.attendeeCount} persoane</Text>
+            <Text style={[styles.attendeeCount, { color: theme.textPrimary }]}>{attendees.length} persoane</Text>
             <View style={styles.attendeeRow}>
-              {event.attendees.map((attendee) => (
-                <View key={attendee.name} style={styles.attendeeItem}>
+              {attendees.map((attendee) => (
+                <View key={attendee.userId} style={styles.attendeeItem}>
                   <View style={[styles.attendeeAvatar, { backgroundColor: theme.surfaceMuted }]}>
-                    <Text style={styles.attendeeEmoji}>{attendee.emoji}</Text>
+                    <Text style={[styles.attendeeLetter, { color: theme.textPrimary }]}>
+                      {attendee.name.trim().charAt(0).toUpperCase() || '?'}
+                    </Text>
                   </View>
                   <Text numberOfLines={1} style={[styles.attendeeName, { color: theme.textSecondary }]}>
                     {attendee.name}
                   </Text>
                 </View>
               ))}
-              {extraAttendees > 0 ? (
-                <View style={styles.attendeeItem}>
-                  <View style={[styles.attendeeAvatar, { backgroundColor: theme.surfaceMuted }]}>
-                    <Text style={[styles.attendeeMore, { color: theme.accent }]}>+{extraAttendees}</Text>
-                  </View>
-                  <Text style={[styles.attendeeName, { color: theme.textSecondary }]}>alții</Text>
-                </View>
-              ) : null}
             </View>
           </View>
 
@@ -169,14 +196,8 @@ export default function EventDetail() {
         </ScrollView>
 
         <View style={[styles.ctaWrap, { paddingBottom: insets.bottom + 20 }]}>
-          <AnimatedPressable
-            onPress={() => {
-              medium();
-              setCelebrating(true);
-            }}
-            style={[styles.ctaButton, shadows.glowGreen]}
-          >
-            <Text style={styles.ctaText}>Hai la Spritz! 🍻</Text>
+          <AnimatedPressable onPress={handleJoin} style={[styles.ctaButton, shadows.glowGreen]}>
+            <Text style={styles.ctaText}>{joined ? 'Ești în listă ✓' : joining ? 'Se confirmă...' : 'Hai la Spritz! 🍻'}</Text>
           </AnimatedPressable>
         </View>
       </SafeAreaView>
@@ -225,6 +246,7 @@ const styles = StyleSheet.create({
   heroEmoji: { fontSize: 42 },
   title: { fontSize: 24, fontWeight: '800', textAlign: 'center', letterSpacing: -0.4 },
   subtitle: { fontSize: 13, textAlign: 'center', marginBottom: 4 },
+  hostLine: { fontSize: 11, textAlign: 'center', marginBottom: 4, fontStyle: 'italic' },
   card: { borderRadius: 18, borderWidth: 1, padding: 14, gap: 8 },
   cardLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1 },
   mapWrap: { borderRadius: 14, overflow: 'hidden', height: 150 },
@@ -253,8 +275,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  attendeeEmoji: { fontSize: 20 },
-  attendeeMore: { fontSize: 13, fontWeight: '800' },
+  attendeeLetter: { fontSize: 16, fontWeight: '800' },
   attendeeName: { fontSize: 10, marginTop: 4 },
   genre: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
   songRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },

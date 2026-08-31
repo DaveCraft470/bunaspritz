@@ -10,6 +10,8 @@ import { MAPBOX_INITIAL_VIEW } from '@/constants/mapbox';
 import { useEvents } from '@/contexts/EventsContext';
 import { useDevFlags } from '@/contexts/DevFlagsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useUser } from '@/contexts/UserContext';
+import { createEvent } from '@/lib/events';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
@@ -18,23 +20,13 @@ import { GlassSurface } from '@/components/common/GlassSurface';
 const EMOJI_CHOICES = ['🎉', '🍻', '🎷', '🎸', '🌮', '🎲', '🥾', '🧺', '⛰️', '🍹'];
 const COLOR_CHOICES = ['#FF9F5A', '#5FD98A', '#5AA9E6', '#FFD25A', '#FF6B81', '#B388FF', '#4ED9C9'];
 
-const COMBINING_DIACRITICS = new RegExp('[\\u0300-\\u036f]', 'g');
-
-function slugify(title: string) {
-  const base = title
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(COMBINING_DIACRITICS, '') // ă, â, ș, ț, î -> a, a, s, t, i
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
-  return `${base || 'eveniment'}-${Date.now().toString(36).slice(-5)}`;
-}
-
 export default function NewEvent() {
   const { colors: theme } = useAppTheme();
   const { hostVerified } = useDevFlags();
   const { addEvent } = useEvents();
+  const { user } = useUser();
   const { light, medium } = useHaptics();
+  const [publishing, setPublishing] = useState(false);
 
   const [title, setTitle] = useState('');
   const [detail, setDetail] = useState('');
@@ -61,31 +53,37 @@ export default function NewEvent() {
     })();
   }, []);
 
-  function handlePublish() {
+  async function handlePublish() {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
       Alert.alert('Mai e nevoie de un nume', 'Dă-i evenimentului un titlu înainte să-l publici.');
       return;
     }
+    if (!user || publishing) return;
+
     const finalCoords = coords ?? { lng: MAPBOX_INITIAL_VIEW.center[0], lat: MAPBOX_INITIAL_VIEW.center[1] };
     const color = COLOR_CHOICES[Math.floor(Math.random() * COLOR_CHOICES.length)];
-    const id = slugify(trimmedTitle);
 
-    medium();
-    addEvent({
-      id,
+    setPublishing(true);
+    const created = await createEvent(user.id, {
       title: trimmedTitle,
       detail: detail.trim() || 'Detalii în curând',
       emoji,
       color,
       lng: finalCoords.lng,
       lat: finalCoords.lat,
-      attendeeCount: 1,
-      attendees: [{ name: 'Tu', emoji: '🧑' }],
       genre: genre.trim() || 'Surpriză',
     });
+    setPublishing(false);
 
-    router.replace({ pathname: '/event/[id]', params: { id } });
+    if (!created) {
+      Alert.alert('A apărut o eroare', 'Nu am putut publica evenimentul. Încearcă din nou.');
+      return;
+    }
+
+    medium();
+    addEvent(created);
+    router.replace({ pathname: '/event/[id]', params: { id: created.id } });
   }
 
   return (
@@ -163,8 +161,11 @@ export default function NewEvent() {
             : 'Evenimentul va apărea pe hartă în centrul Brașovului (nu ți-am găsit locația).'}
         </Text>
 
-        <AnimatedPressable onPress={handlePublish} style={[styles.publishButton, shadows.glowGreen]}>
-          <Text style={styles.publishText}>Publică evenimentul</Text>
+        <AnimatedPressable
+          onPress={handlePublish}
+          style={[styles.publishButton, shadows.glowGreen, publishing && styles.publishButtonDisabled]}
+        >
+          <Text style={styles.publishText}>{publishing ? 'Se publică...' : 'Publică evenimentul'}</Text>
         </AnimatedPressable>
       </ScrollView>
     </SafeAreaView>
@@ -219,5 +220,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  publishButtonDisabled: { opacity: 0.7 },
   publishText: { color: colors.white, fontSize: 17, fontWeight: '900' },
 });
