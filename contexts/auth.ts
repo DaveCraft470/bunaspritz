@@ -10,6 +10,7 @@ export type PublicUser = {
   email: string;
   bio: string;
   verified: boolean;
+  notifyFriendsOnJoin: boolean;
 };
 
 type AuthResult = { ok: true } | { ok: false; error: string };
@@ -25,12 +26,20 @@ function mapAuthError(message: string): string {
 async function fetchProfile(userId: string, email: string): Promise<PublicUser | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, username, bio, verified')
+    .select('id, name, username, bio, verified, notify_friends_on_join')
     .eq('id', userId)
     .single();
 
   if (error || !data) return null;
-  return { ...data, email };
+  return {
+    id: data.id,
+    name: data.name,
+    username: data.username,
+    bio: data.bio,
+    verified: data.verified,
+    notifyFriendsOnJoin: data.notify_friends_on_join,
+    email,
+  };
 }
 
 export async function getCurrentUser(): Promise<PublicUser | null> {
@@ -139,6 +148,13 @@ export async function updateCurrentUser(
     return { ok: false, error: error.message };
   }
   return { ok: true };
+}
+
+// The "don't notify friends when I join a Spritz" global toggle from Settings.
+export async function setNotifyFriendsOnJoin(value: boolean): Promise<void> {
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return;
+  await supabase.from('profiles').update({ notify_friends_on_join: value }).eq('id', data.user.id);
 }
 
 // Bypass for the login screen, for the current pre-release phase only —

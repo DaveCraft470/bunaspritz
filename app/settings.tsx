@@ -19,12 +19,17 @@ export default function Settings() {
   const { scheme, colors: theme, toggleScheme } = useAppTheme();
   const { enabled: hapticsEnabled, setEnabled: setHapticsEnabled, light } = useHaptics();
   const { hostVerified } = useDevFlags();
-  const { signOut } = useUser();
+  const { user, signOut, setNotifyFriendsOnJoin } = useUser();
 
   async function handleSignOut() {
     light();
     await signOut();
     router.replace('/auth');
+  }
+
+  function handleToggleNotifyOnJoin(value: boolean) {
+    light();
+    setNotifyFriendsOnJoin(value);
   }
 
   function handleToggleTheme(value: boolean) {
@@ -89,6 +94,23 @@ export default function Settings() {
           <Switch
             value={hapticsEnabled}
             onValueChange={handleToggleHaptics}
+            trackColor={{ false: theme.surfaceMuted, true: colors.green500 }}
+            thumbColor={colors.white}
+          />
+        </View>
+      </View>
+
+      <View style={[styles.card, styles.cardSpaced, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Notifică prietenii când intru la un Spritz</Text>
+            <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
+              Dacă e oprit, niciun prieten nu află când te alături unui eveniment.
+            </Text>
+          </View>
+          <Switch
+            value={user?.notifyFriendsOnJoin ?? true}
+            onValueChange={handleToggleNotifyOnJoin}
             trackColor={{ false: theme.surfaceMuted, true: colors.green500 }}
             thumbColor={colors.white}
           />

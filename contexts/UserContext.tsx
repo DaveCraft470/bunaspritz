@@ -9,6 +9,7 @@ import {
   getCurrentUser,
   logInUser,
   registerUser,
+  setNotifyFriendsOnJoin as setNotifyFriendsOnJoinStorage,
   signOut as signOutStorage,
   updateCurrentUser,
 } from '@/contexts/auth';
@@ -25,6 +26,7 @@ type UserContextValue = {
   signOut: () => Promise<void>;
   devSkip: () => Promise<void>;
   updateProfile: (fields: { name?: string; username?: string; bio?: string }) => Promise<AuthResult>;
+  setNotifyFriendsOnJoin: (value: boolean) => Promise<void>;
 };
 
 const UserContext = createContext<UserContextValue | null>(null);
@@ -101,6 +103,10 @@ export function UserProvider({ children }: PropsWithChildren) {
           setUser(await getCurrentUser());
         }
         return result;
+      },
+      async setNotifyFriendsOnJoin(value) {
+        await setNotifyFriendsOnJoinStorage(value);
+        setUser((current) => (current ? { ...current, notifyFriendsOnJoin: value } : current));
       },
     }),
     [loading, authenticated, user]
