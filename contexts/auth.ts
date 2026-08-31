@@ -168,6 +168,4 @@ export async function devSkipAuth(): Promise<void> {
     options: { data: { name: 'Dev User', username: `dev_${rand.slice(0, 10)}` } },
   });
   if (signUp.error || !signUp.data.user) return;
-
-  await supabase.from('profiles').update({ verified: true }).eq('id', signUp.data.user.id);
 }
