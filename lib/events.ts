@@ -51,6 +51,9 @@ export async function createEvent(
   // where a freshly-created event always started with the host in it.
   await supabase.from('event_attendees').insert({ event_id: data.id, user_id: hostId });
 
+  // Best-effort — a failed push shouldn't undo an already-published event.
+  supabase.functions.invoke('notify-new-event', { body: { eventId: data.id } }).catch(() => {});
+
   return mapEvent(data);
 }
 
@@ -92,5 +95,10 @@ export async function hasJoined(eventId: string, userId: string): Promise<boolea
 
 export async function joinEvent(eventId: string, userId: string): Promise<boolean> {
   const { error } = await supabase.from('event_attendees').insert({ event_id: eventId, user_id: userId });
-  return !error;
+  if (error) return false;
+
+  // Best-effort — a failed push shouldn't undo an already-recorded join.
+  supabase.functions.invoke('notify-join', { body: { eventId } }).catch(() => {});
+
+  return true;
 }

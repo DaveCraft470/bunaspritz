@@ -48,6 +48,12 @@
         {
           "locationWhenInUsePermission": "Spritz folosește locația ta ca să centreze harta pe poziția curentă."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#1FD460"
+        }
       ]
     ],
     "extra": {

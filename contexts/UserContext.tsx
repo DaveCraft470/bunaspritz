@@ -1,6 +1,7 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
 
 import { supabase } from '@/lib/supabase';
+import { registerForPushNotifications } from '@/lib/pushTokens';
 import {
   PublicUser,
   completeSignup,
@@ -50,6 +51,14 @@ export function UserProvider({ children }: PropsWithChildren) {
 
     return () => subscription.subscription.unsubscribe();
   }, []);
+
+  // Register (or refresh) the device's push token once actually authenticated
+  // — no point asking for permission before someone's even logged in.
+  useEffect(() => {
+    if (authenticated && user) {
+      registerForPushNotifications(user.id);
+    }
+  }, [authenticated, user?.id]);
 
   const value = useMemo<UserContextValue>(
     () => ({

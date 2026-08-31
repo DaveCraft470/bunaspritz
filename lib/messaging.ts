@@ -43,6 +43,10 @@ export async function sendDirectMessage(myId: string, friendId: string, text: st
     .single();
 
   if (error) return null;
+
+  // Best-effort — a failed push shouldn't undo an already-sent message.
+  supabase.functions.invoke('notify-message', { body: { messageId: data.id } }).catch(() => {});
+
   return data;
 }
 
