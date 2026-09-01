@@ -61,6 +61,7 @@ export default function NewEvent() {
 
   const [entryFee, setEntryFee] = useState('');
   const [drinksPrice, setDrinksPrice] = useState('');
+  const [maxParticipants, setMaxParticipants] = useState('');
 
   // This screen is only ever linked to when hostVerified is on, but guard
   // against reaching it some other way (deep link, back-forward, etc).
@@ -101,6 +102,7 @@ export default function NewEvent() {
     const finalCoords = coords ?? { lng: MAPBOX_INITIAL_VIEW.center[0], lat: MAPBOX_INITIAL_VIEW.center[1] };
     const parsedEntryFee = entryFee.trim() ? Number(entryFee.replace(',', '.')) : null;
     const parsedDrinksPrice = drinksPrice.trim() ? Number(drinksPrice.replace(',', '.')) : null;
+    const parsedMaxParticipants = maxParticipants.trim() ? Number(maxParticipants) : null;
 
     setPublishing(true);
     const created = await createEvent(user.id, {
@@ -114,6 +116,10 @@ export default function NewEvent() {
       startsAt: buildStartsAt().toISOString(),
       entryFeeRon: parsedEntryFee !== null && !Number.isNaN(parsedEntryFee) ? parsedEntryFee : null,
       drinksPriceRon: parsedDrinksPrice !== null && !Number.isNaN(parsedDrinksPrice) ? parsedDrinksPrice : null,
+      maxParticipants:
+        parsedMaxParticipants !== null && !Number.isNaN(parsedMaxParticipants) && parsedMaxParticipants > 0
+          ? Math.floor(parsedMaxParticipants)
+          : null,
     });
     setPublishing(false);
 
@@ -287,6 +293,16 @@ export default function NewEvent() {
           placeholder="Ex: 15"
           placeholderTextColor={theme.textSecondary}
           keyboardType="decimal-pad"
+          style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
+        />
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>MAX PARTICIPANȚI</Text>
+        <TextInput
+          value={maxParticipants}
+          onChangeText={setMaxParticipants}
+          placeholder="Lasă gol pentru nelimitat"
+          placeholderTextColor={theme.textSecondary}
+          keyboardType="number-pad"
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
         />
 

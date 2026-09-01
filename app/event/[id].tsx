@@ -61,8 +61,10 @@ export default function EventDetail() {
     getProfile(event.hostId).then((host) => setHostName(host?.name ?? null));
   }, [event, user]);
 
+  const isFull = !!event?.maxParticipants && attendees.length >= event.maxParticipants && !joined;
+
   async function handleJoin() {
-    if (!event || !user) return;
+    if (!event || !user || isFull) return;
 
     if (!joined && !user.verified) {
       router.push({ pathname: '/verification', params: { returnTo: `/event/${event.id}` } });
@@ -165,7 +167,10 @@ export default function EventDetail() {
             <Text style={[styles.hostLine, { color: theme.textSecondary }]}>Găzduit de {hostName}</Text>
           )}
 
-          {(formatEventStart(event.startsAt) || event.entryFeeRon !== null || event.drinksPriceRon !== null) && (
+          {(formatEventStart(event.startsAt) ||
+            event.entryFeeRon !== null ||
+            event.drinksPriceRon !== null ||
+            event.maxParticipants !== null) && (
             <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               {formatEventStart(event.startsAt) && (
                 <View style={styles.infoRow}>
@@ -189,6 +194,14 @@ export default function EventDetail() {
                   </Text>
                 </View>
               )}
+              {event.maxParticipants !== null && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="people-outline" size={16} color={colors.green500} />
+                  <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
+                    Max {event.maxParticipants} persoane
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -205,7 +218,9 @@ export default function EventDetail() {
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>CINE VINE</Text>
-            <Text style={[styles.attendeeCount, { color: theme.textPrimary }]}>{attendees.length} persoane</Text>
+            <Text style={[styles.attendeeCount, { color: theme.textPrimary }]}>
+              {attendees.length}{event.maxParticipants !== null ? ` / ${event.maxParticipants}` : ''} persoane
+            </Text>
             <View style={styles.attendeeRow}>
               {attendees.map((attendee) => (
                 <View key={attendee.userId} style={styles.attendeeItem}>
@@ -244,8 +259,14 @@ export default function EventDetail() {
         </ScrollView>
 
         <View style={[styles.ctaWrap, { paddingBottom: insets.bottom + 20 }]}>
-          <AnimatedPressable onPress={handleJoin} style={[styles.ctaButton, shadows.glowGreen]}>
-            <Text style={styles.ctaText}>{joined ? 'Ești în listă ✓' : joining ? 'Se confirmă...' : 'Hai la Spritz! 🍻'}</Text>
+          <AnimatedPressable
+            onPress={handleJoin}
+            disabled={isFull}
+            style={[styles.ctaButton, shadows.glowGreen, isFull && styles.ctaButtonDisabled]}
+          >
+            <Text style={styles.ctaText}>
+              {joined ? 'Ești în listă ✓' : joining ? 'Se confirmă...' : isFull ? 'Eveniment plin 🙁' : 'Hai la Spritz! 🍻'}
+            </Text>
           </AnimatedPressable>
         </View>
       </SafeAreaView>
@@ -341,5 +362,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  ctaButtonDisabled: { opacity: 0.6 },
   ctaText: { color: colors.white, fontSize: 18, fontWeight: '900', letterSpacing: -0.2 },
 });

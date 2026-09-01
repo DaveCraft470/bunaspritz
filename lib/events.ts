@@ -14,10 +14,11 @@ type EventRow = {
   starts_at: string | null;
   entry_fee_ron: number | null;
   drinks_price_ron: number | null;
+  max_participants: number | null;
 };
 
 const EVENT_COLUMNS =
-  'id, host_id, title, detail, emoji, color, lng, lat, genre, starts_at, entry_fee_ron, drinks_price_ron';
+  'id, host_id, title, detail, emoji, color, lng, lat, genre, starts_at, entry_fee_ron, drinks_price_ron, max_participants';
 
 function mapEvent(row: EventRow): SpritzEvent {
   return {
@@ -33,6 +34,7 @@ function mapEvent(row: EventRow): SpritzEvent {
     startsAt: row.starts_at,
     entryFeeRon: row.entry_fee_ron,
     drinksPriceRon: row.drinks_price_ron,
+    maxParticipants: row.max_participants,
   };
 }
 
@@ -60,6 +62,7 @@ export async function createEvent(
       starts_at: fields.startsAt,
       entry_fee_ron: fields.entryFeeRon,
       drinks_price_ron: fields.drinksPriceRon,
+      max_participants: fields.maxParticipants,
     })
     .select(EVENT_COLUMNS)
     .single();

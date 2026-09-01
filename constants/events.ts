@@ -13,6 +13,7 @@ export type SpritzEvent = {
   startsAt: string | null;
   entryFeeRon: number | null;
   drinksPriceRon: number | null;
+  maxParticipants: number | null;
 };
 
 // Same three real tracks show up at every event — "genul de muzică ascultată"
