@@ -2,7 +2,7 @@
   "expo": {
     "name": "Buna, Spritz?",
     "slug": "spritz",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "scheme": "bunaspritz",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -55,7 +55,22 @@
           "color": "#1FD460"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Spritz folosește microfonul ca să poți trimite mesaje vocale.",
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Spritz folosește pozele tale ca să poți trimite fotografii în mesaje.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "extra": {
       "router": {},

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
+  ActivityIndicator,
   Animated,
+  Image,
   Keyboard,
   Platform,
   Pressable,
@@ -14,6 +16,8 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 
 import { colors } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
@@ -23,11 +27,14 @@ import { useUser } from '@/contexts/UserContext';
 import { Profile, getMutualFriends } from '@/lib/social';
 import {
   DbMessage,
+  MediaType,
   getLastMessage,
+  getSignedMediaUrl,
   getThread,
   getUnreadCount,
   markThreadRead,
   sendDirectMessage,
+  sendMediaMessage,
   subscribeToIncoming,
   subscribeToReadReceipts,
 } from '@/lib/messaging';
@@ -37,11 +44,96 @@ import {
 // The 3 group chats below stay mock/decorative; real 1:1 friend DMs are a
 // separate, backend-backed capability added alongside them.
 
-type DisplayMessage = { id: string; text: string; time: string; sender: string; mine: boolean; read: boolean };
+type DisplayMessage = {
+  id: string;
+  text: string;
+  time: string;
+  sender: string;
+  mine: boolean;
+  read: boolean;
+  mediaType?: MediaType | null;
+  mediaPath?: string | null;
+  durationMs?: number | null;
+};
 type ActiveChat = { kind: 'group'; id: string } | { kind: 'friend'; id: string };
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' });
+}
+
+// What the chat-list row shows for a thread's last message — media has no
+// text (see lib/messaging.sendMediaMessage), so it needs its own preview.
+function messagePreview(message: DbMessage): string {
+  if (message.media_type === 'image') return '📷 Poză';
+  if (message.media_type === 'audio') return '🎤 Mesaj vocal';
+  return message.text;
+}
+
+function formatDuration(ms: number | null | undefined) {
+  const totalSeconds = Math.max(0, Math.round((ms ?? 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function extensionAndTypeForImage(asset: ImagePicker.ImagePickerAsset): { extension: string; contentType: string } {
+  const mimeType = asset.mimeType ?? 'image/jpeg';
+  if (mimeType === 'image/png') return { extension: '.png', contentType: mimeType };
+  if (mimeType === 'image/webp') return { extension: '.webp', contentType: mimeType };
+  return { extension: '.jpg', contentType: 'image/jpeg' };
+}
+
+// One bubble's photo, resolved from a signed URL on demand — the DB only
+// stores the private bucket path (see messages.media_path).
+function ImageBubble({ path }: { path: string }) {
+  const { colors: theme } = useAppTheme();
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getSignedMediaUrl(path).then((signed) => {
+      if (!cancelled) setUrl(signed);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+
+  if (!url) {
+    return (
+      <View style={[styles.imageBubble, styles.imageBubbleLoading, { backgroundColor: theme.surfaceMuted }]}>
+        <ActivityIndicator color={theme.textSecondary} />
+      </View>
+    );
+  }
+
+  return <Image source={{ uri: url }} style={styles.imageBubble} resizeMode="cover" />;
+}
+
+// One bubble's voice note. Playback is driven by the single shared player
+// owned by the screen (see Messages()) — this just renders the button/state
+// for whichever message id is currently loaded into it.
+function VoiceBubble({
+  isPlaying,
+  isMine,
+  durationMs,
+  onToggle,
+}: {
+  isPlaying: boolean;
+  isMine: boolean;
+  durationMs: number | null | undefined;
+  onToggle: () => void;
+}) {
+  const { colors: theme } = useAppTheme();
+  return (
+    <Pressable onPress={onToggle} style={styles.voiceBubbleRow} hitSlop={6}>
+      <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={30} color={isMine ? colors.white : colors.green500} />
+      <View style={[styles.voiceWave, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.green500 }]} />
+      <Text style={[styles.voiceDuration, { color: isMine ? colors.white : theme.textPrimary }]}>
+        {formatDuration(durationMs)}
+      </Text>
+    </Pressable>
+  );
 }
 
 // The list row's timestamp: a time for anything from today, a date otherwise
@@ -154,12 +246,90 @@ export default function Messages() {
   const [friendUnread, setFriendUnread] = useState<Record<string, number>>({});
   const [friendMessages, setFriendMessages] = useState<DbMessage[]>([]);
   const [draft, setDraft] = useState('');
+  const [sendingMedia, setSendingMedia] = useState(false);
+  const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
   const messagesScrollRef = useRef<ScrollView>(null);
   const restingComposerOffset = insets.bottom + 16;
   const composerOffset = useRef(new Animated.Value(restingComposerOffset)).current;
 
   const activeFriend = activeChat?.kind === 'friend' ? friends.find((f) => f.id === activeChat.id) : undefined;
   const selectedGroup = activeChat?.kind === 'group' ? chats.find((c) => c.id === activeChat.id) : undefined;
+
+  // One shared player for every voice bubble in the thread — swapping its
+  // source on tap instead of mounting a player per bubble.
+  const voicePlayer = useAudioPlayer();
+  const voicePlayerStatus = useAudioPlayerStatus(voicePlayer);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(audioRecorder);
+
+  useEffect(() => {
+    if (voicePlayerStatus.didJustFinish) setPlayingMessageId(null);
+  }, [voicePlayerStatus.didJustFinish]);
+
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true }).catch(() => {});
+  }, []);
+
+  async function toggleVoicePlayback(messageId: string, mediaPath: string) {
+    light();
+    if (playingMessageId === messageId) {
+      voicePlayer.pause();
+      setPlayingMessageId(null);
+      return;
+    }
+    const url = await getSignedMediaUrl(mediaPath);
+    if (!url) return;
+    voicePlayer.replace({ uri: url });
+    voicePlayer.play();
+    setPlayingMessageId(messageId);
+  }
+
+  async function startRecording() {
+    if (!activeFriend || sendingMedia) return;
+    const permission = await AudioModule.requestRecordingPermissionsAsync();
+    if (!permission.granted) return;
+    light();
+    await audioRecorder.prepareToRecordAsync();
+    audioRecorder.record();
+  }
+
+  async function stopRecordingAndSend() {
+    if (!user || !activeFriend) return;
+    light();
+    const durationMs = Math.round(audioRecorder.currentTime * 1000);
+    await audioRecorder.stop();
+    const uri = audioRecorder.uri;
+    if (!uri || durationMs < 500) return;
+
+    setSendingMedia(true);
+    const sent = await sendMediaMessage(user.id, activeFriend.id, uri, 'audio', '.m4a', 'audio/m4a', durationMs);
+    setSendingMedia(false);
+    if (sent) {
+      setFriendMessages((current) => [...current, sent]);
+      setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
+    }
+  }
+
+  async function pickAndSendImage() {
+    if (!user || !activeFriend || sendingMedia) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
+    if (result.canceled || !result.assets[0]) return;
+
+    const asset = result.assets[0];
+    const { extension, contentType } = extensionAndTypeForImage(asset);
+
+    light();
+    setSendingMedia(true);
+    const sent = await sendMediaMessage(user.id, activeFriend.id, asset.uri, 'image', extension, contentType);
+    setSendingMedia(false);
+    if (sent) {
+      setFriendMessages((current) => [...current, sent]);
+      setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
+    }
+  }
 
   // Load your mutual friends + their last message and unread count, for the
   // "PRIETENI" section of the list screen.
@@ -239,6 +409,9 @@ export default function Messages() {
         sender: m.sender_id === user.id ? 'Tu' : activeFriend?.name ?? '',
         mine: m.sender_id === user.id,
         read: !!m.read_at,
+        mediaType: m.media_type,
+        mediaPath: m.media_path,
+        durationMs: m.duration_ms,
       }));
     }
     return [];
@@ -368,7 +541,7 @@ export default function Messages() {
                         avatarColor={theme.surfaceMuted}
                         name={friend.name}
                         timestamp={last ? formatListTimestamp(last.created_at) : null}
-                        preview={last ? last.text : 'Trimite un mesaj'}
+                        preview={last ? messagePreview(last) : 'Trimite un mesaj'}
                         mine={mine}
                         read={mine && !!last?.read_at}
                         unreadCount={friendUnread[friend.id] ?? 0}
@@ -432,14 +605,25 @@ export default function Messages() {
                         {message.sender}
                       </Text>
                     )}
-                    <Text
-                      style={[
-                        styles.messageText,
-                        message.mine ? styles.messageTextMine : { color: theme.textPrimary },
-                      ]}
-                    >
-                      {message.text}
-                    </Text>
+                    {message.mediaType === 'image' && message.mediaPath ? (
+                      <ImageBubble path={message.mediaPath} />
+                    ) : message.mediaType === 'audio' && message.mediaPath ? (
+                      <VoiceBubble
+                        isPlaying={playingMessageId === message.id}
+                        isMine={message.mine}
+                        durationMs={message.durationMs}
+                        onToggle={() => toggleVoicePlayback(message.id, message.mediaPath!)}
+                      />
+                    ) : (
+                      <Text
+                        style={[
+                          styles.messageText,
+                          message.mine ? styles.messageTextMine : { color: theme.textPrimary },
+                        ]}
+                      >
+                        {message.text}
+                      </Text>
+                    )}
                     <View style={styles.bubbleFooter}>
                       <Text style={[styles.time, message.mine ? styles.timeMine : { color: theme.textSecondary }]}>
                         {message.time}
@@ -465,20 +649,31 @@ export default function Messages() {
                 { marginBottom: composerOffset, backgroundColor: theme.surface, borderColor: theme.border },
               ]}
             >
-              <View style={[styles.add, { backgroundColor: theme.surfaceMuted }]}>
+              <Pressable
+                onPress={pickAndSendImage}
+                disabled={sendingMedia || recorderState.isRecording}
+                style={[styles.add, { backgroundColor: theme.surfaceMuted, opacity: sendingMedia ? 0.5 : 1 }]}
+                accessibilityLabel="Trimite o poză"
+              >
                 <Text style={[styles.addText, { color: theme.accent }]}>+</Text>
-              </View>
+              </Pressable>
               <TextInput
                 value={draft}
                 onChangeText={setDraft}
                 onSubmitEditing={sendMessage}
-                placeholder="Scrie un mesaj..."
-                placeholderTextColor={theme.textSecondary}
+                placeholder={recorderState.isRecording ? `Se înregistrează... ${formatDuration(recorderState.durationMillis)}` : 'Scrie un mesaj...'}
+                placeholderTextColor={recorderState.isRecording ? colors.green500 : theme.textSecondary}
+                editable={!recorderState.isRecording}
                 style={[styles.input, { color: theme.textPrimary }]}
                 returnKeyType="send"
               />
-              <Pressable style={styles.voice} accessibilityLabel="Înregistrează mesaj vocal">
-                <Text style={styles.voiceText}>🎤</Text>
+              <Pressable
+                onPress={recorderState.isRecording ? stopRecordingAndSend : startRecording}
+                disabled={sendingMedia}
+                style={[styles.voice, recorderState.isRecording && styles.voiceActive, { opacity: sendingMedia ? 0.5 : 1 }]}
+                accessibilityLabel={recorderState.isRecording ? 'Oprește și trimite mesajul vocal' : 'Înregistrează mesaj vocal'}
+              >
+                <Ionicons name={recorderState.isRecording ? 'stop' : 'mic'} size={20} color={colors.white} />
               </Pressable>
               <Pressable onPress={sendMessage} style={[styles.send, !draft.trim() && styles.sendOff]}>
                 <Text style={styles.sendText}>↑</Text>
@@ -560,4 +755,10 @@ const styles = StyleSheet.create({
   sendText: { color: '#FFFFFF', fontSize: 22, fontWeight: '700', marginTop: -4 },
   voice: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#12C854', alignItems: 'center', justifyContent: 'center' },
   voiceText: { fontSize: 23 },
+  voiceActive: { backgroundColor: '#E5484D' },
+  imageBubble: { width: 200, height: 200, borderRadius: 14 },
+  imageBubbleLoading: { alignItems: 'center', justifyContent: 'center' },
+  voiceBubbleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4, minWidth: 160 },
+  voiceWave: { flex: 1, height: 3, borderRadius: 2 },
+  voiceDuration: { fontSize: 12, fontWeight: '700' },
 });

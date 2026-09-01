@@ -9,7 +9,7 @@ Deno.serve(async (req) => {
 
   const { data: message } = await admin
     .from('messages')
-    .select('id, sender_id, recipient_id, text')
+    .select('id, sender_id, recipient_id, text, media_type')
     .eq('id', messageId)
     .single();
 
@@ -31,10 +31,13 @@ Deno.serve(async (req) => {
   const { data: sender } = await admin.from('profiles').select('name').eq('id', message.sender_id).single();
   const { data: tokens } = await admin.from('push_tokens').select('token').eq('user_id', message.recipient_id);
 
+  const body =
+    message.media_type === 'image' ? '📷 Poză' : message.media_type === 'audio' ? '🎤 Mesaj vocal' : message.text;
+
   await sendExpoPush(
     (tokens ?? []).map((t) => t.token),
     `Mesaj nou de la ${sender?.name ?? 'un prieten'}`,
-    message.text
+    body
   );
 
   return new Response('ok', { status: 200 });

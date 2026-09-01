@@ -1,4 +1,13 @@
+import { File } from 'expo-file-system';
+
 import { supabase } from '@/lib/supabase';
+
+const MEDIA_BUCKET = 'message-media';
+// Signed URLs are re-fetched on every render of a bubble that needs one, so
+// this only has to outlive a single screen session, not the message itself.
+const SIGNED_URL_TTL_SECONDS = 60 * 60;
+
+export type MediaType = 'image' | 'audio';
 
 export type DbMessage = {
   id: string;
@@ -7,7 +16,12 @@ export type DbMessage = {
   text: string;
   created_at: string;
   read_at: string | null;
+  media_path: string | null;
+  media_type: MediaType | null;
+  duration_ms: number | null;
 };
+
+const MESSAGE_COLUMNS = 'id, sender_id, recipient_id, text, created_at, read_at, media_path, media_type, duration_ms';
 
 function threadFilter(myId: string, friendId: string) {
   return `and(sender_id.eq.${myId},recipient_id.eq.${friendId}),and(sender_id.eq.${friendId},recipient_id.eq.${myId})`;
@@ -16,7 +30,7 @@ function threadFilter(myId: string, friendId: string) {
 export async function getThread(myId: string, friendId: string): Promise<DbMessage[]> {
   const { data, error } = await supabase
     .from('messages')
-    .select('id, sender_id, recipient_id, text, created_at, read_at')
+    .select(MESSAGE_COLUMNS)
     .or(threadFilter(myId, friendId))
     .order('created_at', { ascending: true });
 
@@ -27,7 +41,7 @@ export async function getThread(myId: string, friendId: string): Promise<DbMessa
 export async function getLastMessage(myId: string, friendId: string): Promise<DbMessage | null> {
   const { data } = await supabase
     .from('messages')
-    .select('id, sender_id, recipient_id, text, created_at, read_at')
+    .select(MESSAGE_COLUMNS)
     .or(threadFilter(myId, friendId))
     .order('created_at', { ascending: false })
     .limit(1)
@@ -63,7 +77,7 @@ export async function sendDirectMessage(myId: string, friendId: string, text: st
   const { data, error } = await supabase
     .from('messages')
     .insert({ sender_id: myId, recipient_id: friendId, text })
-    .select('id, sender_id, recipient_id, text, created_at, read_at')
+    .select(MESSAGE_COLUMNS)
     .single();
 
   if (error) return null;
@@ -72,6 +86,58 @@ export async function sendDirectMessage(myId: string, friendId: string, text: st
   supabase.functions.invoke('notify-message', { body: { messageId: data.id } }).catch(() => {});
 
   return data;
+}
+
+// Uploads a locally-recorded/picked file to the private message-media bucket
+// under the sender's own folder, then inserts the message row pointing at
+// it. Stores the bucket-relative path, not a URL — signed URLs are minted
+// on demand at render time (see getSignedMediaUrl) so they never go stale.
+export async function sendMediaMessage(
+  myId: string,
+  friendId: string,
+  localUri: string,
+  mediaType: MediaType,
+  extension: string,
+  contentType: string,
+  durationMs?: number
+): Promise<DbMessage | null> {
+  const file = new File(localUri);
+  const bytes = await file.arrayBuffer();
+  if (bytes.byteLength === 0) return null;
+
+  const path = `${myId}/${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
+  const { error: uploadError } = await supabase.storage
+    .from(MEDIA_BUCKET)
+    .upload(path, bytes, { contentType });
+  if (uploadError) return null;
+
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({
+      sender_id: myId,
+      recipient_id: friendId,
+      text: '',
+      media_path: path,
+      media_type: mediaType,
+      duration_ms: mediaType === 'audio' ? durationMs ?? null : null,
+    })
+    .select(MESSAGE_COLUMNS)
+    .single();
+
+  if (error) {
+    await supabase.storage.from(MEDIA_BUCKET).remove([path]);
+    return null;
+  }
+
+  supabase.functions.invoke('notify-message', { body: { messageId: data.id } }).catch(() => {});
+
+  return data;
+}
+
+export async function getSignedMediaUrl(path: string): Promise<string | null> {
+  const { data, error } = await supabase.storage.from(MEDIA_BUCKET).createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+  if (error) return null;
+  return data.signedUrl;
 }
 
 // Global-to-your-inbox subscription (Realtime filters can't express the
