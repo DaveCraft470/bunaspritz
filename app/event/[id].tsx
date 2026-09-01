@@ -20,6 +20,24 @@ import { CelebrationOverlay } from '@/components/event/CelebrationOverlay';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+function formatEventStart(iso: string | null) {
+  if (!iso) return null;
+  const date = new Date(iso);
+  const now = new Date();
+  const dayPart =
+    date.toDateString() === now.toDateString()
+      ? 'Azi'
+      : date.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' });
+  const timePart = date.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' });
+  return `${dayPart} · ${timePart}`;
+}
+
+function formatPrice(value: number | null) {
+  if (value === null) return null;
+  if (value === 0) return 'Gratis';
+  return `${value} RON`;
+}
+
 export default function EventDetail() {
   const { id, originX, originY } = useLocalSearchParams<{ id: string; originX?: string; originY?: string }>();
   const { events } = useEvents();
@@ -146,6 +164,33 @@ export default function EventDetail() {
             <Text style={[styles.hostLine, { color: theme.textSecondary }]}>Găzduit de {hostName}</Text>
           )}
 
+          {(formatEventStart(event.startsAt) || event.entryFeeRon !== null || event.drinksPriceRon !== null) && (
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              {formatEventStart(event.startsAt) && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="calendar-outline" size={16} color={colors.green500} />
+                  <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>{formatEventStart(event.startsAt)}</Text>
+                </View>
+              )}
+              {event.entryFeeRon !== null && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="ticket-outline" size={16} color={colors.green500} />
+                  <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
+                    Intrare: {formatPrice(event.entryFeeRon)}
+                  </Text>
+                </View>
+              )}
+              {event.drinksPriceRon !== null && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="wine-outline" size={16} color={colors.green500} />
+                  <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
+                    Băuturi de la {formatPrice(event.drinksPriceRon)}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>LOCAȚIE APROXIMATIVĂ</Text>
             <View style={styles.mapWrap}>
@@ -254,6 +299,8 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 13, textAlign: 'center', marginBottom: 4 },
   hostLine: { fontSize: 11, textAlign: 'center', marginBottom: 4, fontStyle: 'italic' },
   card: { borderRadius: 18, borderWidth: 1, padding: 14, gap: 8 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  infoRowText: { fontSize: 14, fontWeight: '700' },
   cardLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1 },
   mapWrap: { borderRadius: 14, overflow: 'hidden', height: 150 },
   mapImage: { width: '100%', height: '100%' },

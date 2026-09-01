@@ -11,9 +11,13 @@ type EventRow = {
   lng: number;
   lat: number;
   genre: string;
+  starts_at: string | null;
+  entry_fee_ron: number | null;
+  drinks_price_ron: number | null;
 };
 
-const EVENT_COLUMNS = 'id, host_id, title, detail, emoji, color, lng, lat, genre';
+const EVENT_COLUMNS =
+  'id, host_id, title, detail, emoji, color, lng, lat, genre, starts_at, entry_fee_ron, drinks_price_ron';
 
 function mapEvent(row: EventRow): SpritzEvent {
   return {
@@ -26,6 +30,9 @@ function mapEvent(row: EventRow): SpritzEvent {
     lng: row.lng,
     lat: row.lat,
     genre: row.genre,
+    startsAt: row.starts_at,
+    entryFeeRon: row.entry_fee_ron,
+    drinksPriceRon: row.drinks_price_ron,
   };
 }
 
@@ -41,7 +48,19 @@ export async function createEvent(
 ): Promise<SpritzEvent | null> {
   const { data, error } = await supabase
     .from('events')
-    .insert({ host_id: hostId, ...fields })
+    .insert({
+      host_id: hostId,
+      title: fields.title,
+      detail: fields.detail,
+      emoji: fields.emoji,
+      color: fields.color,
+      lng: fields.lng,
+      lat: fields.lat,
+      genre: fields.genre,
+      starts_at: fields.startsAt,
+      entry_fee_ron: fields.entryFeeRon,
+      drinks_price_ron: fields.drinksPriceRon,
+    })
     .select(EVENT_COLUMNS)
     .single();
 

@@ -10,6 +10,9 @@ export type SpritzEvent = {
   lng: number;
   lat: number;
   genre: string;
+  startsAt: string | null;
+  entryFeeRon: number | null;
+  drinksPriceRon: number | null;
 };
 
 // Same three real tracks show up at every event — "genul de muzică ascultată"
