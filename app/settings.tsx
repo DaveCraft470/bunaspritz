@@ -8,7 +8,6 @@ import * as Haptics from 'expo-haptics';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
-import { useDevFlags } from '@/contexts/DevFlagsContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
@@ -18,7 +17,6 @@ const DANGER_COLOR = '#E5484D';
 export default function Settings() {
   const { scheme, colors: theme, toggleScheme } = useAppTheme();
   const { enabled: hapticsEnabled, setEnabled: setHapticsEnabled, light } = useHaptics();
-  const { hostVerified } = useDevFlags();
   const { user, signOut, setNotifyFriendsOnJoin } = useUser();
 
   async function handleSignOut() {
@@ -124,35 +122,23 @@ export default function Settings() {
         </View>
       </View>
 
-      {hostVerified ? (
-        <AnimatedPressable
-          onPress={() => {
-            light();
-            router.push('/new-event');
-          }}
-          style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        >
-          <View style={styles.rowText}>
-            <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Adaugă eveniment nou</Text>
-            <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
-              Publică un eveniment nou pe hartă, ca host verificat.
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
-        </AnimatedPressable>
-      ) : null}
-
       <AnimatedPressable
         onPress={() => {
           light();
-          router.push('/dev-menu');
+          if (!user?.verified) {
+            router.push({ pathname: '/verification', params: { returnTo: '/new-event' } });
+            return;
+          }
+          router.push('/new-event');
         }}
         style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
       >
         <View style={styles.rowText}>
-          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Meniu dezvoltator</Text>
+          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Adaugă eveniment nou</Text>
           <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
-            Comută tipuri de profil pentru testare.
+            {user?.verified
+              ? 'Publică un eveniment nou pe hartă.'
+              : 'Necesită verificarea identității — apasă pentru a începe.'}
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />

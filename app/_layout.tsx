@@ -19,7 +19,6 @@ import { ThemeProvider, useAppTheme } from '@/contexts/ThemeContext';
 import { NavVisibilityProvider } from '@/contexts/NavVisibilityContext';
 import { HapticsProvider } from '@/contexts/HapticsContext';
 import { EventsProvider } from '@/contexts/EventsContext';
-import { DevFlagsProvider } from '@/contexts/DevFlagsContext';
 import { UserProvider, useUser } from '@/contexts/UserContext';
 import { AnimatedSplash } from '@/components/common/AnimatedSplash';
 
@@ -129,19 +128,17 @@ export default function RootLayout() {
         <ThemeProvider>
           <UserProvider>
             <HapticsProvider>
-              <DevFlagsProvider>
-                <EventsProvider>
-                  <NavVisibilityProvider>
-                    {!splashDone ? (
-                      <AnimatedSplash onFinish={() => setSplashDone(true)} />
-                    ) : (
-                      <View style={{ flex: 1 }}>
-                        <AppChrome />
-                      </View>
-                    )}
-                  </NavVisibilityProvider>
-                </EventsProvider>
-              </DevFlagsProvider>
+              <EventsProvider>
+                <NavVisibilityProvider>
+                  {!splashDone ? (
+                    <AnimatedSplash onFinish={() => setSplashDone(true)} />
+                  ) : (
+                    <View style={{ flex: 1 }}>
+                      <AppChrome />
+                    </View>
+                  )}
+                </NavVisibilityProvider>
+              </EventsProvider>
             </HapticsProvider>
           </UserProvider>
         </ThemeProvider>

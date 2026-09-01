@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Image, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { StatusBar } from 'expo-status-bar';
@@ -10,7 +10,6 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { MAPBOX_INITIAL_VIEW, buildApproxStaticMapUrl } from '@/constants/mapbox';
 import { useEvents } from '@/contexts/EventsContext';
-import { useDevFlags } from '@/contexts/DevFlagsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { createEvent, uploadRentalProof } from '@/lib/events';
@@ -42,11 +41,14 @@ function buildDayOptions() {
 
 export default function NewEvent() {
   const { colors: theme, scheme } = useAppTheme();
-  const { hostVerified } = useDevFlags();
   const { addEvent } = useEvents();
   const { user } = useUser();
   const { light, medium } = useHaptics();
   const [publishing, setPublishing] = useState(false);
+  // A ref alongside the state: two taps landing before React commits the
+  // first setPublishing(true) could both pass a state-only guard and both
+  // insert an event. The ref updates synchronously, closing that window.
+  const publishingRef = useRef(false);
 
   const [title, setTitle] = useState('');
   const [detail, setDetail] = useState('');
@@ -70,11 +72,15 @@ export default function NewEvent() {
   const [locationIsRented, setLocationIsRented] = useState<boolean | null>(null);
   const [rentalProofAsset, setRentalProofAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
 
-  // This screen is only ever linked to when hostVerified is on, but guard
-  // against reaching it some other way (deep link, back-forward, etc).
+  // settings.tsx already redirects to /verification before ever linking
+  // here, but guard against reaching this screen another way (deep link,
+  // back-forward) — hosting requires the same identity verification as
+  // joining does, enforced again server-side by the events INSERT policy.
   useEffect(() => {
-    if (!hostVerified) router.back();
-  }, [hostVerified]);
+    if (!user?.verified) {
+      router.replace({ pathname: '/verification', params: { returnTo: '/new-event' } });
+    }
+  }, [user]);
 
   // Just a starting point, not the only option anymore — the host can move
   // the pin anywhere via LocationPickerModal.
@@ -115,49 +121,53 @@ export default function NewEvent() {
       Alert.alert('Mai e nevoie de un nume', 'Dă-i evenimentului un titlu înainte să-l publici.');
       return;
     }
-    if (!user || publishing) return;
-
-    const finalCoords = coords ?? { lng: MAPBOX_INITIAL_VIEW.center[0], lat: MAPBOX_INITIAL_VIEW.center[1] };
-    const parsedEntryFee = entryFee.trim() ? Number(entryFee.replace(',', '.')) : null;
-    const parsedDrinksPrice = drinksPrice.trim() ? Number(drinksPrice.replace(',', '.')) : null;
-    const parsedMaxParticipants = maxParticipants.trim() ? Number(maxParticipants) : null;
-
+    if (!user || publishingRef.current) return;
+    publishingRef.current = true;
     setPublishing(true);
 
-    let rentalProofPath: string | null = null;
-    if (locationIsRented && rentalProofAsset) {
-      const { extension, contentType } = extensionAndTypeForImage(rentalProofAsset);
-      rentalProofPath = await uploadRentalProof(user.id, rentalProofAsset.uri, extension, contentType);
+    try {
+      const finalCoords = coords ?? { lng: MAPBOX_INITIAL_VIEW.center[0], lat: MAPBOX_INITIAL_VIEW.center[1] };
+      const parsedEntryFee = entryFee.trim() ? Number(entryFee.replace(',', '.')) : null;
+      const parsedDrinksPrice = drinksPrice.trim() ? Number(drinksPrice.replace(',', '.')) : null;
+      const parsedMaxParticipants = maxParticipants.trim() ? Number(maxParticipants) : null;
+
+      let rentalProofPath: string | null = null;
+      if (locationIsRented && rentalProofAsset) {
+        const { extension, contentType } = extensionAndTypeForImage(rentalProofAsset);
+        rentalProofPath = await uploadRentalProof(user.id, rentalProofAsset.uri, extension, contentType);
+      }
+
+      const created = await createEvent(user.id, {
+        title: trimmedTitle,
+        detail: detail.trim() || 'Detalii în curând',
+        emoji,
+        color,
+        lng: finalCoords.lng,
+        lat: finalCoords.lat,
+        genre: genre.trim() || 'Surpriză',
+        startsAt: buildStartsAt().toISOString(),
+        entryFeeRon: parsedEntryFee !== null && !Number.isNaN(parsedEntryFee) ? parsedEntryFee : null,
+        drinksPriceRon: parsedDrinksPrice !== null && !Number.isNaN(parsedDrinksPrice) ? parsedDrinksPrice : null,
+        maxParticipants:
+          parsedMaxParticipants !== null && !Number.isNaN(parsedMaxParticipants) && parsedMaxParticipants > 0
+            ? Math.floor(parsedMaxParticipants)
+            : null,
+        locationIsRented,
+        rentalProofPath,
+      });
+
+      if (!created) {
+        Alert.alert('A apărut o eroare', 'Nu am putut publica evenimentul. Încearcă din nou.');
+        return;
+      }
+
+      medium();
+      addEvent(created);
+      router.replace({ pathname: '/event/[id]', params: { id: created.id } });
+    } finally {
+      publishingRef.current = false;
+      setPublishing(false);
     }
-
-    const created = await createEvent(user.id, {
-      title: trimmedTitle,
-      detail: detail.trim() || 'Detalii în curând',
-      emoji,
-      color,
-      lng: finalCoords.lng,
-      lat: finalCoords.lat,
-      genre: genre.trim() || 'Surpriză',
-      startsAt: buildStartsAt().toISOString(),
-      entryFeeRon: parsedEntryFee !== null && !Number.isNaN(parsedEntryFee) ? parsedEntryFee : null,
-      drinksPriceRon: parsedDrinksPrice !== null && !Number.isNaN(parsedDrinksPrice) ? parsedDrinksPrice : null,
-      maxParticipants:
-        parsedMaxParticipants !== null && !Number.isNaN(parsedMaxParticipants) && parsedMaxParticipants > 0
-          ? Math.floor(parsedMaxParticipants)
-          : null,
-      locationIsRented,
-      rentalProofPath,
-    });
-    setPublishing(false);
-
-    if (!created) {
-      Alert.alert('A apărut o eroare', 'Nu am putut publica evenimentul. Încearcă din nou.');
-      return;
-    }
-
-    medium();
-    addEvent(created);
-    router.replace({ pathname: '/event/[id]', params: { id: created.id } });
   }
 
   const mapPreviewUrl = coords ? buildApproxStaticMapUrl(coords.lng, coords.lat, scheme, 640, 160) : null;
