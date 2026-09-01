@@ -70,7 +70,8 @@
           "photosPermission": "Spritz folosește pozele tale ca să poți trimite fotografii în mesaje.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "extra": {
       "router": {},
