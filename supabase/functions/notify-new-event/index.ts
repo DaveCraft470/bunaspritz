@@ -37,6 +37,10 @@ Deno.serve(async (req) => {
 
   if (!frequentUserIds.length) return new Response('no frequent attendees yet', { status: 200 });
 
+  // Excluded if THEY muted the host's activity, or the host hides their own
+  // activity from THEM specifically — this second check was missing before,
+  // so a host who hid their activity from someone still notified that
+  // person on every new event.
   const { data: muteRows } = await admin
     .from('friend_prefs')
     .select('owner_id')
@@ -45,7 +49,15 @@ Deno.serve(async (req) => {
     .eq('mute_activity', true);
   const muted = new Set((muteRows ?? []).map((row) => row.owner_id));
 
-  const recipients = frequentUserIds.filter((id) => !muted.has(id));
+  const { data: hideRows } = await admin
+    .from('friend_prefs')
+    .select('subject_id')
+    .eq('owner_id', callerId)
+    .in('subject_id', frequentUserIds)
+    .eq('hide_activity_from', true);
+  const hiddenFrom = new Set((hideRows ?? []).map((row) => row.subject_id));
+
+  const recipients = frequentUserIds.filter((id) => !muted.has(id) && !hiddenFrom.has(id));
   if (!recipients.length) return new Response('no eligible recipients', { status: 200 });
 
   const { data: tokens } = await admin.from('push_tokens').select('token').in('user_id', recipients);
