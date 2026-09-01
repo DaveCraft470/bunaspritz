@@ -214,6 +214,38 @@ function ChatListRow({
   );
 }
 
+// Groups get a bigger, distinct "communities" style card in a horizontal
+// row up top — individual friend DMs stay the compact WhatsApp-style row
+// (ChatListRow) they already had, per the requested distinction.
+function GroupCard({
+  emoji,
+  color,
+  title,
+  detail,
+  onPress,
+}: {
+  emoji: string;
+  color: string;
+  title: string;
+  detail: string;
+  onPress: () => void;
+}) {
+  const { colors: theme } = useAppTheme();
+  return (
+    <Pressable onPress={onPress} style={styles.groupCard}>
+      <View style={[styles.groupCardAvatar, { backgroundColor: color }]}>
+        <Text style={styles.groupCardEmoji}>{emoji}</Text>
+      </View>
+      <Text numberOfLines={1} style={[styles.groupCardTitle, { color: theme.textPrimary }]}>
+        {title}
+      </Text>
+      <Text numberOfLines={1} style={[styles.groupCardDetail, { color: theme.textSecondary }]}>
+        {detail}
+      </Text>
+    </Pressable>
+  );
+}
+
 const starterMessages: DisplayMessage[] = [
   { id: '1', sender: 'Mara', text: 'Ce faceți diseară? ✨', time: '18:41', mine: false, read: false },
   { id: '2', sender: 'Vlad', text: 'Mergem la un spriț în centru?', time: '18:42', mine: false, read: false },
@@ -503,25 +535,24 @@ export default function Messages() {
               contentContainerStyle={{ paddingBottom: insets.bottom + 116 }}
               showsVerticalScrollIndicator={false}
             >
-              <View style={styles.listSection}>
-                {chats.map((chat) => (
-                  <ChatListRow
-                    key={chat.id}
-                    avatarNode={<Text style={styles.avatarEmoji}>{chat.emoji}</Text>}
-                    avatarColor={chat.color}
-                    name={chat.title}
-                    timestamp={chat.time}
-                    preview={chat.detail}
-                    mine={false}
-                    read={false}
-                    unreadCount={0}
-                    onPress={() => {
-                      light();
-                      setHidden(true);
-                      setActiveChat({ kind: 'group', id: chat.id });
-                    }}
-                  />
-                ))}
+              <View style={styles.groupsSection}>
+                <Text style={[styles.sectionLabel, styles.groupsSectionLabel, { color: theme.textSecondary }]}>GRUPURI</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupsRow}>
+                  {chats.map((chat) => (
+                    <GroupCard
+                      key={chat.id}
+                      emoji={chat.emoji}
+                      color={chat.color}
+                      title={chat.title}
+                      detail={chat.detail}
+                      onPress={() => {
+                        light();
+                        setHidden(true);
+                        setActiveChat({ kind: 'group', id: chat.id });
+                      }}
+                    />
+                  ))}
+                </ScrollView>
               </View>
 
               {friends.length > 0 && (
@@ -694,7 +725,21 @@ const styles = StyleSheet.create({
   title: { fontSize: 34, fontWeight: '800', letterSpacing: -1 },
   roundButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#12C854', alignItems: 'center', justifyContent: 'center' },
   roundButtonText: { color: '#FFFFFF', fontSize: 28, fontWeight: '300', marginTop: -2 },
-  listSection: { paddingHorizontal: 18, paddingTop: 10 },
+  groupsSection: { paddingTop: 10 },
+  groupsSectionLabel: { paddingHorizontal: 18 },
+  groupsRow: { paddingHorizontal: 18, gap: 16 },
+  groupCard: { width: 92, alignItems: 'center' },
+  groupCardAvatar: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  groupCardEmoji: { fontSize: 32 },
+  groupCardTitle: { fontSize: 12, fontWeight: '800', textAlign: 'center' },
+  groupCardDetail: { fontSize: 10, textAlign: 'center', marginTop: 2 },
   friendsSection: { paddingHorizontal: 18, paddingTop: 22 },
   sectionLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginBottom: 6 },
   chatRow: {
@@ -704,7 +749,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   chatAvatar: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
-  avatarEmoji: { fontSize: 22 },
   friendAvatarLetter: { fontSize: 18, fontWeight: '800' },
   chatBody: { flex: 1 },
   chatTopLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
