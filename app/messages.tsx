@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Image,
   Keyboard,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -313,11 +315,32 @@ export default function Messages() {
 
   async function startRecording() {
     if (!activeFriend || sendingMedia) return;
+
     const permission = await AudioModule.requestRecordingPermissionsAsync();
-    if (!permission.granted) return;
-    light();
-    await audioRecorder.prepareToRecordAsync();
-    audioRecorder.record();
+    if (!permission.granted) {
+      // canAskAgain is false once the user has denied it before — Android
+      // then answers this instantly without ever showing the system dialog
+      // again, which used to fail completely silently here.
+      if (!permission.canAskAgain) {
+        Alert.alert(
+          'Acces la microfon necesar',
+          'Activează microfonul pentru Spritz din Setările telefonului ca să poți trimite mesaje vocale.',
+          [
+            { text: 'Anulează', style: 'cancel' },
+            { text: 'Deschide Setări', onPress: () => Linking.openSettings() },
+          ]
+        );
+      }
+      return;
+    }
+
+    try {
+      light();
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+    } catch {
+      Alert.alert('A apărut o eroare', 'Nu am putut porni înregistrarea. Încearcă din nou.');
+    }
   }
 
   async function stopRecordingAndSend() {
