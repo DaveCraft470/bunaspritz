@@ -232,6 +232,9 @@ function GroupCard({
     <Pressable onPress={onPress} style={styles.groupCard}>
       <View style={[styles.groupCardAvatar, { backgroundColor: color }]}>
         <Text style={styles.groupCardEmoji}>{emoji}</Text>
+        <View style={styles.groupCardDemoBadge}>
+          <Text style={styles.groupCardDemoBadgeText}>PREVIEW</Text>
+        </View>
       </View>
       <Text numberOfLines={1} style={[styles.groupCardTitle, { color: theme.textPrimary }]}>
         {title}
@@ -752,9 +755,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+    position: 'relative',
   },
   groupCardEmoji: { fontSize: 32 },
-  groupCardTitle: { fontSize: 12, fontWeight: '800', textAlign: 'center' },
+  groupCardDemoBadge: {
+    position: 'absolute',
+    bottom: -6,
+    alignSelf: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  groupCardDemoBadgeText: { color: '#FFFFFF', fontSize: 8, fontWeight: '900', letterSpacing: 0.4 },
+  groupCardTitle: { fontSize: 12, fontWeight: '800', textAlign: 'center', marginTop: 4 },
   groupCardDetail: { fontSize: 10, textAlign: 'center', marginTop: 2 },
   friendsSection: { paddingHorizontal: 18, paddingTop: 22 },
   sectionLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginBottom: 6 },

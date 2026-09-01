@@ -17,6 +17,14 @@ import { EventsCaption } from './EventsCaption';
 import { FloatingCircleButton } from './FloatingCircleButton';
 import { MenuButton } from './MenuButton';
 
+// Undated events (no starts_at — the pre-scheduling default, and still how
+// a spontaneous "happening right now" spritz can be posted) always count as
+// today. A dated event only counts if that date is actually today.
+function isEventToday(startsAt: string | null) {
+  if (!startsAt) return true;
+  return new Date(startsAt).toDateString() === new Date().toDateString();
+}
+
 export function MapPlaceholder() {
   const insets = useSafeAreaInsets();
   const { scheme, colors: theme } = useAppTheme();
@@ -31,6 +39,7 @@ export function MapPlaceholder() {
   const { medium, light } = useHaptics();
   const { events, refresh } = useEvents();
   const [reloading, setReloading] = useState(false);
+  const todaysEventCount = events.filter((event) => isEventToday(event.startsAt)).length;
 
   const ALREADY_THERE_DEGREES = 0.0005; // ~55m — comfortably inside GPS jitter
 
@@ -165,7 +174,9 @@ export function MapPlaceholder() {
           <Reanimated.View style={[styles.pullTarget, pullStyle]}>
             <LogoWordmark />
             <View style={{ height: spacing.sm }} />
-            <EventsCaption>{events.length === 1 ? '1 eveniment azi' : `${events.length} evenimente azi`}</EventsCaption>
+            <EventsCaption>
+              {todaysEventCount === 1 ? '1 eveniment azi' : `${todaysEventCount} evenimente azi`}
+            </EventsCaption>
             {reloading && (
               <ActivityIndicator size="small" color={colors.green500} style={styles.reloadSpinner} />
             )}
