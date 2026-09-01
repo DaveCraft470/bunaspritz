@@ -14,6 +14,8 @@ export type SpritzEvent = {
   entryFeeRon: number | null;
   drinksPriceRon: number | null;
   maxParticipants: number | null;
+  locationIsRented: boolean | null;
+  rentalProofPath: string | null;
 };
 
 // Same three real tracks show up at every event — "genul de muzică ascultată"

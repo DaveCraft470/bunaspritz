@@ -1,5 +1,9 @@
+import { File } from 'expo-file-system';
+
 import { supabase } from '@/lib/supabase';
 import { SpritzEvent } from '@/constants/events';
+
+const RENTAL_PROOF_BUCKET = 'rental-proofs';
 
 type EventRow = {
   id: string;
@@ -15,10 +19,12 @@ type EventRow = {
   entry_fee_ron: number | null;
   drinks_price_ron: number | null;
   max_participants: number | null;
+  location_is_rented: boolean | null;
+  rental_proof_path: string | null;
 };
 
 const EVENT_COLUMNS =
-  'id, host_id, title, detail, emoji, color, lng, lat, genre, starts_at, entry_fee_ron, drinks_price_ron, max_participants';
+  'id, host_id, title, detail, emoji, color, lng, lat, genre, starts_at, entry_fee_ron, drinks_price_ron, max_participants, location_is_rented, rental_proof_path';
 
 function mapEvent(row: EventRow): SpritzEvent {
   return {
@@ -35,7 +41,30 @@ function mapEvent(row: EventRow): SpritzEvent {
     entryFeeRon: row.entry_fee_ron,
     drinksPriceRon: row.drinks_price_ron,
     maxParticipants: row.max_participants,
+    locationIsRented: row.location_is_rented,
+    rentalProofPath: row.rental_proof_path,
   };
+}
+
+// Uploaded before the event exists (its path doesn't need the event id —
+// same idiom as message media), so createEvent can just point at it in the
+// same insert. The bucket is private and host-only (see the migration):
+// this is a personal record for the host, not a public exhibit.
+export async function uploadRentalProof(
+  hostId: string,
+  localUri: string,
+  extension: string,
+  contentType: string
+): Promise<string | null> {
+  const file = new File(localUri);
+  const bytes = await file.arrayBuffer();
+  if (bytes.byteLength === 0) return null;
+
+  const path = `${hostId}/${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
+  const { error } = await supabase.storage.from(RENTAL_PROOF_BUCKET).upload(path, bytes, { contentType });
+  if (error) return null;
+
+  return path;
 }
 
 export async function fetchEvents(): Promise<SpritzEvent[]> {
@@ -63,6 +92,8 @@ export async function createEvent(
       entry_fee_ron: fields.entryFeeRon,
       drinks_price_ron: fields.drinksPriceRon,
       max_participants: fields.maxParticipants,
+      location_is_rented: fields.locationIsRented,
+      rental_proof_path: fields.rentalProofPath,
     })
     .select(EVENT_COLUMNS)
     .single();

@@ -6,18 +6,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
 
 import { MAPBOX_INITIAL_VIEW, buildApproxStaticMapUrl } from '@/constants/mapbox';
 import { useEvents } from '@/contexts/EventsContext';
 import { useDevFlags } from '@/contexts/DevFlagsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
-import { createEvent } from '@/lib/events';
+import { createEvent, uploadRentalProof } from '@/lib/events';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { LocationPickerModal } from '@/components/event/LocationPickerModal';
+import { extensionAndTypeForImage } from '@/lib/media';
 
 const EMOJI_CHOICES = ['🎉', '🍻', '🎷', '🎸', '🌮', '🎲', '🥾', '🧺', '⛰️', '🍹'];
 const COLOR_CHOICES = ['#FF9F5A', '#5FD98A', '#5AA9E6', '#FFD25A', '#FF6B81', '#B388FF', '#4ED9C9'];
@@ -63,6 +65,11 @@ export default function NewEvent() {
   const [drinksPrice, setDrinksPrice] = useState('');
   const [maxParticipants, setMaxParticipants] = useState('');
 
+  // null = not specified — a real third state, not just "no". Tapping the
+  // active chip again resets to null instead of forcing a binary answer.
+  const [locationIsRented, setLocationIsRented] = useState<boolean | null>(null);
+  const [rentalProofAsset, setRentalProofAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+
   // This screen is only ever linked to when hostVerified is on, but guard
   // against reaching it some other way (deep link, back-forward, etc).
   useEffect(() => {
@@ -91,6 +98,17 @@ export default function NewEvent() {
     return startsAt;
   }
 
+  async function handlePickRentalProof() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
+    if (result.canceled || !result.assets[0]) return;
+
+    light();
+    setRentalProofAsset(result.assets[0]);
+  }
+
   async function handlePublish() {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
@@ -105,6 +123,13 @@ export default function NewEvent() {
     const parsedMaxParticipants = maxParticipants.trim() ? Number(maxParticipants) : null;
 
     setPublishing(true);
+
+    let rentalProofPath: string | null = null;
+    if (locationIsRented && rentalProofAsset) {
+      const { extension, contentType } = extensionAndTypeForImage(rentalProofAsset);
+      rentalProofPath = await uploadRentalProof(user.id, rentalProofAsset.uri, extension, contentType);
+    }
+
     const created = await createEvent(user.id, {
       title: trimmedTitle,
       detail: detail.trim() || 'Detalii în curând',
@@ -120,6 +145,8 @@ export default function NewEvent() {
         parsedMaxParticipants !== null && !Number.isNaN(parsedMaxParticipants) && parsedMaxParticipants > 0
           ? Math.floor(parsedMaxParticipants)
           : null,
+      locationIsRented,
+      rentalProofPath,
     });
     setPublishing(false);
 
@@ -306,6 +333,53 @@ export default function NewEvent() {
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
         />
 
+        <Text style={[styles.label, { color: theme.textSecondary }]}>LOCAȚIA E ÎNCHIRIATĂ?</Text>
+        <View style={styles.rentedRow}>
+          {[
+            { label: 'Da', value: true },
+            { label: 'Nu', value: false },
+          ].map((option) => (
+            <AnimatedPressable
+              key={option.label}
+              onPress={() => {
+                light();
+                setLocationIsRented((current) => (current === option.value ? null : option.value));
+                if (option.value !== true) setRentalProofAsset(null);
+              }}
+              style={[
+                styles.rentedChip,
+                { backgroundColor: theme.surface, borderColor: locationIsRented === option.value ? colors.green500 : theme.border },
+                locationIsRented === option.value && styles.chipActive,
+              ]}
+            >
+              <Text style={[styles.chipText, { color: locationIsRented === option.value ? colors.green500 : theme.textPrimary }]}>
+                {option.label}
+              </Text>
+            </AnimatedPressable>
+          ))}
+        </View>
+
+        {locationIsRented === true && (
+          <>
+            <AnimatedPressable
+              onPress={handlePickRentalProof}
+              style={[styles.rentalProofCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            >
+              {rentalProofAsset ? (
+                <Image source={{ uri: rentalProofAsset.uri }} style={styles.rentalProofPreview} resizeMode="cover" />
+              ) : (
+                <Ionicons name="camera-outline" size={20} color={theme.accent} />
+              )}
+              <Text style={[styles.rentalProofText, { color: theme.textPrimary }]}>
+                {rentalProofAsset ? 'Schimbă dovada' : 'Atașează dovada (opțional)'}
+              </Text>
+            </AnimatedPressable>
+            <Text style={[styles.rentalProofHint, { color: theme.textSecondary }]}>
+              Rămâne privată — doar tu o vezi, nu apare public pe eveniment.
+            </Text>
+          </>
+        )}
+
         <Text style={[styles.label, { color: theme.textSecondary }]}>ICONIȚĂ</Text>
         <View style={styles.emojiRow}>
           {EMOJI_CHOICES.map((choice) => (
@@ -400,6 +474,21 @@ const styles = StyleSheet.create({
   locationCardFooter: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10 },
   locationCardText: { fontSize: 13, fontWeight: '700' },
   chipScroll: { marginBottom: 4 },
+  rentedRow: { flexDirection: 'row', gap: 10 },
+  rentedChip: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 13, borderWidth: 2 },
+  rentalProofCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 10,
+  },
+  rentalProofPreview: { width: 34, height: 34, borderRadius: 8 },
+  rentalProofText: { fontSize: 13, fontWeight: '700' },
+  rentalProofHint: { fontSize: 11, fontStyle: 'italic', marginTop: 6 },
   chip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 13, borderWidth: 2, marginRight: 8 },
   chipSmall: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 11, borderWidth: 2, marginRight: 6 },
   chipActive: { transform: [{ scale: 1.03 }] },

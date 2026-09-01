@@ -170,7 +170,8 @@ export default function EventDetail() {
           {(formatEventStart(event.startsAt) ||
             event.entryFeeRon !== null ||
             event.drinksPriceRon !== null ||
-            event.maxParticipants !== null) && (
+            event.maxParticipants !== null ||
+            event.locationIsRented === true) && (
             <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               {formatEventStart(event.startsAt) && (
                 <View style={styles.infoRow}>
@@ -199,6 +200,14 @@ export default function EventDetail() {
                   <Ionicons name="people-outline" size={16} color={colors.green500} />
                   <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
                     Max {event.maxParticipants} persoane
+                  </Text>
+                </View>
+              )}
+              {event.locationIsRented === true && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="key-outline" size={16} color={colors.green500} />
+                  <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
+                    Locație închiriată{event.rentalProofPath ? ' · cu dovadă' : ''}
                   </Text>
                 </View>
               )}
