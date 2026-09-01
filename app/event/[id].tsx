@@ -16,6 +16,7 @@ import { useEvents } from '@/contexts/EventsContext';
 import { EventAttendee, fetchAttendees, hasJoined, joinEvent } from '@/lib/events';
 import { getProfile } from '@/lib/social';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
+import { Avatar } from '@/components/common/Avatar';
 import { CelebrationOverlay } from '@/components/event/CelebrationOverlay';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -208,11 +209,7 @@ export default function EventDetail() {
             <View style={styles.attendeeRow}>
               {attendees.map((attendee) => (
                 <View key={attendee.userId} style={styles.attendeeItem}>
-                  <View style={[styles.attendeeAvatar, { backgroundColor: theme.surfaceMuted }]}>
-                    <Text style={[styles.attendeeLetter, { color: theme.textPrimary }]}>
-                      {attendee.name.trim().charAt(0).toUpperCase() || '?'}
-                    </Text>
-                  </View>
+                  <Avatar uri={attendee.avatarUrl} name={attendee.name} size={44} fontSize={16} style={styles.attendeeAvatar} />
                   <Text numberOfLines={1} style={[styles.attendeeName, { color: theme.textSecondary }]}>
                     {attendee.name}
                   </Text>
@@ -321,14 +318,7 @@ const styles = StyleSheet.create({
   attendeeCount: { fontSize: 18, fontWeight: '800' },
   attendeeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 2 },
   attendeeItem: { alignItems: 'center', width: 52 },
-  attendeeAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  attendeeLetter: { fontSize: 16, fontWeight: '800' },
+  attendeeAvatar: { width: 44, height: 44, borderRadius: 22 },
   attendeeName: { fontSize: 10, marginTop: 4 },
   genre: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
   songRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },

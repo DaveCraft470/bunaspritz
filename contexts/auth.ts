@@ -1,4 +1,8 @@
+import { File } from 'expo-file-system';
+
 import { supabase } from '@/lib/supabase';
+
+const AVATAR_BUCKET = 'avatars';
 
 export type PublicUser = {
   id: string;
@@ -6,6 +10,7 @@ export type PublicUser = {
   username: string;
   email: string;
   bio: string;
+  avatarUrl: string | null;
   verified: boolean;
   notifyFriendsOnJoin: boolean;
 };
@@ -23,7 +28,7 @@ function mapAuthError(message: string): string {
 async function fetchProfile(userId: string, email: string): Promise<PublicUser | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, username, bio, verified, notify_friends_on_join')
+    .select('id, name, username, bio, avatar_url, verified, notify_friends_on_join')
     .eq('id', userId)
     .single();
 
@@ -33,6 +38,7 @@ async function fetchProfile(userId: string, email: string): Promise<PublicUser |
     name: data.name,
     username: data.username,
     bio: data.bio,
+    avatarUrl: data.avatar_url,
     verified: data.verified,
     notifyFriendsOnJoin: data.notify_friends_on_join,
     email,
@@ -142,6 +148,48 @@ export async function updateCurrentUser(
     return { ok: false, error: error.message };
   }
   return { ok: true };
+}
+
+// Uploaded to a fixed per-user path (upsert: true overwrites in place, no
+// orphaned old files) in the public 'avatars' bucket, then the profile row
+// is pointed at it. A `?v=` cache-buster is appended since the path never
+// changes — otherwise the CDN/Image cache would keep serving the old photo.
+export async function uploadAvatar(
+  localUri: string,
+  extension: string,
+  contentType: string
+): Promise<AuthResult & { avatarUrl?: string }> {
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) {
+    return { ok: false, error: 'Niciun cont conectat.' };
+  }
+
+  const file = new File(localUri);
+  const bytes = await file.arrayBuffer();
+  if (bytes.byteLength === 0) {
+    return { ok: false, error: 'Nu am putut citi imaginea.' };
+  }
+
+  const path = `${userData.user.id}/avatar${extension}`;
+  const { error: uploadError } = await supabase.storage
+    .from(AVATAR_BUCKET)
+    .upload(path, bytes, { contentType, upsert: true });
+  if (uploadError) {
+    return { ok: false, error: uploadError.message };
+  }
+
+  const { data: publicUrlData } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
+  const avatarUrl = `${publicUrlData.publicUrl}?v=${Date.now()}`;
+
+  const { error: updateError } = await supabase
+    .from('profiles')
+    .update({ avatar_url: avatarUrl })
+    .eq('id', userData.user.id);
+  if (updateError) {
+    return { ok: false, error: updateError.message };
+  }
+
+  return { ok: true, avatarUrl };
 }
 
 // The "don't notify friends when I join a Spritz" global toggle from Settings.

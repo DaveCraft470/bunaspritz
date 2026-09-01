@@ -11,6 +11,7 @@ import {
   setNotifyFriendsOnJoin as setNotifyFriendsOnJoinStorage,
   signOut as signOutStorage,
   updateCurrentUser,
+  uploadAvatar as uploadAvatarStorage,
 } from '@/contexts/auth';
 
 type AuthResult = { ok: true } | { ok: false; error: string };
@@ -24,6 +25,7 @@ type UserContextValue = {
   signOut: () => Promise<void>;
   devSkip: () => Promise<void>;
   updateProfile: (fields: { name?: string; username?: string; bio?: string }) => Promise<AuthResult>;
+  uploadAvatar: (localUri: string, extension: string, contentType: string) => Promise<AuthResult>;
   setNotifyFriendsOnJoin: (value: boolean) => Promise<void>;
 };
 
@@ -114,6 +116,13 @@ export function UserProvider({ children }: PropsWithChildren) {
       },
       async updateProfile(fields) {
         const result = await updateCurrentUser(fields);
+        if (result.ok) {
+          setUser(await getCurrentUser());
+        }
+        return result;
+      },
+      async uploadAvatar(localUri, extension, contentType) {
+        const result = await uploadAvatarStorage(localUri, extension, contentType);
         if (result.ok) {
           setUser(await getCurrentUser());
         }

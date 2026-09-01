@@ -10,6 +10,7 @@ import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
+import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { FriendPrefsModal } from '@/components/social/FriendPrefsModal';
 import { ReviewModal } from '@/components/social/ReviewModal';
@@ -135,9 +136,14 @@ export default function PublicProfile() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <View style={[styles.avatar, { borderColor: theme.surface }]}>
-            <Text style={styles.avatarText}>{profile.name.trim().charAt(0).toUpperCase() || '?'}</Text>
-          </View>
+          <Avatar
+            uri={profile.avatar_url}
+            name={profile.name}
+            size={84}
+            fontSize={34}
+            color="#12C854"
+            style={[styles.avatar, { borderColor: theme.surface }]}
+          />
           <Text style={[styles.name, { color: theme.textPrimary }]}>{profile.name}</Text>
           <Text style={[styles.handle, { color: theme.textSecondary }]}>@{profile.username}</Text>
           {profile.bio ? <Text style={[styles.bio, { color: theme.textSecondary }]}>{profile.bio}</Text> : null}
@@ -273,13 +279,9 @@ const styles = StyleSheet.create({
     width: 84,
     height: 84,
     borderRadius: 30,
-    backgroundColor: '#12C854',
-    justifyContent: 'center',
-    alignItems: 'center',
     borderWidth: 3,
     marginBottom: 14,
   },
-  avatarText: { color: '#FFFFFF', fontSize: 34, fontWeight: '800' },
   name: { fontSize: 21, fontWeight: '800' },
   handle: { fontSize: 13, marginTop: 3 },
   bio: { fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 12, maxWidth: 320 },

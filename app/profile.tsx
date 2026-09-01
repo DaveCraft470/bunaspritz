@@ -6,6 +6,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useUser } from '@/contexts/UserContext';
+import { Avatar } from '@/components/common/Avatar';
 import { getMutualFriends } from '@/lib/social';
 import { getUserEventStats } from '@/lib/events';
 
@@ -28,7 +29,6 @@ export default function Profile() {
   const name = user?.name || 'Utilizator';
   const username = user?.username || 'utilizator';
   const bio = user?.bio || 'Ieșiri bune, oameni faini și seri de ținut minte. ✨';
-  const avatarLetter = name.trim().charAt(0).toUpperCase() || 'U';
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -39,9 +39,14 @@ export default function Profile() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.profileHeader}>
-          <View style={[styles.profileAvatar, { borderColor: theme.surface }]}>
-            <Text style={styles.profileAvatarText}>{avatarLetter}</Text>
-          </View>
+          <Avatar
+            uri={user?.avatarUrl}
+            name={name}
+            size={74}
+            fontSize={32}
+            color="#12C854"
+            style={[styles.profileAvatar, { borderColor: theme.surface }]}
+          />
           <View style={styles.profileTitleBlock}>
             <View style={styles.nameRow}>
               <Text style={[styles.profileName, { color: theme.textPrimary }]}>{name}</Text>
@@ -111,8 +116,7 @@ const styles = StyleSheet.create({
   profile: { flex: 1 },
   profileContent: { padding: 22 },
   profileHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  profileAvatar: { width: 74, height: 74, borderRadius: 27, backgroundColor: '#12C854', justifyContent: 'center', alignItems: 'center', borderWidth: 3 },
-  profileAvatarText: { color: '#FFFFFF', fontSize: 32, fontWeight: '800' },
+  profileAvatar: { width: 74, height: 74, borderRadius: 27, borderWidth: 3 },
   profileTitleBlock: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   profileName: { fontSize: 21, fontWeight: '800', letterSpacing: -0.4 },

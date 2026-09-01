@@ -5,7 +5,10 @@ export type Profile = {
   name: string;
   username: string;
   bio: string;
+  avatar_url: string | null;
 };
+
+const PROFILE_COLUMNS = 'id, name, username, bio, avatar_url';
 
 export async function searchProfiles(query: string, excludeId: string): Promise<Profile[]> {
   const trimmed = query.trim().replace(/[,()]/g, '');
@@ -13,7 +16,7 @@ export async function searchProfiles(query: string, excludeId: string): Promise<
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, username, bio')
+    .select(PROFILE_COLUMNS)
     .or(`name.ilike.%${trimmed}%,username.ilike.%${trimmed}%`)
     .neq('id', excludeId)
     .limit(20);
@@ -23,7 +26,7 @@ export async function searchProfiles(query: string, excludeId: string): Promise<
 }
 
 export async function getProfile(id: string): Promise<Profile | null> {
-  const { data, error } = await supabase.from('profiles').select('id, name, username, bio').eq('id', id).single();
+  const { data, error } = await supabase.from('profiles').select(PROFILE_COLUMNS).eq('id', id).single();
   if (error) return null;
   return data;
 }
@@ -63,7 +66,7 @@ export async function getMutualFriends(myId: string): Promise<Profile[]> {
   const mutualIds = (mutualEdges ?? []).map((row) => row.follower_id);
   if (!mutualIds.length) return [];
 
-  const { data: profiles } = await supabase.from('profiles').select('id, name, username, bio').in('id', mutualIds);
+  const { data: profiles } = await supabase.from('profiles').select(PROFILE_COLUMNS).in('id', mutualIds);
   return profiles ?? [];
 }
 

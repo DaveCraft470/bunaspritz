@@ -10,6 +10,7 @@ import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
+import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { FriendPrefsModal } from '@/components/social/FriendPrefsModal';
 import { FriendPrefs, Profile, getFriendPrefs, getMutualFriends, setFriendPrefs } from '@/lib/social';
@@ -80,11 +81,7 @@ export default function Friends() {
             onPress={() => router.push(`/user/${friend.id}`)}
             style={[styles.row, { backgroundColor: theme.surface, borderColor: theme.border }]}
           >
-            <View style={[styles.avatar, { backgroundColor: theme.surfaceMuted }]}>
-              <Text style={[styles.avatarLetter, { color: theme.textPrimary }]}>
-                {friend.name.trim().charAt(0).toUpperCase() || '?'}
-              </Text>
-            </View>
+            <Avatar uri={friend.avatar_url} name={friend.name} size={44} fontSize={18} style={styles.avatar} />
             <View style={styles.rowText}>
               <Text style={[styles.name, { color: theme.textPrimary }]} numberOfLines={1}>
                 {friend.name}
@@ -146,8 +143,7 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 10,
   },
-  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  avatarLetter: { fontSize: 18, fontWeight: '800' },
+  avatar: { width: 44, height: 44, borderRadius: 22 },
   rowText: { flex: 1 },
   name: { fontSize: 14, fontWeight: '700' },
   username: { fontSize: 11, marginTop: 2 },

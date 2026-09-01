@@ -24,7 +24,9 @@ import { useAppTheme } from '@/contexts/ThemeContext';
 import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
+import { Avatar } from '@/components/common/Avatar';
 import { Profile, getMutualFriends } from '@/lib/social';
+import { extensionAndTypeForImage } from '@/lib/media';
 import {
   DbMessage,
   MediaType,
@@ -74,13 +76,6 @@ function formatDuration(ms: number | null | undefined) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-function extensionAndTypeForImage(asset: ImagePicker.ImagePickerAsset): { extension: string; contentType: string } {
-  const mimeType = asset.mimeType ?? 'image/jpeg';
-  if (mimeType === 'image/png') return { extension: '.png', contentType: mimeType };
-  if (mimeType === 'image/webp') return { extension: '.webp', contentType: mimeType };
-  return { extension: '.jpg', contentType: 'image/jpeg' };
 }
 
 // One bubble's photo, resolved from a signed URL on demand — the DB only
@@ -564,12 +559,8 @@ export default function Messages() {
                     return (
                       <ChatListRow
                         key={friend.id}
-                        avatarNode={
-                          <Text style={[styles.friendAvatarLetter, { color: theme.textPrimary }]}>
-                            {friend.name.trim().charAt(0).toUpperCase() || '?'}
-                          </Text>
-                        }
-                        avatarColor={theme.surfaceMuted}
+                        avatarNode={<Avatar uri={friend.avatar_url} name={friend.name} size={50} fontSize={18} />}
+                        avatarColor="transparent"
                         name={friend.name}
                         timestamp={last ? formatListTimestamp(last.created_at) : null}
                         preview={last ? messagePreview(last) : 'Trimite un mesaj'}
@@ -601,11 +592,13 @@ export default function Messages() {
               >
                 <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
               </Pressable>
-              <View style={[styles.avatar, { backgroundColor: selectedGroup?.color ?? theme.surfaceMuted }]}>
-                <Text style={selectedGroup ? styles.emoji : [styles.friendAvatarLetter, { color: theme.textPrimary }]}>
-                  {selectedGroup ? selectedGroup.emoji : activeFriend?.name.trim().charAt(0).toUpperCase() ?? '?'}
-                </Text>
-              </View>
+              {selectedGroup ? (
+                <View style={[styles.avatar, { backgroundColor: selectedGroup.color }]}>
+                  <Text style={styles.emoji}>{selectedGroup.emoji}</Text>
+                </View>
+              ) : (
+                <Avatar uri={activeFriend?.avatar_url} name={activeFriend?.name ?? '?'} size={38} fontSize={15} style={styles.avatar} />
+              )}
               <View>
                 <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
                   {selectedGroup ? selectedGroup.title : activeFriend?.name}
@@ -749,7 +742,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   chatAvatar: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
-  friendAvatarLetter: { fontSize: 18, fontWeight: '800' },
   chatBody: { flex: 1 },
   chatTopLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   chatName: { fontSize: 15, fontWeight: '700', flexShrink: 1, marginRight: 8 },

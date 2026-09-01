@@ -10,6 +10,7 @@ import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
+import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { follow, getFollowStatus, Profile, searchProfiles } from '@/lib/social';
 
@@ -66,11 +67,7 @@ export default function Search() {
         onPress={() => router.push(`/user/${person.id}`)}
         style={[styles.personRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
       >
-        <View style={[styles.avatar, { backgroundColor: theme.surfaceMuted }]}>
-          <Text style={[styles.avatarLetter, { color: theme.textPrimary }]}>
-            {person.name.trim().charAt(0).toUpperCase() || '?'}
-          </Text>
-        </View>
+        <Avatar uri={person.avatar_url} name={person.name} size={44} fontSize={18} style={styles.avatar} />
         <View style={styles.personText}>
           <Text style={[styles.personName, { color: theme.textPrimary }]} numberOfLines={1}>
             {person.name}
@@ -193,8 +190,7 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 10,
   },
-  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  avatarLetter: { fontSize: 18, fontWeight: '800' },
+  avatar: { width: 44, height: 44, borderRadius: 22 },
   personText: { flex: 1 },
   personName: { fontSize: 14, fontWeight: '700' },
   personSubtitle: { fontSize: 11, marginTop: 2 },

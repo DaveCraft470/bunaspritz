@@ -89,7 +89,7 @@ export function subscribeToNewEvents(onInsert: (event: SpritzEvent) => void) {
   };
 }
 
-export type EventAttendee = { userId: string; name: string; username: string };
+export type EventAttendee = { userId: string; name: string; username: string; avatarUrl: string | null };
 
 // Reads visible_event_attendees (not the raw table) so hide_activity_from is
 // respected — the viewer never even receives a hidden attendee's row.
@@ -98,8 +98,8 @@ export async function fetchAttendees(eventId: string): Promise<EventAttendee[]> 
   const userIds = (rows ?? []).map((row) => row.user_id);
   if (!userIds.length) return [];
 
-  const { data: profiles } = await supabase.from('profiles').select('id, name, username').in('id', userIds);
-  return (profiles ?? []).map((p) => ({ userId: p.id, name: p.name, username: p.username }));
+  const { data: profiles } = await supabase.from('profiles').select('id, name, username, avatar_url').in('id', userIds);
+  return (profiles ?? []).map((p) => ({ userId: p.id, name: p.name, username: p.username, avatarUrl: p.avatar_url }));
 }
 
 export async function hasJoined(eventId: string, userId: string): Promise<boolean> {

@@ -1,30 +1,60 @@
 import { useState } from 'react';
-import { Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
+import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
+import { extensionAndTypeForImage } from '@/lib/media';
 
 const USERNAME_REGEX = /^[a-z0-9_.]{3,20}$/i;
 
 export default function EditProfile() {
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
-  const { user, updateProfile } = useUser();
+  const { user, updateProfile, uploadAvatar } = useUser();
 
   const [name, setName] = useState(user?.name ?? '');
   const [username, setUsername] = useState(user?.username ?? '');
   const [bio, setBio] = useState(user?.bio ?? '');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  async function handlePickAvatar() {
+    if (uploadingAvatar) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets[0]) return;
+
+    const asset = result.assets[0];
+    const { extension, contentType } = extensionAndTypeForImage(asset);
+
+    light();
+    setUploadingAvatar(true);
+    const uploadResult = await uploadAvatar(asset.uri, extension, contentType);
+    setUploadingAvatar(false);
+
+    if (!uploadResult.ok) {
+      setError(uploadResult.error);
+    }
+  }
 
   async function handleSave() {
     if (saving) return;
@@ -82,6 +112,26 @@ export default function EditProfile() {
         extraScrollHeight={Platform.OS === 'ios' ? 20 : 0}
         keyboardOpeningTime={0}
       >
+          <View style={styles.avatarSection}>
+            <AnimatedPressable onPress={handlePickAvatar} style={styles.avatarPressable}>
+              <Avatar
+                uri={user?.avatarUrl}
+                name={name || 'U'}
+                size={92}
+                fontSize={38}
+                color={colors.green500}
+                style={[styles.avatarImage, { borderColor: theme.surface }]}
+              />
+              <View style={[styles.avatarBadge, { borderColor: theme.surface }]}>
+                {uploadingAvatar ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Ionicons name="camera" size={16} color={colors.white} />
+                )}
+              </View>
+            </AnimatedPressable>
+          </View>
+
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <View style={styles.inputGroup}>
               <Text style={[styles.label, { color: theme.textPrimary }]}>Nume</Text>
@@ -177,6 +227,21 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
 
+  avatarSection: { alignItems: 'center', marginBottom: spacing.lg },
+  avatarPressable: { position: 'relative' },
+  avatarImage: { borderWidth: 3 },
+  avatarBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 3,
+    backgroundColor: colors.green500,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   card: {
     borderRadius: 22,
     borderWidth: 1,
