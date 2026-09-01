@@ -1,7 +1,7 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
 
 import { supabase } from '@/lib/supabase';
-import { registerForPushNotifications } from '@/lib/pushTokens';
+import { registerForPushNotifications, unregisterPushToken } from '@/lib/pushTokens';
 import {
   PublicUser,
   devSkipAuth,
@@ -110,6 +110,10 @@ export function UserProvider({ children }: PropsWithChildren) {
         return result;
       },
       async signOut() {
+        // Unregister before signing out — the push_tokens RLS policy needs
+        // an authenticated session, so this has to run first or it's just
+        // silently blocked, leaving the row (and the notifications) behind.
+        if (user) await unregisterPushToken(user.id);
         await signOutStorage();
         setAuthenticated(false);
         setUser(null);
