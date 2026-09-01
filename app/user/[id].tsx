@@ -11,6 +11,7 @@ import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
+import { InstagramLink } from '@/components/common/InstagramLink';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { FriendPrefsModal } from '@/components/social/FriendPrefsModal';
 import { ReviewModal } from '@/components/social/ReviewModal';
@@ -147,6 +148,7 @@ export default function PublicProfile() {
           <Text style={[styles.name, { color: theme.textPrimary }]}>{profile.name}</Text>
           <Text style={[styles.handle, { color: theme.textSecondary }]}>@{profile.username}</Text>
           {profile.bio ? <Text style={[styles.bio, { color: theme.textSecondary }]}>{profile.bio}</Text> : null}
+          <InstagramLink handle={profile.instagram_handle} style={styles.instagramLink} />
         </View>
 
         <View style={styles.actionsRow}>
@@ -285,6 +287,7 @@ const styles = StyleSheet.create({
   name: { fontSize: 21, fontWeight: '800' },
   handle: { fontSize: 13, marginTop: 3 },
   bio: { fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 12, maxWidth: 320 },
+  instagramLink: { alignSelf: 'center', marginTop: 10 },
   actionsRow: { flexDirection: 'row', gap: 10, width: '100%', maxWidth: 360 },
   actionButton: { flex: 1, minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   actionText: { fontSize: 14, fontWeight: '800' },

@@ -7,6 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
+import { InstagramLink } from '@/components/common/InstagramLink';
 import { getMutualFriends } from '@/lib/social';
 import { getUserEventStats } from '@/lib/events';
 
@@ -67,6 +68,7 @@ export default function Profile() {
         </View>
 
         <Text style={[styles.bio, { color: theme.textSecondary }]}>{bio}</Text>
+        <InstagramLink handle={user?.instagramHandle} />
 
         <View style={[styles.statsRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Pressable style={styles.stat} onPress={() => router.push('/friends')}>

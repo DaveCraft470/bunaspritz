@@ -24,7 +24,12 @@ type UserContextValue = {
   logIn: (email: string, password: string) => Promise<AuthResult & { verified?: boolean }>;
   signOut: () => Promise<void>;
   devSkip: () => Promise<void>;
-  updateProfile: (fields: { name?: string; username?: string; bio?: string }) => Promise<AuthResult>;
+  updateProfile: (fields: {
+    name?: string;
+    username?: string;
+    bio?: string;
+    instagramHandle?: string;
+  }) => Promise<AuthResult>;
   uploadAvatar: (localUri: string, extension: string, contentType: string) => Promise<AuthResult>;
   setNotifyFriendsOnJoin: (value: boolean) => Promise<void>;
 };

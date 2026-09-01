@@ -6,9 +6,10 @@ export type Profile = {
   username: string;
   bio: string;
   avatar_url: string | null;
+  instagram_handle: string | null;
 };
 
-const PROFILE_COLUMNS = 'id, name, username, bio, avatar_url';
+const PROFILE_COLUMNS = 'id, name, username, bio, avatar_url, instagram_handle';
 
 export async function searchProfiles(query: string, excludeId: string): Promise<Profile[]> {
   const trimmed = query.trim().replace(/[,()]/g, '');

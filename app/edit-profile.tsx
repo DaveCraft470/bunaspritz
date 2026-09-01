@@ -26,6 +26,7 @@ export default function EditProfile() {
   const [name, setName] = useState(user?.name ?? '');
   const [username, setUsername] = useState(user?.username ?? '');
   const [bio, setBio] = useState(user?.bio ?? '');
+  const [instagramHandle, setInstagramHandle] = useState(user?.instagramHandle ?? '');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -70,7 +71,12 @@ export default function EditProfile() {
     }
 
     setSaving(true);
-    const result = await updateProfile({ name: name.trim(), username: username.trim(), bio: bio.trim() });
+    const result = await updateProfile({
+      name: name.trim(),
+      username: username.trim(),
+      bio: bio.trim(),
+      instagramHandle,
+    });
     setSaving(false);
 
     if (!result.ok) {
@@ -181,6 +187,22 @@ export default function EditProfile() {
                   style={[styles.input, styles.bioInput, { color: theme.textPrimary }]}
                   multiline
                   numberOfLines={3}
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: theme.textPrimary }]}>Instagram</Text>
+              <View style={[styles.inputWrapper, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
+                <Ionicons name="logo-instagram" size={19} color={theme.textSecondary} />
+                <TextInput
+                  value={instagramHandle}
+                  onChangeText={setInstagramHandle}
+                  placeholder="username (opțional)"
+                  placeholderTextColor={theme.textSecondary}
+                  style={[styles.input, { color: theme.textPrimary }]}
+                  autoCapitalize="none"
+                  autoCorrect={false}
                 />
               </View>
             </View>

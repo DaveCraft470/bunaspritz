@@ -11,12 +11,25 @@ export type PublicUser = {
   email: string;
   bio: string;
   avatarUrl: string | null;
+  instagramHandle: string | null;
   verified: boolean;
   notifyFriendsOnJoin: boolean;
 };
 
 type AuthResult = { ok: true } | { ok: false; error: string };
 type LoginResult = { ok: true; verified: boolean } | { ok: false; error: string };
+
+// Accepts a bare username, an @-prefixed one, or a pasted profile URL
+// (with or without www/https, trailing slash, query string) and reduces it
+// all down to just the handle, matching what's actually stored.
+export function normalizeInstagramHandle(input: string): string {
+  return input
+    .trim()
+    .replace(/^https?:\/\/(www\.)?instagram\.com\//i, '')
+    .replace(/^@/, '')
+    .replace(/[/?].*$/, '')
+    .toLowerCase();
+}
 
 function mapAuthError(message: string): string {
   if (/already registered|already exists/i.test(message)) return 'Există deja un cont cu acest email.';
@@ -28,7 +41,7 @@ function mapAuthError(message: string): string {
 async function fetchProfile(userId: string, email: string): Promise<PublicUser | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, username, bio, avatar_url, verified, notify_friends_on_join')
+    .select('id, name, username, bio, avatar_url, instagram_handle, verified, notify_friends_on_join')
     .eq('id', userId)
     .single();
 
@@ -39,6 +52,7 @@ async function fetchProfile(userId: string, email: string): Promise<PublicUser |
     username: data.username,
     bio: data.bio,
     avatarUrl: data.avatar_url,
+    instagramHandle: data.instagram_handle,
     verified: data.verified,
     notifyFriendsOnJoin: data.notify_friends_on_join,
     email,
@@ -117,16 +131,20 @@ export async function signOut(): Promise<void> {
 }
 
 export async function updateCurrentUser(
-  fields: Partial<Pick<PublicUser, 'name' | 'username' | 'bio'>>
+  fields: Partial<Pick<PublicUser, 'name' | 'username' | 'bio'>> & { instagramHandle?: string }
 ): Promise<AuthResult> {
   const { data } = await supabase.auth.getUser();
   if (!data.user) {
     return { ok: false, error: 'Niciun cont conectat.' };
   }
 
-  const patch: Record<string, string> = {};
+  const patch: Record<string, string | null> = {};
   if (fields.name !== undefined) patch.name = fields.name.trim();
   if (fields.bio !== undefined) patch.bio = fields.bio.trim();
+  if (fields.instagramHandle !== undefined) {
+    const normalized = normalizeInstagramHandle(fields.instagramHandle);
+    patch.instagram_handle = normalized || null;
+  }
 
   if (fields.username !== undefined) {
     const normalizedUsername = fields.username.trim().toLowerCase();
