@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Dimensions, Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { buildApproxStaticMapUrl } from '@/constants/mapbox';
+import { buildApproxStaticMapUrl, buildDirectionsUrl, buildExactStaticMapUrl } from '@/constants/mapbox';
 import { getSpritzEvent, SPRITZ_SONGS } from '@/constants/events';
 import { colors, shadows } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
@@ -128,6 +128,7 @@ export default function EventDetail() {
   }
 
   const mapUrl = buildApproxStaticMapUrl(event.lng, event.lat, scheme, 640, 300, event.id);
+  const exactMapUrl = buildExactStaticMapUrl(event.lng, event.lat, scheme, 640, 300);
 
   return (
     <View style={styles.root}>
@@ -215,14 +216,32 @@ export default function EventDetail() {
           )}
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>LOCAȚIE APROXIMATIVĂ</Text>
-            <View style={styles.mapWrap}>
-              <Image source={{ uri: mapUrl }} style={styles.mapImage} resizeMode="cover" />
-              <View style={styles.mapCircle} pointerEvents="none" />
-            </View>
-            <Text style={[styles.mapHint, { color: theme.textSecondary }]}>
-              Locația exactă apare doar celor confirmați.
-            </Text>
+            {joined ? (
+              <>
+                <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>LOCAȚIE EXACTĂ</Text>
+                <View style={styles.mapWrap}>
+                  <Image source={{ uri: exactMapUrl }} style={styles.mapImage} resizeMode="cover" />
+                </View>
+                <AnimatedPressable
+                  onPress={() => Linking.openURL(buildDirectionsUrl(event.lng, event.lat)).catch(() => {})}
+                  style={[styles.directionsButton, { backgroundColor: theme.surfaceMuted }]}
+                >
+                  <Ionicons name="navigate" size={14} color={colors.green500} />
+                  <Text style={[styles.directionsText, { color: colors.green500 }]}>Deschide în hartă</Text>
+                </AnimatedPressable>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>LOCAȚIE APROXIMATIVĂ</Text>
+                <View style={styles.mapWrap}>
+                  <Image source={{ uri: mapUrl }} style={styles.mapImage} resizeMode="cover" />
+                  <View style={styles.mapCircle} pointerEvents="none" />
+                </View>
+                <Text style={[styles.mapHint, { color: theme.textSecondary }]}>
+                  Locația exactă apare doar celor confirmați.
+                </Text>
+              </>
+            )}
           </View>
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -345,6 +364,16 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.85)',
   },
   mapHint: { fontSize: 11, fontStyle: 'italic' },
+  directionsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 40,
+    borderRadius: 12,
+    marginTop: 2,
+  },
+  directionsText: { fontSize: 13, fontWeight: '800' },
   attendeeCount: { fontSize: 18, fontWeight: '800' },
   attendeeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 2 },
   attendeeItem: { alignItems: 'center', width: 52 },

@@ -75,3 +75,17 @@ export function buildApproxStaticMapUrl(
   const roundedLat = Math.round(fuzzedLat * 1000) / 1000;
   return `https://api.mapbox.com/styles/v1/mapbox/${style}/static/${roundedLng},${roundedLat},13,0,0/${width}x${height}?access_token=${MAPBOX_ACCESS_TOKEN}`;
 }
+
+// The real pin, at the real coordinates — only ever shown to confirmed
+// attendees (see event/[id].tsx), never fuzzed or rounded.
+export function buildExactStaticMapUrl(lng: number, lat: number, scheme: 'light' | 'dark', width = 640, height = 300) {
+  const style = scheme === 'dark' ? STATIC_STYLE_DARK : STATIC_STYLE_LIGHT;
+  const marker = `pin-l+1FD460(${lng},${lat})`;
+  return `https://api.mapbox.com/styles/v1/mapbox/${style}/static/${marker}/${lng},${lat},15,0,0/${width}x${height}?access_token=${MAPBOX_ACCESS_TOKEN}`;
+}
+
+// Opens the device's default maps app (or Google Maps in-browser as a
+// fallback) centered on the exact spot, for directions.
+export function buildDirectionsUrl(lng: number, lat: number) {
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+}
