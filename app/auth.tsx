@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, Text, TextInput, View, Pressable, Platform } from 'react-native';
+import { Alert, StyleSheet, Text, TextInput, View, Pressable, Platform } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useUser } from '@/contexts/UserContext';
+import { supabase } from '@/lib/supabase';
 import { colors } from '@/constants/theme';
 import { LogoWordmark } from '@/components/home/LogoWordmark';
 
@@ -35,6 +36,7 @@ export default function Auth() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   const passwordChecks = PASSWORD_REQUIREMENTS.map((req) => ({ ...req, met: req.test(password) }));
   const passwordValid = passwordChecks.every((check) => check.met);
@@ -98,6 +100,32 @@ export default function Auth() {
   const handleDevSkip = async () => {
     await devSkip();
     router.replace('/');
+  };
+
+  // Sends Supabase's own password-reset email — completing the reset
+  // (setting a new password) happens on whatever page Supabase's Auth
+  // settings point the link at, not in this app. That's the honest half of
+  // this button to build without knowing that redirect target; wiring a
+  // full in-app "set new password" deep-link screen is a separate follow-up.
+  const handleForgotPassword = async () => {
+    if (resettingPassword) return;
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!EMAIL_REGEX.test(trimmedEmail)) {
+      setError('Introdu emailul tău mai sus, apoi apasă din nou.');
+      return;
+    }
+
+    setError(null);
+    setResettingPassword(true);
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail);
+    setResettingPassword(false);
+
+    if (resetError) {
+      Alert.alert('A apărut o eroare', resetError.message);
+      return;
+    }
+
+    Alert.alert('Email trimis', `Verifică ${trimmedEmail} pentru linkul de resetare a parolei.`);
   };
 
   const switchMode = (newMode: Mode) => {
@@ -468,7 +496,8 @@ export default function Auth() {
 
           {mode === 'login' && (
             <Pressable
-              onPress={() => {}}
+              onPress={handleForgotPassword}
+              disabled={resettingPassword}
               style={styles.forgotButton}
             >
               <Text
@@ -477,7 +506,7 @@ export default function Auth() {
                   { color: colors.green500 },
                 ]}
               >
-                Ai uitat parola?
+                {resettingPassword ? 'Se trimite...' : 'Ai uitat parola?'}
               </Text>
             </Pressable>
           )}
