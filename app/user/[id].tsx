@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -12,6 +12,7 @@ import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { FriendPrefsModal } from '@/components/social/FriendPrefsModal';
+import { ReviewModal } from '@/components/social/ReviewModal';
 import {
   FollowStatus,
   FriendPrefs,
@@ -23,6 +24,15 @@ import {
   setFriendPrefs,
   unfollow,
 } from '@/lib/social';
+import {
+  Review,
+  ReviewSummary,
+  ReviewableEvent,
+  getReviewSummary,
+  getReviewableEvents,
+  getReviews,
+  submitReview,
+} from '@/lib/reviews';
 
 export default function PublicProfile() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -34,13 +44,31 @@ export default function PublicProfile() {
   const [status, setStatus] = useState<FollowStatus>({ iFollow: false, followsMe: false, mutual: false });
   const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewSummary, setReviewSummary] = useState<ReviewSummary>({ average: 0, count: 0 });
+  const [reviewableEvents, setReviewableEvents] = useState<ReviewableEvent[]>([]);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
 
   useEffect(() => {
     if (!user || !id) return;
     getProfile(id).then(setProfile);
     getFollowStatus(user.id, id).then(setStatus);
     getFriendPrefs(user.id, id).then(setPrefs);
+    getReviews(id).then(setReviews);
+    getReviewSummary(id).then(setReviewSummary);
+    if (user.id !== id) getReviewableEvents(id).then(setReviewableEvents);
   }, [user, id]);
+
+  async function handleSubmitReview(eventId: string, rating: number, comment: string) {
+    if (!user || !id) return false;
+    const ok = await submitReview(eventId, user.id, id, rating, comment);
+    if (ok) {
+      getReviews(id).then(setReviews);
+      getReviewSummary(id).then(setReviewSummary);
+      setReviewableEvents((current) => current.filter((event) => event.eventId !== eventId));
+    }
+    return ok;
+  }
 
   async function toggleFollow() {
     if (!user || !id) return;
@@ -147,6 +175,56 @@ export default function PublicProfile() {
             Puteți să vă trimiteți mesaje doar dacă vă urmăriți reciproc.
           </Text>
         )}
+
+        <View style={styles.reviewsSection}>
+          <View style={styles.reviewsHeader}>
+            <View style={styles.reviewsSummary}>
+              <Ionicons name="star" size={16} color="#F5B301" />
+              <Text style={[styles.reviewsAverage, { color: theme.textPrimary }]}>
+                {reviewSummary.count > 0 ? reviewSummary.average.toFixed(1) : '–'}
+              </Text>
+              <Text style={[styles.reviewsCount, { color: theme.textSecondary }]}>
+                ({reviewSummary.count} {reviewSummary.count === 1 ? 'review' : 'review-uri'})
+              </Text>
+            </View>
+            {reviewableEvents.length > 0 && (
+              <Pressable
+                onPress={() => {
+                  light();
+                  setReviewModalOpen(true);
+                }}
+                style={[styles.reviewButton, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}
+              >
+                <Text style={[styles.reviewButtonText, { color: theme.accent }]}>Lasă un review</Text>
+              </Pressable>
+            )}
+          </View>
+
+          {reviews.length === 0 ? (
+            <Text style={[styles.reviewsEmpty, { color: theme.textSecondary }]}>Niciun review încă.</Text>
+          ) : (
+            reviews.map((review) => (
+              <View key={review.id} style={[styles.reviewCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <View style={styles.reviewCardHeader}>
+                  <Text style={[styles.reviewerName, { color: theme.textPrimary }]}>{review.reviewerName}</Text>
+                  <View style={styles.reviewStars}>
+                    {[1, 2, 3, 4, 5].map((value) => (
+                      <Ionicons
+                        key={value}
+                        name={value <= review.rating ? 'star' : 'star-outline'}
+                        size={12}
+                        color="#F5B301"
+                      />
+                    ))}
+                  </View>
+                </View>
+                {review.comment ? (
+                  <Text style={[styles.reviewComment, { color: theme.textSecondary }]}>{review.comment}</Text>
+                ) : null}
+              </View>
+            ))
+          )}
+        </View>
       </ScrollView>
 
       <FriendPrefsModal
@@ -155,6 +233,14 @@ export default function PublicProfile() {
         prefs={prefs}
         onChange={updatePref}
         onClose={() => setMenuOpen(false)}
+      />
+
+      <ReviewModal
+        visible={reviewModalOpen}
+        subjectName={profile.name}
+        events={reviewableEvents}
+        onSubmit={handleSubmitReview}
+        onClose={() => setReviewModalOpen(false)}
       />
     </SafeAreaView>
   );
@@ -201,4 +287,17 @@ const styles = StyleSheet.create({
   actionButton: { flex: 1, minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   actionText: { fontSize: 14, fontWeight: '800' },
   hint: { fontSize: 11, fontStyle: 'italic', marginTop: 14, textAlign: 'center', maxWidth: 300 },
+  reviewsSection: { width: '100%', maxWidth: 360, marginTop: 26 },
+  reviewsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  reviewsSummary: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  reviewsAverage: { fontSize: 15, fontWeight: '800' },
+  reviewsCount: { fontSize: 12, fontWeight: '600' },
+  reviewButton: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 11, borderWidth: 1 },
+  reviewButtonText: { fontSize: 11, fontWeight: '800' },
+  reviewsEmpty: { fontSize: 12, fontStyle: 'italic', textAlign: 'center', paddingVertical: 10 },
+  reviewCard: { borderRadius: 15, borderWidth: 1, padding: 13, marginBottom: 10 },
+  reviewCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  reviewerName: { fontSize: 13, fontWeight: '800' },
+  reviewStars: { flexDirection: 'row', gap: 1 },
+  reviewComment: { fontSize: 12, lineHeight: 17, marginTop: 6 },
 });
