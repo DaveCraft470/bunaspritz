@@ -127,7 +127,7 @@ export default function EventDetail() {
     );
   }
 
-  const mapUrl = buildApproxStaticMapUrl(event.lng, event.lat, scheme);
+  const mapUrl = buildApproxStaticMapUrl(event.lng, event.lat, scheme, 640, 300, event.id);
 
   return (
     <View style={styles.root}>
