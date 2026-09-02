@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
@@ -85,16 +85,21 @@ function formatDuration(ms: number | null | undefined) {
 function ImageBubble({ path }: { path: string }) {
   const { colors: theme } = useAppTheme();
   const [url, setUrl] = useState<string | null>(null);
+  // Bumped to force a fresh signed URL if the current one fails to load —
+  // e.g. a thread left open past the 1-hour signed-URL TTL. Without this,
+  // an expired URL just showed a permanently broken image.
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setUrl(null);
     getSignedMediaUrl(path).then((signed) => {
       if (!cancelled) setUrl(signed);
     });
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, retryCount]);
 
   if (!url) {
     return (
@@ -104,7 +109,14 @@ function ImageBubble({ path }: { path: string }) {
     );
   }
 
-  return <Image source={{ uri: url }} style={styles.imageBubble} resizeMode="cover" />;
+  return (
+    <Image
+      source={{ uri: url }}
+      style={styles.imageBubble}
+      resizeMode="cover"
+      onError={() => setRetryCount((n) => (n < 1 ? n + 1 : n))}
+    />
+  );
 }
 
 // One bubble's voice note. Playback is driven by the single shared player
@@ -297,6 +309,16 @@ export default function Messages() {
   useEffect(() => {
     if (voicePlayerStatus.didJustFinish) setPlayingMessageId(null);
   }, [voicePlayerStatus.didJustFinish]);
+
+  // A playing voice note used to keep going with no visible "now playing"
+  // indicator once you left the thread it started in — closing a thread,
+  // switching to a different friend, or going back to the list all change
+  // activeChat, so this is the one place that catches all three.
+  useEffect(() => {
+    voicePlayer.pause();
+    setPlayingMessageId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChat]);
 
   useEffect(() => {
     setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true }).catch(() => {});
@@ -541,7 +563,14 @@ export default function Messages() {
                 <Text style={[styles.eyebrow, { color: theme.accent }]}>BUNĂ {(user?.name || '').toUpperCase()}, SPRITZ?</Text>
                 <Text style={[styles.title, { color: theme.textPrimary }]}>Mesaje</Text>
               </View>
-              <Pressable style={styles.roundButton}>
+              <Pressable
+                onPress={() => {
+                  light();
+                  router.push('/friends');
+                }}
+                style={styles.roundButton}
+                accessibilityLabel="Mesaj nou"
+              >
                 <Text style={styles.roundButtonText}>+</Text>
               </Pressable>
             </View>
