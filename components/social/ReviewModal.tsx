@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, spacing } from '@/constants/theme';
@@ -39,6 +39,8 @@ export function ReviewModal({
       setRating(0);
       setComment('');
       onClose();
+    } else {
+      Alert.alert('A apărut o eroare', 'Nu am putut trimite review-ul. Încearcă din nou.');
     }
   }
 
