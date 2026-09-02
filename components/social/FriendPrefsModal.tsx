@@ -26,7 +26,11 @@ export function FriendPrefsModal({
           <Text style={[styles.title, { color: theme.textPrimary }]}>{friendName}</Text>
 
           <View style={styles.row}>
-            <Text style={[styles.label, { color: theme.textPrimary }]}>Fără mesaje de la el/ea</Text>
+            {/* This only suppresses the push notification — their messages
+                still arrive and show up in the thread normally. The old
+                copy ("no messages from them") implied actual blocking,
+                which nothing in the app enforces. */}
+            <Text style={[styles.label, { color: theme.textPrimary }]}>Fără notificări pentru mesajele lui/ei</Text>
             <Switch
               value={prefs.mute_messages}
               onValueChange={(value) => onChange({ mute_messages: value })}
