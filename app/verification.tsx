@@ -16,7 +16,13 @@ import { colors } from '@/constants/theme';
 // Didit's hosted page, and Didit's webhook flips profiles.verified once approved.
 // UserContext subscribes to that row over Realtime, so `user.verified` here
 // updates on its own — no polling, no client-side "mark myself verified" path.
-type Status = 'idle' | 'starting' | 'waiting' | 'error';
+type Status = 'idle' | 'starting' | 'waiting' | 'error' | 'timedOut';
+
+// Didit's own webhook has no "we're stuck" signal we can surface (a
+// rejection/expiry just never flips profiles.verified), so this is the only
+// way out of an infinite "Se așteaptă rezultatul..." spinner for a genuinely
+// declined verification, not just a slow one.
+const WAIT_TIMEOUT_MS = 3 * 60 * 1000;
 
 export default function Verification() {
   const { colors: theme } = useAppTheme();
@@ -30,6 +36,12 @@ export default function Verification() {
       router.replace((returnTo as any) || '/');
     }
   }, [user?.verified, returnTo]);
+
+  useEffect(() => {
+    if (status !== 'waiting') return;
+    const timer = setTimeout(() => setStatus('timedOut'), WAIT_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [status]);
 
   const startVerification = async () => {
     setStatus('starting');
@@ -80,7 +92,9 @@ export default function Verification() {
           <Text style={[styles.description, { color: theme.textSecondary }]}>
             {status === 'waiting'
               ? 'Se procesează verificarea. Poate dura câteva minute — te trecem automat mai departe imediat ce e gata.'
-              : 'Vei fi dus la pagina noastră de verificare (act de identitate + o poză live) pentru a confirma că ai peste 18 ani.'}
+              : status === 'timedOut'
+                ? 'Durează mai mult decât de obicei — verificarea poate să fi eșuat. Poți încerca din nou.'
+                : 'Vei fi dus la pagina noastră de verificare (act de identitate + o poză live) pentru a confirma că ai peste 18 ani.'}
           </Text>
 
           <View style={[styles.infoBox, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
@@ -92,6 +106,9 @@ export default function Verification() {
 
           {status === 'error' && (
             <Text style={styles.errorText}>Nu am putut porni verificarea. Încearcă din nou.</Text>
+          )}
+          {status === 'timedOut' && (
+            <Text style={styles.errorText}>Verificarea nu s-a finalizat. Încearcă din nou.</Text>
           )}
 
           {status === 'waiting' ? (

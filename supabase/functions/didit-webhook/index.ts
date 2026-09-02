@@ -54,9 +54,18 @@ Deno.serve(async (req) => {
 
   const payload = JSON.parse(new TextDecoder().decode(rawBody));
 
-  if (payload.webhook_type === 'status.updated' && payload.status === 'Approved' && payload.vendor_data) {
-    const admin = adminClient();
-    await admin.from('profiles').update({ verified: true }).eq('id', payload.vendor_data);
+  if (payload.webhook_type === 'status.updated' && payload.vendor_data) {
+    if (payload.status === 'Approved') {
+      const admin = adminClient();
+      await admin.from('profiles').update({ verified: true }).eq('id', payload.vendor_data);
+    } else {
+      // Declined/Rejected/Expired etc. — no profiles column to record this
+      // yet, so nothing to write, but log it rather than dropping it
+      // silently: verification.tsx's own timeout is what actually gets a
+      // rejected user unstuck client-side (it can't distinguish "still
+      // processing" from "rejected" without a status field to poll).
+      console.log(`Didit verification not approved for ${payload.vendor_data}: ${payload.status}`);
+    }
   }
 
   return new Response('ok', { status: 200 });
