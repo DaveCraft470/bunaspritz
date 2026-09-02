@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { useAppTheme } from '@/contexts/ThemeContext';
@@ -21,11 +22,21 @@ export function Avatar({
   style?: object;
 }) {
   const { colors: theme } = useAppTheme();
+  const [failed, setFailed] = useState(false);
   const letter = name.trim().charAt(0).toUpperCase() || '?';
   const dimensionStyle = { width: size, height: size, borderRadius: size / 2 };
 
-  if (uri) {
-    return <Image source={{ uri }} style={[dimensionStyle, style]} />;
+  // Resets the failure flag when the uri itself changes (e.g. a re-upload),
+  // so a previously-broken image gets a fresh chance to load — otherwise
+  // this component would only ever show the letter fallback from then on.
+  const [lastUri, setLastUri] = useState(uri);
+  if (uri !== lastUri) {
+    setLastUri(uri);
+    if (failed) setFailed(false);
+  }
+
+  if (uri && !failed) {
+    return <Image source={{ uri }} style={[dimensionStyle, style]} onError={() => setFailed(true)} />;
   }
 
   return (

@@ -188,7 +188,11 @@ export async function uploadAvatar(
     return { ok: false, error: 'Nu am putut citi imaginea.' };
   }
 
-  const path = `${userData.user.id}/avatar${extension}`;
+  // Fixed filename regardless of extension — picking a .png after a .jpg
+  // used to leave the old file behind forever (upsert only overwrites an
+  // exact key match); the actual served content-type comes from the
+  // contentType passed to .upload() below, not from this path's extension.
+  const path = `${userData.user.id}/avatar`;
   const { error: uploadError } = await supabase.storage
     .from(AVATAR_BUCKET)
     .upload(path, bytes, { contentType, upsert: true });
