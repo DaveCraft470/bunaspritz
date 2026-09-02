@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Animated, Dimensions, Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -13,7 +13,7 @@ import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { useEvents } from '@/contexts/EventsContext';
-import { EventAttendee, fetchAttendees, hasJoined, joinEvent } from '@/lib/events';
+import { EventAttendee, fetchAttendees, getEventAttendeeCount, hasJoined, joinEvent } from '@/lib/events';
 import { getProfile } from '@/lib/social';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
@@ -50,6 +50,11 @@ export default function EventDetail() {
   const { user } = useUser();
   const [celebrating, setCelebrating] = useState(false);
   const [attendees, setAttendees] = useState<EventAttendee[]>([]);
+  // A separate, privacy-safe true count — attendees (above) comes from
+  // visible_event_attendees, which can undercount for viewers that someone
+  // has hidden their activity from, and this drives capacity so it can't be
+  // wrong in either direction.
+  const [attendeeCount, setAttendeeCount] = useState(0);
   const [hostName, setHostName] = useState<string | null>(null);
   const [joined, setJoined] = useState(false);
   const [joining, setJoining] = useState(false);
@@ -57,11 +62,12 @@ export default function EventDetail() {
   useEffect(() => {
     if (!event || !user) return;
     fetchAttendees(event.id).then(setAttendees);
+    getEventAttendeeCount(event.id).then(setAttendeeCount);
     hasJoined(event.id, user.id).then(setJoined);
     getProfile(event.hostId).then((host) => setHostName(host?.name ?? null));
   }, [event, user]);
 
-  const isFull = !!event?.maxParticipants && attendees.length >= event.maxParticipants && !joined;
+  const isFull = !!event?.maxParticipants && attendeeCount >= event.maxParticipants && !joined;
 
   async function handleJoin() {
     if (!event || !user || isFull) return;
@@ -71,17 +77,19 @@ export default function EventDetail() {
       return;
     }
 
-    medium();
-    setCelebrating(true);
-
     if (!joined) {
       setJoining(true);
       const ok = await joinEvent(event.id, user.id);
       setJoining(false);
-      if (ok) {
-        setJoined(true);
-        fetchAttendees(event.id).then(setAttendees);
+      if (!ok) {
+        Alert.alert('A apărut o eroare', 'Nu am putut confirma participarea. Încearcă din nou.');
+        return;
       }
+      medium();
+      setCelebrating(true);
+      setJoined(true);
+      fetchAttendees(event.id).then(setAttendees);
+      getEventAttendeeCount(event.id).then(setAttendeeCount);
     }
   }
 

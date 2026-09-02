@@ -67,6 +67,22 @@ export async function uploadRentalProof(
   return path;
 }
 
+// Cleans up an uploaded-but-orphaned proof — e.g. the event insert that was
+// supposed to point at it failed. Same idiom as sendMediaMessage's cleanup
+// in lib/messaging.ts; best-effort, a failed delete just leaves one file.
+export async function removeRentalProof(path: string): Promise<void> {
+  await supabase.storage.from(RENTAL_PROOF_BUCKET).remove([path]);
+}
+
+// A privacy-safe count — never identities, so it's accurate regardless of
+// anyone's hide_activity_from setting (unlike fetchAttendees, which reads
+// visible_event_attendees and can undercount for a given viewer).
+export async function getEventAttendeeCount(eventId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('event_attendee_count', { p_event_id: eventId });
+  if (error || data === null) return 0;
+  return data;
+}
+
 export async function fetchEvents(): Promise<SpritzEvent[]> {
   const { data, error } = await supabase.from('events').select(EVENT_COLUMNS).order('created_at', { ascending: true });
   if (error) return [];
