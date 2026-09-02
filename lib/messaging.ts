@@ -3,8 +3,11 @@ import { File } from 'expo-file-system';
 import { supabase } from '@/lib/supabase';
 
 const MEDIA_BUCKET = 'message-media';
-// Signed URLs are re-fetched on every render of a bubble that needs one, so
-// this only has to outlive a single screen session, not the message itself.
+// Fetched once per bubble mount and cached in component state (see
+// ImageBubble in app/messages.tsx), with a retry-on-load-error fetching a
+// fresh one — so this just has to outlive a single thread-open session in
+// the common case, not the message itself. A thread left open longer than
+// this will hit that retry path once the image fails to load.
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 export type MediaType = 'image' | 'audio';

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -12,7 +12,7 @@ import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
-import { follow, getFollowStatus, Profile, searchProfiles } from '@/lib/social';
+import { follow, getFollowStatuses, Profile, searchProfiles } from '@/lib/social';
 
 export default function Search() {
   const { colors: theme } = useAppTheme();
@@ -38,10 +38,10 @@ export default function Search() {
       const people = await searchProfiles(trimmedQuery, user.id);
       if (cancelled) return;
 
-      const statuses = await Promise.all(people.map((p) => getFollowStatus(user.id, p.id)));
+      const statuses = await getFollowStatuses(user.id, people.map((p) => p.id));
       if (cancelled) return;
 
-      setFollowing(new Set(people.filter((_, i) => statuses[i].iFollow).map((p) => p.id)));
+      setFollowing(new Set(people.filter((p) => statuses[p.id]?.iFollow).map((p) => p.id)));
       setResults(people);
       setLoading(false);
     }, 300); // debounce
@@ -56,7 +56,17 @@ export default function Search() {
     if (!user) return;
     light();
     setFollowing((current) => new Set(current).add(person.id));
-    await follow(user.id, person.id);
+    const ok = await follow(user.id, person.id);
+    if (!ok) {
+      // Revert the optimistic mark — this used to show "Adăugat ✓" even
+      // when the insert failed, since follow() swallowed its own error.
+      setFollowing((current) => {
+        const next = new Set(current);
+        next.delete(person.id);
+        return next;
+      });
+      Alert.alert('A apărut o eroare', 'Nu am putut urmări acest cont. Încearcă din nou.');
+    }
   }
 
   function renderPerson(person: Profile) {

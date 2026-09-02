@@ -45,8 +45,33 @@ export async function getFollowStatus(myId: string, otherId: string): Promise<Fo
   return { iFollow, followsMe, mutual: iFollow && followsMe };
 }
 
-export async function follow(myId: string, otherId: string): Promise<void> {
-  await supabase.from('follows').insert({ follower_id: myId, followee_id: otherId });
+// Same result as calling getFollowStatus once per id, but as 2 queries
+// total instead of up to 2*N — search.tsx was firing one getFollowStatus
+// per search result (up to 20 individual round-trips per debounced
+// keystroke).
+export async function getFollowStatuses(myId: string, otherIds: string[]): Promise<Record<string, FollowStatus>> {
+  const result: Record<string, FollowStatus> = {};
+  if (!otherIds.length) return result;
+
+  const [{ data: following }, { data: followers }] = await Promise.all([
+    supabase.from('follows').select('followee_id').eq('follower_id', myId).in('followee_id', otherIds),
+    supabase.from('follows').select('follower_id').eq('followee_id', myId).in('follower_id', otherIds),
+  ]);
+
+  const iFollowSet = new Set((following ?? []).map((row) => row.followee_id));
+  const followsMeSet = new Set((followers ?? []).map((row) => row.follower_id));
+
+  for (const id of otherIds) {
+    const iFollow = iFollowSet.has(id);
+    const followsMe = followsMeSet.has(id);
+    result[id] = { iFollow, followsMe, mutual: iFollow && followsMe };
+  }
+  return result;
+}
+
+export async function follow(myId: string, otherId: string): Promise<boolean> {
+  const { error } = await supabase.from('follows').insert({ follower_id: myId, followee_id: otherId });
+  return !error;
 }
 
 export async function unfollow(myId: string, otherId: string): Promise<void> {
