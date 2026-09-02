@@ -5,7 +5,6 @@ import {
   Animated,
   Image,
   Keyboard,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -29,6 +28,7 @@ import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
 import { Profile, getMutualFriends } from '@/lib/social';
 import { extensionAndTypeForImage } from '@/lib/media';
+import { alertPermissionDenied } from '@/lib/permissions';
 import {
   DbMessage,
   MediaType,
@@ -324,16 +324,7 @@ export default function Messages() {
       // canAskAgain is false once the user has denied it before — Android
       // then answers this instantly without ever showing the system dialog
       // again, which used to fail completely silently here.
-      if (!permission.canAskAgain) {
-        Alert.alert(
-          'Acces la microfon necesar',
-          'Activează microfonul pentru Spritz din Setările telefonului ca să poți trimite mesaje vocale.',
-          [
-            { text: 'Anulează', style: 'cancel' },
-            { text: 'Deschide Setări', onPress: () => Linking.openSettings() },
-          ]
-        );
-      }
+      alertPermissionDenied(permission.canAskAgain, 'Activează microfonul pentru Spritz din Setările telefonului ca să poți trimite mesaje vocale.');
       return;
     }
 
@@ -366,7 +357,10 @@ export default function Messages() {
   async function pickAndSendImage() {
     if (!user || !activeFriend || sendingMedia) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+    if (!permission.granted) {
+      alertPermissionDenied(permission.canAskAgain, 'Activează accesul la poze din Setările telefonului ca să poți trimite fotografii.');
+      return;
+    }
 
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
     if (result.canceled || !result.assets[0]) return;

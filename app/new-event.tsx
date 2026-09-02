@@ -12,7 +12,8 @@ import { MAPBOX_INITIAL_VIEW, buildApproxStaticMapUrl } from '@/constants/mapbox
 import { useEvents } from '@/contexts/EventsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
-import { createEvent, uploadRentalProof } from '@/lib/events';
+import { createEvent, removeRentalProof, uploadRentalProof } from '@/lib/events';
+import { alertPermissionDenied } from '@/lib/permissions';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
@@ -106,7 +107,10 @@ export default function NewEvent() {
 
   async function handlePickRentalProof() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+    if (!permission.granted) {
+      alertPermissionDenied(permission.canAskAgain, 'Activează accesul la poze din Setările telefonului ca să atașezi o dovadă.');
+      return;
+    }
 
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
     if (result.canceled || !result.assets[0]) return;
@@ -122,6 +126,15 @@ export default function NewEvent() {
       return;
     }
     if (!user || publishingRef.current) return;
+
+    // The default hour/minute (now + 1h, capped at 23:00) can land in the
+    // past for a "today" event created late at night — e.g. picking 23:45
+    // defaults to 23:00 today, already 45 minutes gone by publish time.
+    if (buildStartsAt().getTime() < Date.now()) {
+      Alert.alert('Ora aleasă a trecut deja', 'Alege o oră care nu a trecut încă.');
+      return;
+    }
+
     publishingRef.current = true;
     setPublishing(true);
 
@@ -157,6 +170,10 @@ export default function NewEvent() {
       });
 
       if (!created) {
+        // The upload succeeded even though the event insert didn't —
+        // clean it up rather than leaving an orphaned file, same as
+        // sendMediaMessage does for message media.
+        if (rentalProofPath) removeRentalProof(rentalProofPath).catch(() => {});
         Alert.alert('A apărut o eroare', 'Nu am putut publica evenimentul. Încearcă din nou.');
         return;
       }

@@ -15,6 +15,7 @@ import {
 import { colors, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { alertPermissionDenied } from '@/lib/permissions';
 
 type Coords = { lng: number; lat: number };
 
@@ -125,11 +126,13 @@ export function LocationPickerModal({
   async function handleUseMyLocation() {
     setLocating(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
         const position = await Location.getCurrentPositionAsync({});
         const { longitude, latitude } = position.coords;
         webviewRef.current?.injectJavaScript(`window.__flyTo && window.__flyTo(${longitude}, ${latitude}); true;`);
+      } else {
+        alertPermissionDenied(canAskAgain, 'Activează locația din Setările telefonului ca să pornești harta de la poziția ta.');
       }
     } catch {
       // Ignore — user can still search or drag the map.
