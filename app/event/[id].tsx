@@ -13,7 +13,7 @@ import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { useEvents } from '@/contexts/EventsContext';
-import { EventAttendee, fetchAttendees, getEventAttendeeCount, hasJoined, joinEvent } from '@/lib/events';
+import { EventAttendee, fetchAttendees, getEventAttendeeCount, hasJoined, joinEvent, leaveEvent } from '@/lib/events';
 import { getProfile } from '@/lib/social';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
@@ -67,30 +67,64 @@ export default function EventDetail() {
     getProfile(event.hostId).then((host) => setHostName(host?.name ?? null));
   }, [event, user]);
 
+  const isHost = !!user && !!event && user.id === event.hostId;
   const isFull = !!event?.maxParticipants && attendeeCount >= event.maxParticipants && !joined;
 
-  async function handleJoin() {
-    if (!event || !user || isFull) return;
+  // The DB has always allowed leaving (see lib/events.ts) but nothing in
+  // the app ever exposed it — once max_participants shipped this session,
+  // a filled event's spot could never free up even if someone left. Hosts
+  // can't leave their own event (would desync it from event_attendees).
+  function confirmLeave() {
+    if (!event || !user) return;
+    light();
+    Alert.alert('Renunți la participare?', `Nu vei mai fi în lista pentru „${event.title}”.`, [
+      { text: 'Anulează', style: 'cancel' },
+      {
+        text: 'Renunță',
+        style: 'destructive',
+        onPress: async () => {
+          setJoining(true);
+          const ok = await leaveEvent(event.id, user.id);
+          setJoining(false);
+          if (!ok) {
+            Alert.alert('A apărut o eroare', 'Nu am putut anula participarea. Încearcă din nou.');
+            return;
+          }
+          setJoined(false);
+          fetchAttendees(event.id).then(setAttendees);
+          getEventAttendeeCount(event.id).then(setAttendeeCount);
+        },
+      },
+    ]);
+  }
 
-    if (!joined && !user.verified) {
+  async function handleJoin() {
+    if (!event || !user) return;
+
+    if (joined) {
+      if (!isHost) confirmLeave();
+      return;
+    }
+
+    if (isFull) return;
+
+    if (!user.verified) {
       router.push({ pathname: '/verification', params: { returnTo: `/event/${event.id}` } });
       return;
     }
 
-    if (!joined) {
-      setJoining(true);
-      const ok = await joinEvent(event.id, user.id);
-      setJoining(false);
-      if (!ok) {
-        Alert.alert('A apărut o eroare', 'Nu am putut confirma participarea. Încearcă din nou.');
-        return;
-      }
-      medium();
-      setCelebrating(true);
-      setJoined(true);
-      fetchAttendees(event.id).then(setAttendees);
-      getEventAttendeeCount(event.id).then(setAttendeeCount);
+    setJoining(true);
+    const ok = await joinEvent(event.id, user.id);
+    setJoining(false);
+    if (!ok) {
+      Alert.alert('A apărut o eroare', 'Nu am putut confirma participarea. Încearcă din nou.');
+      return;
     }
+    medium();
+    setCelebrating(true);
+    setJoined(true);
+    fetchAttendees(event.id).then(setAttendees);
+    getEventAttendeeCount(event.id).then(setAttendeeCount);
   }
 
   // Grows in from wherever the pin was tapped on the map, instead of a plain
@@ -297,11 +331,19 @@ export default function EventDetail() {
         <View style={[styles.ctaWrap, { paddingBottom: insets.bottom + 20 }]}>
           <AnimatedPressable
             onPress={handleJoin}
-            disabled={isFull}
-            style={[styles.ctaButton, shadows.glowGreen, isFull && styles.ctaButtonDisabled]}
+            disabled={(isFull && !joined) || (joined && isHost) || joining}
+            style={[styles.ctaButton, shadows.glowGreen, isFull && !joined && styles.ctaButtonDisabled]}
           >
             <Text style={styles.ctaText}>
-              {joined ? 'Ești în listă ✓' : joining ? 'Se confirmă...' : isFull ? 'Eveniment plin 🙁' : 'Hai la Spritz! 🍻'}
+              {joining
+                ? 'Se procesează...'
+                : joined
+                  ? isHost
+                    ? 'Găzduiești ✓'
+                    : 'Ești în listă ✓ · Renunță'
+                  : isFull
+                    ? 'Eveniment plin 🙁'
+                    : 'Hai la Spritz! 🍻'}
             </Text>
           </AnimatedPressable>
         </View>

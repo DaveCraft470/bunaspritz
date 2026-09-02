@@ -183,3 +183,14 @@ export async function joinEvent(eventId: string, userId: string): Promise<boolea
 
   return true;
 }
+
+// The DB has always allowed this ("leave as yourself" in the init
+// migration), but nothing in the app ever called it — meaning a filled
+// event's spot could never free up once someone joined and changed their
+// mind, which max_participants (this session) turned from a minor gap into
+// a real one. Not for hosts — leaving your own event would desync it from
+// event_attendees while the event itself still exists; gate that in the UI.
+export async function leaveEvent(eventId: string, userId: string): Promise<boolean> {
+  const { error } = await supabase.from('event_attendees').delete().eq('event_id', eventId).eq('user_id', userId);
+  return !error;
+}
