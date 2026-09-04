@@ -373,6 +373,8 @@ export default function Messages() {
     if (sent) {
       setFriendMessages((current) => [...current, sent]);
       setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
+    } else {
+      Alert.alert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
     }
   }
 
@@ -397,6 +399,8 @@ export default function Messages() {
     if (sent) {
       setFriendMessages((current) => [...current, sent]);
       setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
+    } else {
+      Alert.alert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
     }
   }
 
@@ -549,6 +553,12 @@ export default function Messages() {
     if (sent) {
       setFriendMessages((current) => [...current, sent]);
       setFriendLast((current) => ({ ...current, [activeChat.id]: sent }));
+    } else {
+      // Restore the draft — it was cleared optimistically above, and losing
+      // typed text on a failed send (instead of just letting the user retry)
+      // is the same silent-failure shape already fixed for follow()/photos.
+      setDraft(text);
+      Alert.alert('A apărut o eroare', 'Nu am putut trimite mesajul. Încearcă din nou.');
     }
   }
 
@@ -654,7 +664,20 @@ export default function Messages() {
                 </Text>
                 {selectedGroup && <Text style={[styles.online, { color: theme.accent }]}>● activi acum în Brașov</Text>}
               </View>
-              <Text style={[styles.more, { color: theme.textSecondary }]}>•••</Text>
+              {activeFriend ? (
+                <Pressable
+                  onPress={() => {
+                    light();
+                    router.push(`/user/${activeFriend.id}`);
+                  }}
+                  hitSlop={10}
+                  accessibilityLabel="Vezi profilul"
+                >
+                  <Text style={[styles.more, { color: theme.textSecondary }]}>•••</Text>
+                </Pressable>
+              ) : (
+                <Text style={[styles.more, { color: theme.textSecondary }]}>•••</Text>
+              )}
             </View>
 
             <ScrollView
