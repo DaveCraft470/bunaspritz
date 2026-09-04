@@ -7,6 +7,8 @@ import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { ReviewableEvent } from '@/lib/reviews';
 
+const COMMENT_MAX_LENGTH = 300;
+
 export function ReviewModal({
   visible,
   subjectName,
@@ -107,8 +109,12 @@ export function ReviewModal({
               style={[styles.input, { color: theme.textPrimary }]}
               multiline
               numberOfLines={3}
+              maxLength={COMMENT_MAX_LENGTH}
             />
           </View>
+          <Text style={[styles.counter, { color: theme.textSecondary }]}>
+            {comment.length}/{COMMENT_MAX_LENGTH}
+          </Text>
 
           <Pressable
             onPress={handleSubmit}
@@ -135,8 +141,9 @@ const styles = StyleSheet.create({
   eventChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12, borderWidth: 1, maxWidth: 160 },
   eventChipText: { fontSize: 12, fontWeight: '700' },
   stars: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 18 },
-  inputWrapper: { minHeight: 78, borderRadius: 13, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10, marginBottom: spacing.md },
+  inputWrapper: { minHeight: 78, borderRadius: 13, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
   input: { fontSize: 14, minHeight: 58, textAlignVertical: 'top' },
+  counter: { fontSize: 11, textAlign: 'right', marginBottom: spacing.md, marginTop: 4 },
   submit: { minHeight: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   submitText: { color: colors.white, fontSize: 14, fontWeight: '800' },
   close: { minHeight: 46, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginTop: 10 },

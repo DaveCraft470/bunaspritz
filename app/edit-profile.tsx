@@ -18,6 +18,7 @@ import { extensionAndTypeForImage } from '@/lib/media';
 import { alertPermissionDenied } from '@/lib/permissions';
 
 const USERNAME_REGEX = /^[a-z0-9_.]{3,20}$/i;
+const BIO_MAX_LENGTH = 150;
 
 export default function EditProfile() {
   const { colors: theme } = useAppTheme();
@@ -191,8 +192,12 @@ export default function EditProfile() {
                   style={[styles.input, styles.bioInput, { color: theme.textPrimary }]}
                   multiline
                   numberOfLines={3}
+                  maxLength={BIO_MAX_LENGTH}
                 />
               </View>
+              <Text style={[styles.counter, { color: theme.textSecondary }]}>
+                {bio.length}/{BIO_MAX_LENGTH}
+              </Text>
             </View>
 
             <View style={styles.inputGroup}>
@@ -310,6 +315,12 @@ const styles = StyleSheet.create({
   bioInput: {
     minHeight: 66,
     textAlignVertical: 'top',
+  },
+
+  counter: {
+    fontSize: 11,
+    textAlign: 'right',
+    marginTop: 4,
   },
 
   errorText: {

@@ -21,6 +21,9 @@ import { GlassSurface } from '@/components/common/GlassSurface';
 import { LocationPickerModal } from '@/components/event/LocationPickerModal';
 import { extensionAndTypeForImage } from '@/lib/media';
 
+const TITLE_MAX_LENGTH = 60;
+const DETAIL_MAX_LENGTH = 200;
+
 const EMOJI_CHOICES = ['🎉', '🍻', '🎷', '🎸', '🌮', '🎲', '🥾', '🧺', '⛰️', '🍹'];
 const COLOR_CHOICES = ['#FF9F5A', '#5FD98A', '#5AA9E6', '#FFD25A', '#FF6B81', '#B388FF', '#4ED9C9'];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -135,15 +138,28 @@ export default function NewEvent() {
       return;
     }
 
+    const finalCoords = coords ?? { lng: MAPBOX_INITIAL_VIEW.center[0], lat: MAPBOX_INITIAL_VIEW.center[1] };
+    const parsedEntryFee = entryFee.trim() ? Number(entryFee.replace(',', '.')) : null;
+    const parsedDrinksPrice = drinksPrice.trim() ? Number(drinksPrice.replace(',', '.')) : null;
+    const parsedMaxParticipants = maxParticipants.trim() ? Number(maxParticipants) : null;
+
+    // The DB rejects a negative entry_fee_ron/drinks_price_ron (see
+    // events_entry_fee_non_negative / events_drinks_price_non_negative), but
+    // used to only surface that as the generic "couldn't publish" error
+    // after a round-trip — catch it here with a specific message instead.
+    if (parsedEntryFee !== null && !Number.isNaN(parsedEntryFee) && parsedEntryFee < 0) {
+      Alert.alert('Preț invalid', 'Prețul intrării nu poate fi negativ.');
+      return;
+    }
+    if (parsedDrinksPrice !== null && !Number.isNaN(parsedDrinksPrice) && parsedDrinksPrice < 0) {
+      Alert.alert('Preț invalid', 'Prețul băuturilor nu poate fi negativ.');
+      return;
+    }
+
     publishingRef.current = true;
     setPublishing(true);
 
     try {
-      const finalCoords = coords ?? { lng: MAPBOX_INITIAL_VIEW.center[0], lat: MAPBOX_INITIAL_VIEW.center[1] };
-      const parsedEntryFee = entryFee.trim() ? Number(entryFee.replace(',', '.')) : null;
-      const parsedDrinksPrice = drinksPrice.trim() ? Number(drinksPrice.replace(',', '.')) : null;
-      const parsedMaxParticipants = maxParticipants.trim() ? Number(maxParticipants) : null;
-
       let rentalProofPath: string | null = null;
       if (locationIsRented && rentalProofAsset) {
         const { extension, contentType } = extensionAndTypeForImage(rentalProofAsset);
@@ -225,7 +241,11 @@ export default function NewEvent() {
           placeholder="Ex: Grătar la iarbă verde"
           placeholderTextColor={theme.textSecondary}
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
+          maxLength={TITLE_MAX_LENGTH}
         />
+        <Text style={[styles.counter, { color: theme.textSecondary }]}>
+          {title.length}/{TITLE_MAX_LENGTH}
+        </Text>
 
         <Text style={[styles.label, { color: theme.textSecondary }]}>DESCRIERE</Text>
         <TextInput
@@ -234,7 +254,11 @@ export default function NewEvent() {
           placeholder="Spune-le prietenilor ce să aștepte"
           placeholderTextColor={theme.textSecondary}
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
+          maxLength={DETAIL_MAX_LENGTH}
         />
+        <Text style={[styles.counter, { color: theme.textSecondary }]}>
+          {detail.length}/{DETAIL_MAX_LENGTH}
+        </Text>
 
         <Text style={[styles.label, { color: theme.textSecondary }]}>LOCAȚIE</Text>
         <AnimatedPressable
@@ -488,6 +512,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '800' },
   content: { paddingHorizontal: spacing.lg, paddingBottom: 60, gap: 6 },
   label: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginTop: 14, marginBottom: 6 },
+  counter: { fontSize: 10, textAlign: 'right' },
   input: {
     borderWidth: 1,
     borderRadius: 14,
