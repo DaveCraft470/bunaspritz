@@ -92,6 +92,7 @@ export function LocationPickerModal({
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [searchNotFound, setSearchNotFound] = useState(false);
 
   function handleMessage(event: WebViewMessageEvent) {
     const data = event.nativeEvent.data;
@@ -107,6 +108,7 @@ export function LocationPickerModal({
     const trimmed = query.trim();
     if (!trimmed || searching) return;
     setSearching(true);
+    setSearchNotFound(false);
     try {
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(trimmed)}.json?access_token=${MAPBOX_ACCESS_TOKEN}&proximity=${center.lng},${center.lat}&limit=1&language=ro`;
       const response = await fetch(url);
@@ -115,9 +117,13 @@ export function LocationPickerModal({
       if (feature?.center) {
         const [lng, lat] = feature.center;
         webviewRef.current?.injectJavaScript(`window.__flyTo && window.__flyTo(${lng}, ${lat}); true;`);
+      } else {
+        // Previously silent — a mistyped search just looked like the button
+        // did nothing, with no way to tell "no results" from "didn't tap it".
+        setSearchNotFound(true);
       }
     } catch {
-      // Best-effort — the user can still drag the map manually.
+      setSearchNotFound(true);
     } finally {
       setSearching(false);
     }
@@ -157,7 +163,10 @@ export function LocationPickerModal({
             <Ionicons name="search" size={16} color={theme.textSecondary} />
             <TextInput
               value={query}
-              onChangeText={setQuery}
+              onChangeText={(text) => {
+                setQuery(text);
+                setSearchNotFound(false);
+              }}
               onSubmitEditing={handleSearch}
               placeholder="Caută o adresă sau un loc"
               placeholderTextColor={theme.textSecondary}
@@ -173,6 +182,10 @@ export function LocationPickerModal({
             {locating ? <ActivityIndicator size="small" color={colors.green500} /> : <Ionicons name="locate" size={18} color={colors.green500} />}
           </Pressable>
         </View>
+
+        {searchNotFound && (
+          <Text style={[styles.searchHint, { color: theme.textSecondary }]}>Nicio locație găsită.</Text>
+        )}
 
         <View style={styles.mapArea}>
           <WebView
@@ -231,6 +244,7 @@ const styles = StyleSheet.create({
     height: 46,
   },
   searchInput: { flex: 1, fontSize: 14 },
+  searchHint: { fontSize: 12, fontStyle: 'italic', paddingHorizontal: spacing.lg, paddingTop: 4 },
   locateButton: { width: 46, height: 46, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   mapArea: { flex: 1, marginTop: 8, position: 'relative' },
   webview: { flex: 1 },

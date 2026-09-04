@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { colors } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
@@ -20,12 +21,28 @@ export default function Profile() {
   const { user } = useUser();
   const [friendCount, setFriendCount] = useState(0);
   const [eventStats, setEventStats] = useState({ attended: 0, hosted: 0 });
+  const [refreshing, setRefreshing] = useState(false);
+
+  // getMutualFriends/getUserEventStats already resolve to safe defaults
+  // (empty list / zero counts) rather than throwing, so there's no distinct
+  // load-error state to surface here — this just makes "did it actually
+  // refetch" pullable instead of only ever loading once on mount.
+  const load = useCallback(async () => {
+    if (!user) return;
+    const [friends, stats] = await Promise.all([getMutualFriends(user.id), getUserEventStats(user.id)]);
+    setFriendCount(friends.length);
+    setEventStats(stats);
+  }, [user]);
 
   useEffect(() => {
-    if (!user) return;
-    getMutualFriends(user.id).then((friends) => setFriendCount(friends.length));
-    getUserEventStats(user.id).then(setEventStats);
-  }, [user]);
+    load();
+  }, [load]);
+
+  async function onRefresh() {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }
 
   const name = user?.name || 'Utilizator';
   const username = user?.username || 'utilizator';
@@ -38,6 +55,7 @@ export default function Profile() {
         style={[styles.profile, { backgroundColor: theme.page }]}
         contentContainerStyle={[styles.profileContent, { paddingBottom: insets.bottom + 116 }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.green500} />}
       >
         <View style={styles.profileHeader}>
           <Avatar

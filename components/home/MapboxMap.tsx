@@ -270,7 +270,9 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
 
   const handleMessage = (event: WebViewMessageEvent) => {
     const data = event.nativeEvent.data;
-    console.log('[MapboxMap]', data);
+    // Was unconditional — spamming every map load/tap/pan in production too,
+    // when lastMessage below (what this was actually for) is already __DEV__-only.
+    if (__DEV__) console.log('[MapboxMap]', data);
     setLastMessage(data);
     if (data === 'loaded') {
       setStatus('ready');
