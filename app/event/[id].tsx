@@ -13,7 +13,7 @@ import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { useEvents } from '@/contexts/EventsContext';
-import { EventAttendee, fetchAttendees, getEventAttendeeCount, hasJoined, joinEvent, leaveEvent } from '@/lib/events';
+import { EventAttendee, deleteEvent, fetchAttendees, getEventAttendeeCount, hasJoined, joinEvent, leaveEvent } from '@/lib/events';
 import { getProfile } from '@/lib/social';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
@@ -41,7 +41,7 @@ function formatPrice(value: number | null) {
 
 export default function EventDetail() {
   const { id, originX, originY } = useLocalSearchParams<{ id: string; originX?: string; originY?: string }>();
-  const { events } = useEvents();
+  const { events, removeEvent } = useEvents();
   const event = getSpritzEvent(events, id);
   const insets = useSafeAreaInsets();
   const { scheme, colors: theme } = useAppTheme();
@@ -93,6 +93,36 @@ export default function EventDetail() {
           setJoined(false);
           fetchAttendees(event.id).then(setAttendees);
           getEventAttendeeCount(event.id).then(setAttendeeCount);
+        },
+      },
+    ]);
+  }
+
+  // Same DB support gap as leaveEvent: "hosts delete their own events" has
+  // been a valid RLS policy since the init migration, but nothing in the app
+  // ever called it — a host who published a bad event had no way to take it
+  // down. The confirmation names the attendee count, not just the event
+  // title, since a host cancelling deletes everyone else's spot too.
+  function confirmCancelEvent() {
+    if (!event || !user) return;
+    light();
+    const attendeeNote =
+      attendeeCount > 1 ? `${attendeeCount} persoane sunt în listă.` : 'Ești singurul din listă.';
+    Alert.alert('Anulezi evenimentul?', `„${event.title}” va fi șters definitiv. ${attendeeNote}`, [
+      { text: 'Înapoi', style: 'cancel' },
+      {
+        text: 'Anulează evenimentul',
+        style: 'destructive',
+        onPress: async () => {
+          setJoining(true);
+          const ok = await deleteEvent(event.id, user.id, event.rentalProofPath);
+          setJoining(false);
+          if (!ok) {
+            Alert.alert('A apărut o eroare', 'Nu am putut anula evenimentul. Încearcă din nou.');
+            return;
+          }
+          removeEvent(event.id);
+          router.back();
         },
       },
     ]);
@@ -207,7 +237,14 @@ export default function EventDetail() {
           <Text style={[styles.title, { color: theme.textPrimary }]}>{event.title}</Text>
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{event.detail}</Text>
           {hostName && (
-            <Text style={[styles.hostLine, { color: theme.textSecondary }]}>Găzduit de {hostName}</Text>
+            <AnimatedPressable
+              onPress={() => {
+                light();
+                router.push(`/user/${event.hostId}`);
+              }}
+            >
+              <Text style={[styles.hostLine, { color: theme.textSecondary }]}>Găzduit de {hostName}</Text>
+            </AnimatedPressable>
           )}
 
           {(formatEventStart(event.startsAt) ||
@@ -293,12 +330,19 @@ export default function EventDetail() {
             </Text>
             <View style={styles.attendeeRow}>
               {attendees.map((attendee) => (
-                <View key={attendee.userId} style={styles.attendeeItem}>
+                <AnimatedPressable
+                  key={attendee.userId}
+                  style={styles.attendeeItem}
+                  onPress={() => {
+                    light();
+                    router.push(`/user/${attendee.userId}`);
+                  }}
+                >
                   <Avatar uri={attendee.avatarUrl} name={attendee.name} size={44} fontSize={16} style={styles.attendeeAvatar} />
                   <Text numberOfLines={1} style={[styles.attendeeName, { color: theme.textSecondary }]}>
                     {attendee.name}
                   </Text>
-                </View>
+                </AnimatedPressable>
               ))}
             </View>
           </View>
@@ -326,6 +370,13 @@ export default function EventDetail() {
               </View>
             ))}
           </View>
+
+          {isHost && (
+            <AnimatedPressable onPress={confirmCancelEvent} style={styles.cancelEventButton}>
+              <Ionicons name="trash-outline" size={14} color="#E5484D" />
+              <Text style={styles.cancelEventText}>Anulează evenimentul</Text>
+            </AnimatedPressable>
+          )}
         </ScrollView>
 
         <View style={[styles.ctaWrap, { paddingBottom: insets.bottom + 20 }]}>
@@ -437,6 +488,15 @@ const styles = StyleSheet.create({
   songText: { flex: 1 },
   songTitle: { fontSize: 14, fontWeight: '700' },
   songArtist: { fontSize: 12, marginTop: 2 },
+  cancelEventButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 2,
+    paddingVertical: 10,
+  },
+  cancelEventText: { fontSize: 13, fontWeight: '700', color: '#E5484D' },
   ctaWrap: {
     position: 'absolute',
     left: 18,

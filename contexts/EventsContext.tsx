@@ -7,6 +7,7 @@ import { useUser } from '@/contexts/UserContext';
 type EventsContextValue = {
   events: SpritzEvent[];
   addEvent: (event: SpritzEvent) => void;
+  removeEvent: (eventId: string) => void;
   refresh: () => Promise<void>;
 };
 
@@ -39,6 +40,11 @@ export function EventsProvider({ children }: PropsWithChildren) {
       // on the list only ever growing at the end to add just the new pin
       // instead of reloading the whole map.
       addEvent: appendIfNew,
+      // A host cancelling their own event — drops it locally right away
+      // instead of waiting on a refetch, matching addEvent's local-first idiom.
+      removeEvent(eventId: string) {
+        setEvents((current) => current.filter((e) => e.id !== eventId));
+      },
       // Manual pull-to-reload: re-fetches the full list rather than relying
       // on Realtime, in case something was missed while disconnected.
       async refresh() {

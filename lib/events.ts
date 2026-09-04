@@ -194,3 +194,15 @@ export async function leaveEvent(eventId: string, userId: string): Promise<boole
   const { error } = await supabase.from('event_attendees').delete().eq('event_id', eventId).eq('user_id', userId);
   return !error;
 }
+
+// "hosts delete their own events" (init migration) already allowed this —
+// event_attendees and reviews both reference events with `on delete
+// cascade`, so attendees/reviews for a cancelled event clean up on their
+// own. rental_proof_path doesn't (it's just a text column pointing at
+// private storage), so it needs its own best-effort cleanup first — same
+// idiom as removeRentalProof's own doc comment about orphaned uploads.
+export async function deleteEvent(eventId: string, hostId: string, rentalProofPath: string | null): Promise<boolean> {
+  if (rentalProofPath) await removeRentalProof(rentalProofPath);
+  const { error } = await supabase.from('events').delete().eq('id', eventId).eq('host_id', hostId);
+  return !error;
+}
