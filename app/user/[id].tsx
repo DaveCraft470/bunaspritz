@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -43,6 +43,8 @@ export default function PublicProfile() {
   const { user } = useUser();
 
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState(false);
   const [status, setStatus] = useState<FollowStatus>({ iFollow: false, followsMe: false, mutual: false });
   const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false });
   const [menuOpen, setMenuOpen] = useState(false);
@@ -51,15 +53,28 @@ export default function PublicProfile() {
   const [reviewableEvents, setReviewableEvents] = useState<ReviewableEvent[]>([]);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
 
-  useEffect(() => {
+  function loadProfile() {
     if (!user || !id) return;
-    getProfile(id).then(setProfile);
+    setProfileLoading(true);
+    setProfileError(false);
+    getProfile(id)
+      .then((result) => {
+        setProfile(result);
+        setProfileLoading(false);
+        if (!result) setProfileError(true);
+      })
+      .catch(() => {
+        setProfileLoading(false);
+        setProfileError(true);
+      });
     getFollowStatus(user.id, id).then(setStatus);
     getFriendPrefs(user.id, id).then(setPrefs);
     getReviews(id).then(setReviews);
     getReviewSummary(id).then(setReviewSummary);
     if (user.id !== id) getReviewableEvents(id).then(setReviewableEvents);
-  }, [user, id]);
+  }
+
+  useEffect(loadProfile, [user, id]);
 
   async function handleSubmitReview(eventId: string, rating: number, comment: string) {
     if (!user || !id) return false;
@@ -75,26 +90,64 @@ export default function PublicProfile() {
   async function toggleFollow() {
     if (!user || !id) return;
     light();
+    const previous = status;
+    let ok: boolean;
     if (status.iFollow) {
       setStatus((s) => ({ ...s, iFollow: false, mutual: false }));
-      await unfollow(user.id, id);
+      ok = await unfollow(user.id, id);
     } else {
       setStatus((s) => ({ ...s, iFollow: true, mutual: s.followsMe }));
-      await follow(user.id, id);
+      ok = await follow(user.id, id);
+    }
+    if (!ok) {
+      setStatus(previous);
+      Alert.alert('A apărut o eroare', 'Nu am putut actualiza urmărirea. Încearcă din nou.');
     }
   }
 
   async function updatePref(patch: Partial<FriendPrefs>) {
     if (!user || !id) return;
     light();
+    const previous = prefs;
     setPrefs((current) => ({ ...current, ...patch }));
-    await setFriendPrefs(user.id, id, patch);
+    const ok = await setFriendPrefs(user.id, id, patch);
+    if (!ok) {
+      setPrefs(previous);
+      Alert.alert('A apărut o eroare', 'Nu am putut salva preferința. Încearcă din nou.');
+    }
   }
 
   if (!profile) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
         <StatusBar style={theme.statusBar} />
+        <View style={styles.topBar}>
+          <AnimatedPressable
+            onPress={() => {
+              light();
+              router.back();
+            }}
+            hitSlop={10}
+            accessibilityLabel="Înapoi"
+            style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
+          >
+            <GlassSurface />
+            <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
+          </AnimatedPressable>
+          <View style={styles.backButton} />
+        </View>
+        {!profileLoading && (
+          <View style={styles.notFoundWrap}>
+            <Text style={[styles.notFoundText, { color: theme.textSecondary }]}>
+              {profileError ? 'Nu am putut încărca profilul.' : 'Profil negăsit.'}
+            </Text>
+            {profileError && (
+              <Pressable onPress={loadProfile} style={[styles.retryButton, { borderColor: theme.border }]}>
+                <Text style={[styles.retryText, { color: theme.accent }]}>Reîncearcă</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
       </SafeAreaView>
     );
   }
@@ -275,6 +328,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: { fontSize: 15, fontWeight: '800', flex: 1, textAlign: 'center' },
+  notFoundWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: spacing.xl },
+  notFoundText: { fontSize: 14, textAlign: 'center' },
+  retryButton: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 14, borderWidth: 1 },
+  retryText: { fontSize: 13, fontWeight: '700' },
   content: { paddingHorizontal: spacing.lg, paddingBottom: 40, alignItems: 'center' },
   header: { alignItems: 'center', marginTop: 10, marginBottom: 22 },
   avatar: {

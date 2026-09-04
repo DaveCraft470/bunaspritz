@@ -5,6 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Alert } from 'react-native';
+
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
@@ -13,7 +15,7 @@ import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { FriendPrefsModal } from '@/components/social/FriendPrefsModal';
-import { FriendPrefs, Profile, getFriendPrefs, getMutualFriends, setFriendPrefs } from '@/lib/social';
+import { FriendPrefs, Profile, getFriendPrefs, getMutualFriends, setFriendPrefs, unfollow } from '@/lib/social';
 
 export default function Friends() {
   const { colors: theme } = useAppTheme();
@@ -22,16 +24,26 @@ export default function Friends() {
 
   const [friends, setFriends] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [menuFor, setMenuFor] = useState<Profile | null>(null);
   const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false });
 
-  useEffect(() => {
+  function load() {
     if (!user) return;
-    getMutualFriends(user.id).then((list) => {
-      setFriends(list);
-      setLoading(false);
-    });
-  }, [user]);
+    setLoading(true);
+    setLoadError(false);
+    getMutualFriends(user.id)
+      .then((list) => {
+        setFriends(list);
+        setLoading(false);
+      })
+      .catch(() => {
+        setLoading(false);
+        setLoadError(true);
+      });
+  }
+
+  useEffect(load, [user]);
 
   async function openMenu(friend: Profile) {
     if (!user) return;
@@ -43,8 +55,34 @@ export default function Friends() {
   async function updatePref(patch: Partial<FriendPrefs>) {
     if (!user || !menuFor) return;
     light();
+    const previous = prefs;
     setPrefs((current) => ({ ...current, ...patch }));
-    await setFriendPrefs(user.id, menuFor.id, patch);
+    const ok = await setFriendPrefs(user.id, menuFor.id, patch);
+    if (!ok) {
+      setPrefs(previous);
+      Alert.alert('A apărut o eroare', 'Nu am putut salva preferința. Încearcă din nou.');
+    }
+  }
+
+  function confirmRemoveFriend(friend: Profile) {
+    light();
+    Alert.alert('Elimini prietenul?', `Nu vei mai fi conectat cu ${friend.name}.`, [
+      { text: 'Anulează', style: 'cancel' },
+      {
+        text: 'Elimină',
+        style: 'destructive',
+        onPress: async () => {
+          if (!user) return;
+          const ok = await unfollow(user.id, friend.id);
+          if (!ok) {
+            Alert.alert('A apărut o eroare', 'Nu am putut elimina prietenul. Încearcă din nou.');
+            return;
+          }
+          setFriends((current) => current.filter((f) => f.id !== friend.id));
+          setMenuFor(null);
+        },
+      },
+    ]);
   }
 
   return (
@@ -69,7 +107,18 @@ export default function Friends() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {!loading && friends.length === 0 && (
+        {!loading && loadError && (
+          <>
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+              Nu am putut încărca prietenii. Verifică conexiunea și încearcă din nou.
+            </Text>
+            <AnimatedPressable onPress={load} style={[styles.retryButton, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.retryText, { color: theme.textPrimary }]}>Reîncearcă</Text>
+            </AnimatedPressable>
+          </>
+        )}
+
+        {!loading && !loadError && friends.length === 0 && (
           <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
             Încă nu ai prieteni — cei pe care îi urmărești și te urmăresc înapoi apar aici.
           </Text>
@@ -106,6 +155,7 @@ export default function Friends() {
         friendName={menuFor?.name ?? ''}
         prefs={prefs}
         onChange={updatePref}
+        onRemove={() => menuFor && confirmRemoveFriend(menuFor)}
         onClose={() => setMenuFor(null)}
       />
     </SafeAreaView>
@@ -134,6 +184,8 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '800' },
   content: { paddingHorizontal: spacing.lg, paddingBottom: 40 },
   emptyText: { fontSize: 13, fontStyle: 'italic', paddingVertical: 20, textAlign: 'center' },
+  retryButton: { alignSelf: 'center', marginTop: 4, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 14, borderWidth: 1 },
+  retryText: { fontSize: 13, fontWeight: '700' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

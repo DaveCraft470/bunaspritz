@@ -74,8 +74,9 @@ export async function follow(myId: string, otherId: string): Promise<boolean> {
   return !error;
 }
 
-export async function unfollow(myId: string, otherId: string): Promise<void> {
-  await supabase.from('follows').delete().eq('follower_id', myId).eq('followee_id', otherId);
+export async function unfollow(myId: string, otherId: string): Promise<boolean> {
+  const { error } = await supabase.from('follows').delete().eq('follower_id', myId).eq('followee_id', otherId);
+  return !error;
 }
 
 // Everyone you follow who also follows you back.
@@ -116,8 +117,9 @@ export async function getFriendPrefs(ownerId: string, subjectId: string): Promis
   return data ?? DEFAULT_PREFS;
 }
 
-export async function setFriendPrefs(ownerId: string, subjectId: string, patch: Partial<FriendPrefs>): Promise<void> {
-  await supabase
+export async function setFriendPrefs(ownerId: string, subjectId: string, patch: Partial<FriendPrefs>): Promise<boolean> {
+  const { error } = await supabase
     .from('friend_prefs')
     .upsert({ owner_id: ownerId, subject_id: subjectId, ...patch }, { onConflict: 'owner_id,subject_id' });
+  return !error;
 }

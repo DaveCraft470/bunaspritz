@@ -9,12 +9,14 @@ export function FriendPrefsModal({
   friendName,
   prefs,
   onChange,
+  onRemove,
   onClose,
 }: {
   visible: boolean;
   friendName: string;
   prefs: FriendPrefs;
   onChange: (patch: Partial<FriendPrefs>) => void;
+  onRemove?: () => void;
   onClose: () => void;
 }) {
   const { colors: theme } = useAppTheme();
@@ -59,6 +61,12 @@ export function FriendPrefsModal({
             />
           </View>
 
+          {onRemove && (
+            <Pressable onPress={onRemove} style={[styles.close, styles.removeButton]}>
+              <Text style={[styles.closeText, styles.removeText]}>Elimină prieten</Text>
+            </Pressable>
+          )}
+
           <Pressable onPress={onClose} style={[styles.close, { backgroundColor: theme.surfaceMuted }]}>
             <Text style={[styles.closeText, { color: theme.textPrimary }]}>Închide</Text>
           </Pressable>
@@ -77,4 +85,6 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontWeight: '600', flex: 1 },
   close: { minHeight: 46, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   closeText: { fontSize: 13, fontWeight: '800' },
+  removeButton: { backgroundColor: 'rgba(229,72,77,0.12)' },
+  removeText: { color: '#E5484D' },
 });

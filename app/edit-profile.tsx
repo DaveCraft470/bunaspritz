@@ -15,6 +15,7 @@ import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { extensionAndTypeForImage } from '@/lib/media';
+import { alertPermissionDenied } from '@/lib/permissions';
 
 const USERNAME_REGEX = /^[a-z0-9_.]{3,20}$/i;
 
@@ -34,7 +35,10 @@ export default function EditProfile() {
   async function handlePickAvatar() {
     if (uploadingAvatar) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+    if (!permission.granted) {
+      alertPermissionDenied(permission.canAskAgain, 'Activează accesul la poze din Setările telefonului ca să schimbi poza de profil.');
+      return;
+    }
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
