@@ -98,24 +98,24 @@ export default function Profile() {
             <Text style={[styles.statNumber, { color: theme.textPrimary }]}>{eventStats.attended}</Text>
             <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Evenimente</Text>
           </View>
-
-          <Pressable
-            onPress={() => router.push('/my-events')}
-            style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
-          >
-            <View style={styles.myEventsCopy}>
-              <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>Evenimentele mele</Text>
-              <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
-                Vezi evenimentele la care participi și pe cele organizate de tine.
-              </Text>
-            </View>
-            <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
-          </Pressable>
           <View style={styles.stat}>
             <Text style={[styles.statNumber, { color: theme.textPrimary }]}>{eventStats.hosted}</Text>
             <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Găzduite</Text>
           </View>
         </View>
+
+        <Pressable
+          onPress={() => router.push('/my-events')}
+          style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        >
+          <View style={styles.myEventsCopy}>
+            <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>Evenimentele mele</Text>
+            <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
+              Vezi evenimentele la care participi și pe cele organizate de tine.
+            </Text>
+          </View>
+          <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
+        </Pressable>
 
         {VERIFICATION_REQUIRED && (
           <Pressable
