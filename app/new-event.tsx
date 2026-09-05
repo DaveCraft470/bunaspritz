@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { BackHandler, Image, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -12,8 +12,10 @@ import { MAPBOX_INITIAL_VIEW, buildApproxStaticMapUrl } from '@/constants/mapbox
 import { VERIFICATION_REQUIRED } from '@/constants/featureFlags';
 import { useEvents } from '@/contexts/EventsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useUser } from '@/contexts/UserContext';
 import { createEvent, removeRentalProof, uploadRentalProof } from '@/lib/events';
+import { formatEventStart, formatPrice } from '@/lib/eventFormat';
 import { alertPermissionDenied } from '@/lib/permissions';
 import { showAlert } from '@/lib/alert';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
@@ -35,16 +37,54 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = [0, 15, 30, 45];
 const MONTHS = ['IANUARIE', 'FEBRUARIE', 'MARTIE', 'APRILIE', 'MAI', 'IUNIE', 'IULIE', 'AUGUST', 'SEPTEMBRIE', 'OCTOMBRIE', 'NOIEMBRIE', 'DECEMBRIE'];
 
+type ParsedEventData = {
+  trimmedTitle: string;
+  startsAt: Date;
+  entryFeeRon: number | null;
+  drinksPriceRon: number | null;
+  maxParticipants: number | null;
+};
+
 export default function NewEvent() {
   const { colors: theme, scheme } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { addEvent } = useEvents();
   const { user, effectiveVerified } = useUser();
   const { light, medium } = useHaptics();
+  const { setHidden } = useNavVisibility();
   const [publishing, setPublishing] = useState(false);
+  const [mode, setMode] = useState<'form' | 'preview'>('form');
+  const [previewData, setPreviewData] = useState<ParsedEventData | null>(null);
   // A ref alongside the state: two taps landing before React commits the
   // first setPublishing(true) could both pass a state-only guard and both
   // insert an event. The ref updates synchronously, closing that window.
   const publishingRef = useRef(false);
+  // Set right before router.replace() on publish success — event/[id]'s own
+  // mount effect takes over hiding the nav from there, so this unmount's
+  // cleanup shouldn't race it and flip hidden back to false in between.
+  const navigatingAwayRef = useRef(false);
+
+  // The preview's CTA row is fixed to the bottom like Event Detail's, which
+  // would otherwise collide with the floating tab bar.
+  useEffect(() => {
+    setHidden(mode === 'preview');
+    return () => {
+      if (!navigatingAwayRef.current) setHidden(false);
+    };
+  }, [mode, setHidden]);
+
+  // Preview is a mode, not a route (a route would need to serialize the
+  // rental-proof ImagePickerAsset through nav params) — so Android's
+  // hardware back has to be caught here or it would pop the whole screen
+  // and discard the form instead of just leaving preview.
+  useEffect(() => {
+    if (mode !== 'preview') return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      setMode('form');
+      return true;
+    });
+    return () => subscription.remove();
+  }, [mode]);
 
   const [title, setTitle] = useState('');
   const [detail, setDetail] = useState('');
@@ -159,27 +199,25 @@ export default function NewEvent() {
     setRentalProofAsset(result.assets[0]);
   }
 
-  async function handlePublish() {
+  // Shared by the preview transition and the actual publish call, so the two
+  // can never drift apart on what counts as a valid event.
+  function validateAndParse(): { ok: true; data: ParsedEventData } | { ok: false; alertTitle: string; alertBody: string } {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
-      showAlert('Mai e nevoie de un nume', 'Dă-i evenimentului un titlu înainte să-l publici.');
-      return;
+      return { ok: false, alertTitle: 'Mai e nevoie de un nume', alertBody: 'Dă-i evenimentului un titlu înainte să-l publici.' };
     }
-    if (!user || publishingRef.current) return;
 
     if (!isSelectedDateValid()) {
-      showAlert('Data invalidă', 'Alege o dată între azi și peste o lună.');
-      return;
+      return { ok: false, alertTitle: 'Data invalidă', alertBody: 'Alege o dată între azi și peste o lună.' };
     }
 
+    const startsAt = buildStartsAt();
     // The default hour/minute (now + 1h, capped at 23:00) can land in the
     // past when the event is created late at night.
-    if (buildStartsAt().getTime() < Date.now()) {
-      showAlert('Ora aleasă a trecut deja', 'Alege o oră care nu a trecut încă.');
-      return;
+    if (startsAt.getTime() < Date.now()) {
+      return { ok: false, alertTitle: 'Ora aleasă a trecut deja', alertBody: 'Alege o oră care nu a trecut încă.' };
     }
 
-    const finalCoords = coords ?? { lng: MAPBOX_INITIAL_VIEW.center[0], lat: MAPBOX_INITIAL_VIEW.center[1] };
     const parsedEntryFee = entryFee.trim() ? Number(entryFee.replace(',', '.')) : null;
     const parsedDrinksPrice = drinksPrice.trim() ? Number(drinksPrice.replace(',', '.')) : null;
     const parsedMaxParticipants = maxParticipants.trim() ? Number(maxParticipants) : null;
@@ -189,16 +227,13 @@ export default function NewEvent() {
     // left empty" via the NaN-skipping checks below — tell the user instead
     // of quietly discarding what they typed.
     if (parsedEntryFee !== null && Number.isNaN(parsedEntryFee)) {
-      showAlert('Preț invalid', 'Introdu un preț valid pentru intrare sau lasă câmpul gol.');
-      return;
+      return { ok: false, alertTitle: 'Preț invalid', alertBody: 'Introdu un preț valid pentru intrare sau lasă câmpul gol.' };
     }
     if (parsedDrinksPrice !== null && Number.isNaN(parsedDrinksPrice)) {
-      showAlert('Preț invalid', 'Introdu un preț valid pentru băuturi sau lasă câmpul gol.');
-      return;
+      return { ok: false, alertTitle: 'Preț invalid', alertBody: 'Introdu un preț valid pentru băuturi sau lasă câmpul gol.' };
     }
     if (parsedMaxParticipants !== null && Number.isNaN(parsedMaxParticipants)) {
-      showAlert('Număr invalid', 'Introdu un număr valid de participanți sau lasă câmpul gol.');
-      return;
+      return { ok: false, alertTitle: 'Număr invalid', alertBody: 'Introdu un număr valid de participanți sau lasă câmpul gol.' };
     }
 
     // The DB rejects a negative entry_fee_ron/drinks_price_ron (see
@@ -206,13 +241,51 @@ export default function NewEvent() {
     // used to only surface that as the generic "couldn't publish" error
     // after a round-trip — catch it here with a specific message instead.
     if (parsedEntryFee !== null && parsedEntryFee < 0) {
-      showAlert('Preț invalid', 'Prețul intrării nu poate fi negativ.');
-      return;
+      return { ok: false, alertTitle: 'Preț invalid', alertBody: 'Prețul intrării nu poate fi negativ.' };
     }
     if (parsedDrinksPrice !== null && parsedDrinksPrice < 0) {
-      showAlert('Preț invalid', 'Prețul băuturilor nu poate fi negativ.');
+      return { ok: false, alertTitle: 'Preț invalid', alertBody: 'Prețul băuturilor nu poate fi negativ.' };
+    }
+
+    return {
+      ok: true,
+      data: {
+        trimmedTitle,
+        startsAt,
+        entryFeeRon: parsedEntryFee !== null && !Number.isNaN(parsedEntryFee) ? parsedEntryFee : null,
+        drinksPriceRon: parsedDrinksPrice !== null && !Number.isNaN(parsedDrinksPrice) ? parsedDrinksPrice : null,
+        maxParticipants:
+          parsedMaxParticipants !== null && !Number.isNaN(parsedMaxParticipants) && parsedMaxParticipants > 0
+            ? Math.floor(parsedMaxParticipants)
+            : null,
+      },
+    };
+  }
+
+  function handlePreview() {
+    if (publishingRef.current) return;
+    const result = validateAndParse();
+    if (!result.ok) {
+      showAlert(result.alertTitle, result.alertBody);
       return;
     }
+    light();
+    setPreviewData(result.data);
+    setMode('preview');
+  }
+
+  async function handlePublish() {
+    if (!user || publishingRef.current) return;
+
+    const result = validateAndParse();
+    if (!result.ok) {
+      showAlert(result.alertTitle, result.alertBody);
+      setMode('form');
+      return;
+    }
+    const { trimmedTitle, startsAt, entryFeeRon, drinksPriceRon, maxParticipants: finalMaxParticipants } = result.data;
+
+    const finalCoords = coords ?? { lng: MAPBOX_INITIAL_VIEW.center[0], lat: MAPBOX_INITIAL_VIEW.center[1] };
 
     publishingRef.current = true;
     setPublishing(true);
@@ -232,13 +305,10 @@ export default function NewEvent() {
         lng: finalCoords.lng,
         lat: finalCoords.lat,
         genre: genre.trim() || 'Surpriză',
-        startsAt: buildStartsAt().toISOString(),
-        entryFeeRon: parsedEntryFee !== null && !Number.isNaN(parsedEntryFee) ? parsedEntryFee : null,
-        drinksPriceRon: parsedDrinksPrice !== null && !Number.isNaN(parsedDrinksPrice) ? parsedDrinksPrice : null,
-        maxParticipants:
-          parsedMaxParticipants !== null && !Number.isNaN(parsedMaxParticipants) && parsedMaxParticipants > 0
-            ? Math.floor(parsedMaxParticipants)
-            : null,
+        startsAt: startsAt.toISOString(),
+        entryFeeRon,
+        drinksPriceRon,
+        maxParticipants: finalMaxParticipants,
         locationIsRented,
         rentalProofPath,
       });
@@ -254,6 +324,7 @@ export default function NewEvent() {
 
       medium();
       addEvent(created);
+      navigatingAwayRef.current = true;
       router.replace({ pathname: '/event/[id]', params: { id: created.id } });
     } finally {
       publishingRef.current = false;
@@ -262,6 +333,140 @@ export default function NewEvent() {
   }
 
   const mapPreviewUrl = coords ? buildApproxStaticMapUrl(coords.lng, coords.lat, scheme, 640, 160) : null;
+
+  if (mode === 'preview' && previewData) {
+    const previewMapUrl = coords ? buildApproxStaticMapUrl(coords.lng, coords.lat, scheme, 640, 300) : null;
+    const startLabel = formatEventStart(previewData.startsAt.toISOString());
+    const hasInfoCard =
+      !!startLabel ||
+      previewData.entryFeeRon !== null ||
+      previewData.drinksPriceRon !== null ||
+      previewData.maxParticipants !== null ||
+      locationIsRented === true;
+
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
+        <StatusBar style={theme.statusBar} />
+
+        <View style={styles.topBar}>
+          <AnimatedPressable
+            onPress={() => {
+              light();
+              setMode('form');
+            }}
+            hitSlop={10}
+            accessibilityLabel="Editează"
+            style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
+          >
+            <GlassSurface />
+            <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
+          </AnimatedPressable>
+          <Text style={[styles.title, { color: theme.textPrimary }]}>Previzualizare</Text>
+          <View style={styles.backButton} />
+        </View>
+
+        <ScrollView
+          contentContainerStyle={[styles.previewContent, { paddingBottom: insets.bottom + 140 }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[styles.previewBadge, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
+            <Ionicons name="eye-outline" size={13} color={theme.textSecondary} />
+            <Text style={[styles.previewBadgeText, { color: theme.textSecondary }]}>Așa va arăta evenimentul tău</Text>
+          </View>
+
+          <View style={[styles.hero, { backgroundColor: color }]}>
+            <Text style={styles.heroEmoji}>{emoji}</Text>
+          </View>
+          <Text style={[styles.previewTitle, { color: theme.textPrimary }]}>{title.trim() || 'Eveniment fără nume'}</Text>
+          <Text style={[styles.previewSubtitle, { color: theme.textSecondary }]}>{detail.trim() || 'Detalii în curând'}</Text>
+          <Text style={[styles.previewHostLine, { color: theme.textSecondary }]}>Găzduit de {user?.name ?? 'tine'}</Text>
+
+          {hasInfoCard && (
+            <View style={[styles.previewCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              {startLabel && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="calendar-outline" size={16} color={colors.green500} />
+                  <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>{startLabel}</Text>
+                </View>
+              )}
+              {previewData.entryFeeRon !== null && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="ticket-outline" size={16} color={colors.green500} />
+                  <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
+                    Intrare: {formatPrice(previewData.entryFeeRon)}
+                  </Text>
+                </View>
+              )}
+              {previewData.drinksPriceRon !== null && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="wine-outline" size={16} color={colors.green500} />
+                  <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
+                    Băuturi de la {formatPrice(previewData.drinksPriceRon)}
+                  </Text>
+                </View>
+              )}
+              {previewData.maxParticipants !== null && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="people-outline" size={16} color={colors.green500} />
+                  <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
+                    Max {previewData.maxParticipants} persoane
+                  </Text>
+                </View>
+              )}
+              {locationIsRented === true && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="key-outline" size={16} color={colors.green500} />
+                  <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
+                    Locație închiriată{rentalProofAsset ? ' · cu dovadă' : ''}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          <View style={[styles.previewCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>LOCAȚIE APROXIMATIVĂ</Text>
+            <View style={styles.mapWrap}>
+              {previewMapUrl ? (
+                <Image source={{ uri: previewMapUrl }} style={styles.mapImage} resizeMode="cover" />
+              ) : (
+                <View style={[styles.mapImage, { backgroundColor: theme.surfaceMuted }]} />
+              )}
+              <View style={styles.mapCircle} pointerEvents="none" />
+            </View>
+            <Text style={[styles.mapHint, { color: theme.textSecondary }]}>
+              Locația exactă va apărea doar celor confirmați.
+            </Text>
+          </View>
+
+          <View style={[styles.previewCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>MUZICĂ / GEN</Text>
+            <Text style={[styles.genreText, { color: theme.textPrimary }]}>{genre.trim() || 'Surpriză'}</Text>
+          </View>
+        </ScrollView>
+
+        <View style={[styles.previewCtaWrap, { paddingBottom: insets.bottom + 20 }]}>
+          <AnimatedPressable
+            onPress={() => {
+              light();
+              setMode('form');
+            }}
+            style={[styles.previewEditButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          >
+            <Ionicons name="create-outline" size={15} color={theme.accent} />
+            <Text style={[styles.previewEditText, { color: theme.accent }]}>Editează</Text>
+          </AnimatedPressable>
+          <AnimatedPressable
+            onPress={handlePublish}
+            disabled={publishing}
+            style={[styles.previewPublishButton, shadows.glowGreen, publishing && styles.publishButtonDisabled]}
+          >
+            <Text style={styles.publishText}>{publishing ? 'Se publică...' : 'Publică evenimentul'}</Text>
+          </AnimatedPressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -498,11 +703,8 @@ export default function NewEvent() {
           ))}
         </View>
 
-        <AnimatedPressable
-          onPress={handlePublish}
-          style={[styles.publishButton, shadows.glowGreen, publishing && styles.publishButtonDisabled]}
-        >
-          <Text style={styles.publishText}>{publishing ? 'Se publică...' : 'Publică evenimentul'}</Text>
+        <AnimatedPressable onPress={handlePreview} style={[styles.publishButton, shadows.glowGreen]}>
+          <Text style={styles.publishText}>Previzualizează evenimentul</Text>
         </AnimatedPressable>
       </KeyboardAwareScrollView>
 
@@ -540,6 +742,64 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: '800' },
   content: { paddingHorizontal: spacing.lg, paddingBottom: 60, gap: 6 },
+  previewContent: { paddingHorizontal: spacing.lg, gap: 14 },
+  hero: { alignSelf: 'center', width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  heroEmoji: { fontSize: 42 },
+  previewBadge: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  previewBadgeText: { fontSize: 11, fontWeight: '700' },
+  previewTitle: { fontSize: 24, fontWeight: '800', textAlign: 'center', letterSpacing: -0.4, marginTop: 4 },
+  previewSubtitle: { fontSize: 13, textAlign: 'center' },
+  previewHostLine: { fontSize: 11, textAlign: 'center', fontStyle: 'italic' },
+  previewCard: { borderRadius: 18, borderWidth: 1, padding: 14, gap: 8 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  infoRowText: { fontSize: 14, fontWeight: '700' },
+  cardLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1 },
+  mapWrap: { borderRadius: 14, overflow: 'hidden', height: 150 },
+  mapImage: { width: '100%', height: '100%' },
+  mapCircle: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: 120,
+    height: 120,
+    marginTop: -60,
+    marginLeft: -60,
+    borderRadius: 60,
+    backgroundColor: 'rgba(31,212,96,0.28)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.85)',
+  },
+  mapHint: { fontSize: 11, fontStyle: 'italic' },
+  genreText: { fontSize: 14, fontWeight: '700' },
+  previewCtaWrap: { position: 'absolute', left: spacing.lg, right: spacing.lg, bottom: 0, flexDirection: 'row', gap: 10 },
+  previewEditButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 58,
+    borderRadius: 29,
+    borderWidth: 1,
+  },
+  previewEditText: { fontSize: 14, fontWeight: '800' },
+  previewPublishButton: {
+    flex: 1.4,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: colors.green500,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   label: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginTop: 14, marginBottom: 6 },
   counter: { fontSize: 10, textAlign: 'right' },
   input: {

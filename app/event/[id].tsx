@@ -16,6 +16,7 @@ import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { useEvents } from '@/contexts/EventsContext';
 import { EventAttendee, deleteEvent, fetchAttendees, getEventAttendeeCount, hasJoined, joinEvent, leaveEvent } from '@/lib/events';
+import { formatEventStart, formatPrice } from '@/lib/eventFormat';
 import { getProfile } from '@/lib/social';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
@@ -24,24 +25,6 @@ import { ReportModal } from '@/components/social/ReportModal';
 import { addReport, EVENT_REPORT_REASONS, hasActiveReport } from '@/lib/reports';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-function formatEventStart(iso: string | null) {
-  if (!iso) return null;
-  const date = new Date(iso);
-  const now = new Date();
-  const dayPart =
-    date.toDateString() === now.toDateString()
-      ? 'Azi'
-      : date.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' });
-  const timePart = date.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' });
-  return `${dayPart} · ${timePart}`;
-}
-
-function formatPrice(value: number | null) {
-  if (value === null) return null;
-  if (value === 0) return 'Gratis';
-  return `${value} RON`;
-}
 
 export default function EventDetail() {
   const { id, originX, originY } = useLocalSearchParams<{ id: string; originX?: string; originY?: string }>();
