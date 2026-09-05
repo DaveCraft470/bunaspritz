@@ -241,37 +241,45 @@ export default function Home() {
 
   return (
     <View style={styles.root}>
-      {showingMap ? (
-        <>
-          <MapPlaceholder onOpenCalendar={() => setShowingMap(false)} />
-          <AnimatedPressable
-            onPress={() => router.push('/discover')}
-            style={styles.exploreButton}
-            accessibilityLabel="Explorează evenimente"
-          >
-            <Ionicons name="compass-outline" size={18} color={colors.green700} />
-            <Text style={styles.exploreButtonText}>Explorează</Text>
-          </AnimatedPressable>
-          {(eventsLoading || joinedLoading || joinedError || recommendations.length > 0) && (
-            <View style={styles.recommendationsPanel}>
-              {eventsLoading || joinedLoading ? (
-                <Text style={styles.recommendationsStatus}>Se încarcă recomandările...</Text>
-              ) : joinedError ? (
-                <Text style={styles.recommendationsStatus}>Recomandările nu sunt disponibile momentan.</Text>
-              ) : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recommendationsList}>
-                  {recommendations.map((recommendation) => (
-                    <View key={recommendation.event.id} style={styles.recommendationItem}>
-                      <RecommendationRow recommendation={recommendation} />
-                    </View>
-                  ))}
-                </ScrollView>
-              )}
-            </View>
-          )}
-        </>
-      ) : (
-        <PublicCalendar onShowMap={() => setShowingMap(true)} />
+      {/* Always mounted, even while the calendar covers it — MapboxMap (see
+          MapboxMap.web.tsx) tears down and fully rebuilds its GL context on
+          unmount/remount, re-fetching style and tiles from scratch, which
+          made the map visibly reload every time someone bounced between the
+          calendar and the map. Toggling it via pointerEvents/opacity instead
+          keeps that GL context alive underneath. */}
+      <View style={[styles.mapLayer, !showingMap && styles.hiddenBehindCalendar]} pointerEvents={showingMap ? 'box-none' : 'none'}>
+        <MapPlaceholder onOpenCalendar={() => setShowingMap(false)} />
+        <AnimatedPressable
+          onPress={() => router.push('/discover')}
+          style={styles.exploreButton}
+          accessibilityLabel="Explorează evenimente"
+        >
+          <Ionicons name="compass-outline" size={18} color={colors.green700} />
+          <Text style={styles.exploreButtonText}>Explorează</Text>
+        </AnimatedPressable>
+        {(eventsLoading || joinedLoading || joinedError || recommendations.length > 0) && (
+          <View style={styles.recommendationsPanel}>
+            {eventsLoading || joinedLoading ? (
+              <Text style={styles.recommendationsStatus}>Se încarcă recomandările...</Text>
+            ) : joinedError ? (
+              <Text style={styles.recommendationsStatus}>Recomandările nu sunt disponibile momentan.</Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recommendationsList}>
+                {recommendations.map((recommendation) => (
+                  <View key={recommendation.event.id} style={styles.recommendationItem}>
+                    <RecommendationRow recommendation={recommendation} />
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        )}
+      </View>
+
+      {!showingMap && (
+        <View style={StyleSheet.absoluteFill}>
+          <PublicCalendar onShowMap={() => setShowingMap(true)} />
+        </View>
       )}
     </View>
   );
@@ -280,6 +288,12 @@ export default function Home() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  mapLayer: {
+    flex: 1,
+  },
+  hiddenBehindCalendar: {
+    opacity: 0,
   },
   calendarSafeArea: { flex: 1 },
   calendarTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },
