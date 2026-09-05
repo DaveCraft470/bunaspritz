@@ -62,6 +62,32 @@ function normalizedMeteringLevel(metering: number | undefined): number {
   return (clamped + 60) / 60;
 }
 
+let webAudioUnlocked = false;
+
+// Browsers only allow HTMLMediaElement.play() unprompted within a narrow
+// window of an actual user gesture. voicePlayer.play() below always runs
+// after an `await` (a signed-URL fetch, or at least a promise tick) — if a
+// browser's autoplay policy decides that gap disqualifies the gesture, the
+// call fails by rejecting a promise that expo-audio's web player never
+// checks or exposes anywhere, so it's entirely silent: playing:true, no
+// error, no sound. Playing a real (if inaudible) clip synchronously inside
+// the very first gesture handler establishes "user activation" for audio on
+// this page for the rest of the session, so later async-triggered play()
+// calls are then allowed. Native platforms don't have this restriction.
+function unlockWebAudioPlayback() {
+  if (Platform.OS !== 'web' || webAudioUnlocked) return;
+  webAudioUnlocked = true;
+  try {
+    const unlock = new Audio(
+      'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='
+    );
+    unlock.play().catch(() => {});
+  } catch {
+    // Best-effort — worst case playback falls back to whatever the
+    // browser's own gesture heuristics allow.
+  }
+}
+
 // Chat list / message bubble design by nituraul8 — ported from App.tsx onto
 // its own Expo Router screen so it lives alongside the rest of the app.
 // The 3 group chats below stay mock/decorative; real 1:1 friend DMs are a
@@ -178,7 +204,7 @@ function RecordingWaveform({ levels }: { levels: number[] }) {
       {levels.map((level, index) => (
         <View
           key={index}
-          style={[styles.waveformBar, { height: 4 + level * 20, opacity: 0.35 + level * 0.65 }]}
+          style={[styles.waveformBar, { height: 6 + level * 26, opacity: 0.4 + level * 0.6 }]}
         />
       ))}
     </View>
@@ -400,6 +426,7 @@ export default function Messages() {
   }, []);
 
   async function toggleVoicePlayback(messageId: string, mediaPath: string) {
+    unlockWebAudioPlayback();
     light();
     if (playingMessageId === messageId) {
       voicePlayer.pause();
@@ -415,6 +442,7 @@ export default function Messages() {
 
   async function startRecording() {
     if (!activeFriend || sendingMedia) return;
+    unlockWebAudioPlayback();
 
     const permission = await AudioModule.requestRecordingPermissionsAsync();
     if (!permission.granted) {
@@ -1076,10 +1104,14 @@ const styles = StyleSheet.create({
   add: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   addText: { fontSize: 25, fontWeight: '300', marginTop: -2 },
   input: { flex: 1, fontSize: 15, paddingVertical: 8 },
-  recordingRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingLeft: 4 },
+  // minWidth: 0 matters specifically on web — react-native-web's flex
+  // children default to a CSS min-width of "auto" (their content size), not
+  // 0 like native RN, so a flex:1 row nested inside another flex:1 row can
+  // collapse to near-nothing there instead of sharing the available width.
+  recordingRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingLeft: 4 },
   recordingTimer: { fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  waveformRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2, height: 24 },
-  waveformBar: { flex: 1, minWidth: 2, borderRadius: 2, backgroundColor: '#12C854' },
+  waveformRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'flex-end', gap: 2, height: 32 },
+  waveformBar: { flex: 1, minWidth: 3, borderRadius: 2, backgroundColor: '#12C854' },
   send: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#12C854', alignItems: 'center', justifyContent: 'center' },
   sendOff: { backgroundColor: '#BDEBCB' },
   sendText: { color: '#FFFFFF', fontSize: 22, fontWeight: '700', marginTop: -4 },
