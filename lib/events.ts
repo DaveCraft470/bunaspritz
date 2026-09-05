@@ -87,6 +87,16 @@ export async function getEventAttendeeCount(eventId: string): Promise<number> {
 
 // Excludes admin-hidden events — everyone but the admin panel (which uses
 // fetchAllEventsForAdmin below) goes through this.
+// Same result as calling getEventAttendeeCount once per event, but as one
+// round trip instead of N — organizer-dashboard.tsx used to Promise.all a
+// separate RPC call per hosted event.
+export async function getEventAttendeeCounts(eventIds: string[]): Promise<Record<string, number>> {
+  if (!eventIds.length) return {};
+  const { data, error } = await supabase.rpc('event_attendee_counts', { p_event_ids: eventIds });
+  if (error || !data) return {};
+  return Object.fromEntries(data.map((row: { event_id: string; attendee_count: number }) => [row.event_id, row.attendee_count]));
+}
+
 export async function fetchEvents(): Promise<SpritzEvent[]> {
   const { data, error } = await supabase
     .from('events')

@@ -12,7 +12,7 @@ import { useAppTheme } from '@/contexts/ThemeContext';
 import { useEvents } from '@/contexts/EventsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
-import { getEventAttendeeCount } from '@/lib/events';
+import { getEventAttendeeCounts } from '@/lib/events';
 
 function isUpcoming(event: SpritzEvent) {
   return event.startsAt !== null && new Date(event.startsAt).getTime() >= Date.now();
@@ -154,10 +154,7 @@ export default function OrganizerDashboard() {
     }
 
     setLoadingCounts(true);
-    const entries = await Promise.all(
-      hostedEvents.map(async (event) => [event.id, await getEventAttendeeCount(event.id)] as const)
-    );
-    setAttendeeCounts(Object.fromEntries(entries));
+    setAttendeeCounts(await getEventAttendeeCounts(hostedEvents.map((event) => event.id)));
     setLoadingCounts(false);
   }, [hostedEvents]);
 
