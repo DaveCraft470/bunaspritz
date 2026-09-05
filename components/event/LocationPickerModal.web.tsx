@@ -41,6 +41,7 @@ export function LocationPickerModal({
 
   const containerRef = useRef<View>(null);
   const mapRef = useRef<any>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   const [center, setCenter] = useState<Coords>(startCenter);
   const [ready, setReady] = useState(false);
@@ -72,6 +73,15 @@ export function LocationPickerModal({
       });
       mapRef.current = map;
 
+      // Same fix as MapboxMap.web.tsx: this modal opens with a slide-in
+      // animation, so the container is even less likely to be at its final
+      // size when the map is constructed — without a resize once layout
+      // settles, the canvas can get stuck rendering into a stale, too-small
+      // buffer while the modal itself looks fully sized.
+      const resizeObserver = new ResizeObserver(() => map.resize());
+      resizeObserver.observe(node);
+      resizeObserverRef.current = resizeObserver;
+
       function sendCenter() {
         const c = map.getCenter();
         setCenter({ lng: c.lng, lat: c.lat });
@@ -86,6 +96,8 @@ export function LocationPickerModal({
 
     return () => {
       cancelled = true;
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
     };

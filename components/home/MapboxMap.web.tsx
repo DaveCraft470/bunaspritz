@@ -47,6 +47,7 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
   // that's the real DOM node mapboxgl.Map needs as its container.
   const containerRef = useRef<View>(null);
   const mapRef = useRef<any>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const userMarkerRef = useRef<any>(null);
   const eventMarkersRef = useRef<Map<string, any>>(new Map());
   const knownEventCountRef = useRef(0);
@@ -111,6 +112,16 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
         });
         mapRef.current = map;
 
+        // The container isn't necessarily at its final layout size yet when
+        // the map is constructed (react-native-web's flex layout settles
+        // asynchronously) — mapboxgl captures whatever size it measures at
+        // construction time and never re-measures on its own, so without
+        // this the canvas can get stuck rendering into a stale, too-small
+        // buffer forever while the surrounding layout looks fine.
+        const resizeObserver = new ResizeObserver(() => map.resize());
+        resizeObserver.observe(node);
+        resizeObserverRef.current = resizeObserver;
+
         map.on('load', () => {
           if (cancelled) return;
           knownEventCountRef.current = eventsRef.current.length;
@@ -126,6 +137,8 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
 
     return () => {
       cancelled = true;
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
     };
