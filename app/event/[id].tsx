@@ -69,7 +69,7 @@ export default function EventDetail() {
     fetchAttendees(event.id).then(setAttendees);
     getEventAttendeeCount(event.id).then(setAttendeeCount);
     hasJoined(event.id, user.id).then(setJoined);
-    getProfile(event.hostId).then((host) => setHostName(host?.name ?? null));
+    if (event.hostId) getProfile(event.hostId).then((host) => setHostName(host?.name ?? null));
   }, [event, user]);
 
   const isHost = !!user && !!event && user.id === event.hostId;
@@ -254,7 +254,7 @@ export default function EventDetail() {
           </View>
           <Text style={[styles.title, { color: theme.textPrimary }]}>{event.title}</Text>
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{event.detail}</Text>
-          {hostName && (
+          {hostName && event.hostId && (
             <AnimatedPressable
               onPress={() => {
                 light();
@@ -262,6 +262,16 @@ export default function EventDetail() {
               }}
             >
               <Text style={[styles.hostLine, { color: theme.textSecondary }]}>Găzduit de {hostName}</Text>
+            </AnimatedPressable>
+          )}
+          {event.source === 'scraper' && (
+            <AnimatedPressable
+              onPress={() => {
+                light();
+                if (event.sourceUrl) Linking.openURL(event.sourceUrl).catch(() => {});
+              }}
+            >
+              <Text style={[styles.hostLine, { color: theme.textSecondary }]}>🌐 Descoperit pe zilesinopti.ro</Text>
             </AnimatedPressable>
           )}
 
