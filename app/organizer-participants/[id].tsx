@@ -12,7 +12,8 @@ import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
-import { EventAttendee, fetchAttendees, getEventAttendeeCount } from '@/lib/events';
+import { showAlert } from '@/lib/alert';
+import { EventAttendee, fetchAttendees, getEventAttendeeCount, kickEventParticipant } from '@/lib/events';
 
 export default function OrganizerParticipants() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -97,10 +98,20 @@ export default function OrganizerParticipants() {
         {
           text: 'Elimină',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
+            const previousAttendees = attendees;
+            const previousCount = attendeeCount;
             setAttendees((current) => current.filter((item) => item.userId !== attendee.userId));
             setAttendeeCount((current) => (current === null ? current : Math.max(0, current - 1)));
-            Alert.alert('Pregătit local', 'Eliminarea este doar locală momentan. Persistența sigură necesită un RPC Supabase care verifică hostul.');
+
+            // Non-null: this render already returned early above if `event`
+            // were undefined, before requestKick could ever be invoked.
+            const ok = await kickEventParticipant(event!.id, attendee.userId);
+            if (!ok) {
+              setAttendees(previousAttendees);
+              setAttendeeCount(previousCount);
+              showAlert('A apărut o eroare', 'Nu am putut elimina participantul. Încearcă din nou.');
+            }
           },
         },
       ],
@@ -137,7 +148,6 @@ export default function OrganizerParticipants() {
             <Text style={[styles.count, { color: theme.textSecondary }]}>
               {attendeeCount === null ? 'Se încarcă...' : `${attendeeCount}${event.maxParticipants !== null ? ` / ${event.maxParticipants}` : ''}`} participanți
             </Text>
-            <Text style={[styles.localNote, { color: theme.textSecondary }]}>KICK-ul este pregătit local; salvarea permanentă necesită backend.</Text>
           </View>
         }
         ListEmptyComponent={
@@ -183,8 +193,7 @@ const styles = StyleSheet.create({
   backButton: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 18, fontWeight: '800' },
   eventTitle: { fontSize: 22, fontWeight: '800' },
-  count: { fontSize: 14, fontWeight: '700', marginTop: 5 },
-  localNote: { fontSize: 11, fontStyle: 'italic', lineHeight: 16, marginTop: 8, marginBottom: spacing.lg },
+  count: { fontSize: 14, fontWeight: '700', marginTop: 5, marginBottom: spacing.lg },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, padding: 11, marginBottom: 10 },
   rowText: { flex: 1 },
   name: { fontSize: 14, fontWeight: '800' },

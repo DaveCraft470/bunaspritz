@@ -25,7 +25,7 @@ import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
-import { Profile, getMutualFriends } from '@/lib/social';
+import { Profile, getFriends } from '@/lib/social';
 import { extensionAndTypeForImage } from '@/lib/media';
 import { alertPermissionDenied } from '@/lib/permissions';
 import { showAlert } from '@/lib/alert';
@@ -680,7 +680,7 @@ export default function Messages() {
     }
     setFriendsLoading(true);
     setFriendsError(false);
-    getMutualFriends(user.id)
+    getFriends(user.id)
       .then(async (list) => {
         setFriends(list);
         const [lastMessages, unreadCounts] = await Promise.all([
@@ -832,7 +832,7 @@ export default function Messages() {
     } else {
       // Restore the draft — it was cleared optimistically above, and losing
       // typed text on a failed send (instead of just letting the user retry)
-      // is the same silent-failure shape already fixed for follow()/photos.
+      // is the same silent-failure shape already fixed for sendFriendRequest()/photos.
       setDraft(text);
       showAlert('A apărut o eroare', 'Nu am putut trimite mesajul. Încearcă din nou.');
     }

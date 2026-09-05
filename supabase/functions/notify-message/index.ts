@@ -33,12 +33,18 @@ Deno.serve(async (req) => {
 
   const body =
     message.media_type === 'image' ? '📷 Poză' : message.media_type === 'audio' ? '🎤 Mesaj vocal' : message.text;
+  const title = `Mesaj nou de la ${sender?.name ?? 'un prieten'}`;
 
-  await sendExpoPush(
-    (tokens ?? []).map((t) => t.token),
-    `Mesaj nou de la ${sender?.name ?? 'un prieten'}`,
-    body
-  );
+  await admin.from('notifications').insert({
+    recipient_id: message.recipient_id,
+    actor_id: message.sender_id,
+    type: 'message',
+    title,
+    body,
+    data: { message_id: messageId },
+  });
+
+  await sendExpoPush((tokens ?? []).map((t) => t.token), title, body);
 
   return new Response('ok', { status: 200 });
 });

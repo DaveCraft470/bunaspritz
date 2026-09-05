@@ -5,13 +5,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { showAlert } from '@/lib/alert';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
-import { useEvents } from '@/contexts/EventsContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
-import { isAdminAccessEnabled } from '@/lib/admin';
+import { hideEvent, isAdminAccessEnabled, unhideEvent } from '@/lib/admin';
 import { useUser } from '@/contexts/UserContext';
 import { getProfiles } from '@/lib/social';
+import { fetchAllEventsForAdmin } from '@/lib/events';
+import { SpritzEvent } from '@/constants/events';
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleString('ro-RO', { dateStyle: 'medium', timeStyle: 'short' }) : 'Data nestabilită';
@@ -19,23 +21,53 @@ function formatDate(value: string | null) {
 
 export default function AdminEvents() {
   const { colors: theme } = useAppTheme();
-  const { events, loading, error, refresh } = useEvents();
   const { user } = useUser();
+  const allowed = isAdminAccessEnabled(user);
+  const [events, setEvents] = useState<SpritzEvent[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
   const [query, setQuery] = useState('');
-  const [localModeration, setLocalModeration] = useState<Record<string, 'hidden' | 'review'>>({});
   const [hostNames, setHostNames] = useState<Record<string, string>>({});
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  function load() {
+    setLoading(true);
+    setError(false);
+    fetchAllEventsForAdmin()
+      .then(setEvents)
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    if (allowed) load();
+  }, [allowed]);
+
   useEffect(() => {
     const hostIds = [...new Set(events.map((event) => event.hostId))];
     getProfiles(hostIds).then((profiles) => {
       setHostNames(Object.fromEntries(profiles.map((profile) => [profile.id, `@${profile.username}`])));
     });
   }, [events]);
+
   const visibleEvents = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return events.filter((event) => !normalized || event.title.toLowerCase().includes(normalized) || event.hostId.toLowerCase().includes(normalized));
   }, [events, query]);
 
-  if (!isAdminAccessEnabled(user)) return <AccessDenied />;
+  if (!allowed) return <AccessDenied />;
+
+  async function toggleHidden(event: SpritzEvent) {
+    if (updatingId) return;
+    setUpdatingId(event.id);
+    const ok = event.status === 'hidden' ? await unhideEvent(event.id) : await hideEvent(event.id);
+    if (!ok) {
+      showAlert('A apărut o eroare', 'Nu am putut actualiza evenimentul. Încearcă din nou.');
+    } else {
+      setEvents((current) => current.map((e) => (e.id === event.id ? { ...e, status: event.status === 'hidden' ? 'active' : 'hidden' } : e)));
+    }
+    setUpdatingId(null);
+  }
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -55,22 +87,22 @@ export default function AdminEvents() {
         data={visibleEvents}
         keyExtractor={(event) => event.id}
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.green500} />}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.green500} />}
         ListEmptyComponent={
           loading ? <ActivityIndicator color={colors.green500} style={styles.center} /> :
           error ? (
             <View style={styles.emptyState}>
               <Text style={[styles.empty, { color: theme.textSecondary }]}>Nu am putut încărca evenimentele.</Text>
-              <AnimatedPressable onPress={refresh} style={[styles.retryButton, { borderColor: theme.border }]}>
+              <AnimatedPressable onPress={load} style={[styles.retryButton, { borderColor: theme.border }]}>
                 <Text style={[styles.buttonText, { color: theme.textPrimary }]}>Reîncearcă</Text>
               </AnimatedPressable>
             </View>
           ) : <Text style={[styles.empty, { color: theme.textSecondary }]}>Nu există evenimente.</Text>
         }
         renderItem={({ item }) => {
-          const moderation = localModeration[item.id];
+          const hidden = item.status === 'hidden';
           return (
-            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, opacity: moderation === 'hidden' ? 0.55 : 1 }]}>
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, opacity: hidden ? 0.55 : 1 }]}>
               <View style={styles.cardHeader}>
                 <View style={[styles.icon, { backgroundColor: item.color }]}><Text style={styles.emoji}>{item.emoji}</Text></View>
                 <View style={styles.cardText}>
@@ -78,18 +110,19 @@ export default function AdminEvents() {
                   <Text style={[styles.detail, { color: theme.textSecondary }]}>{formatDate(item.startsAt)}</Text>
                   <Text style={[styles.detail, { color: theme.textSecondary }]}>Organizator: {hostNames[item.hostId] ?? item.hostId}</Text>
                 </View>
-                {moderation && <Text style={[styles.badge, { color: theme.accent }]}>{moderation === 'hidden' ? 'Ascuns' : 'Review'}</Text>}
+                {item.status !== 'active' && <Text style={[styles.badge, { color: theme.accent }]}>{item.status}</Text>}
               </View>
               <Text style={[styles.detail, { color: theme.textSecondary }]}>Locație disponibilă în model · participanții sunt numărați prin RPC.</Text>
               <View style={styles.actions}>
                 <AnimatedPressable onPress={() => router.push(`/event/${item.id}`)} style={[styles.button, { borderColor: theme.border }]}>
                   <Text style={[styles.buttonText, { color: theme.textPrimary }]}>Deschide</Text>
                 </AnimatedPressable>
-                <AnimatedPressable onPress={() => setLocalModeration((current) => ({ ...current, [item.id]: 'hidden' }))} style={[styles.button, { borderColor: theme.border }]}>
-                  <Text style={[styles.buttonText, { color: theme.textPrimary }]}>Ascunde</Text>
-                </AnimatedPressable>
-                <AnimatedPressable onPress={() => setLocalModeration((current) => ({ ...current, [item.id]: 'review' }))} style={[styles.button, { backgroundColor: colors.green500 }]}>
-                  <Text style={[styles.buttonText, { color: colors.white }]}>Review</Text>
+                <AnimatedPressable
+                  onPress={() => toggleHidden(item)}
+                  disabled={updatingId === item.id}
+                  style={[styles.button, hidden ? { backgroundColor: colors.green500 } : { borderColor: theme.border }]}
+                >
+                  <Text style={[styles.buttonText, { color: hidden ? colors.white : theme.textPrimary }]}>{hidden ? 'Reafișează' : 'Ascunde'}</Text>
                 </AnimatedPressable>
               </View>
             </View>

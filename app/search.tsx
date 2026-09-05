@@ -13,7 +13,14 @@ import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
-import { follow, getFollowStatuses, Profile, searchProfiles } from '@/lib/social';
+import {
+  acceptFriendRequest,
+  FriendshipStatus,
+  getFriendshipStatuses,
+  Profile,
+  searchProfiles,
+  sendFriendRequest,
+} from '@/lib/social';
 
 export default function Search() {
   const { colors: theme } = useAppTheme();
@@ -22,7 +29,8 @@ export default function Search() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(false);
-  const [following, setFollowing] = useState<Set<string>>(new Set());
+  const [statuses, setStatuses] = useState<Record<string, FriendshipStatus>>({});
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const trimmedQuery = query.trim();
 
@@ -39,10 +47,10 @@ export default function Search() {
       const people = await searchProfiles(trimmedQuery, user.id);
       if (cancelled) return;
 
-      const statuses = await getFollowStatuses(user.id, people.map((p) => p.id));
+      const nextStatuses = await getFriendshipStatuses(user.id, people.map((p) => p.id));
       if (cancelled) return;
 
-      setFollowing(new Set(people.filter((p) => statuses[p.id]?.iFollow).map((p) => p.id)));
+      setStatuses(nextStatuses);
       setResults(people);
       setLoading(false);
     }, 300); // debounce
@@ -54,24 +62,47 @@ export default function Search() {
   }, [trimmedQuery, user]);
 
   async function handleAdd(person: Profile) {
-    if (!user) return;
+    if (!user || updatingId) return;
     light();
-    setFollowing((current) => new Set(current).add(person.id));
-    const ok = await follow(user.id, person.id);
-    if (!ok) {
-      // Revert the optimistic mark — this used to show "Adăugat ✓" even
-      // when the insert failed, since follow() swallowed its own error.
-      setFollowing((current) => {
-        const next = new Set(current);
-        next.delete(person.id);
-        return next;
-      });
-      showAlert('A apărut o eroare', 'Nu am putut urmări acest cont. Încearcă din nou.');
+    setUpdatingId(person.id);
+    const result = await sendFriendRequest(person.id);
+    if (!result) {
+      showAlert('A apărut o eroare', 'Nu am putut trimite cererea de prietenie. Încearcă din nou.');
+    } else {
+      setStatuses((current) => ({
+        ...current,
+        [person.id]: { status: result === 'accepted' ? 'friends' : 'pending_sent', requestId: null },
+      }));
     }
+    setUpdatingId(null);
+  }
+
+  async function handleAccept(person: Profile, requestId: string) {
+    if (!user || updatingId) return;
+    light();
+    setUpdatingId(person.id);
+    const ok = await acceptFriendRequest(requestId);
+    if (!ok) {
+      showAlert('A apărut o eroare', 'Nu am putut accepta cererea. Încearcă din nou.');
+    } else {
+      setStatuses((current) => ({ ...current, [person.id]: { status: 'friends', requestId: null } }));
+    }
+    setUpdatingId(null);
   }
 
   function renderPerson(person: Profile) {
-    const isFollowing = following.has(person.id);
+    const friendship = statuses[person.id] ?? { status: 'none', requestId: null };
+    const updating = updatingId === person.id;
+    const label =
+      friendship.status === 'friends'
+        ? 'Prieteni ✓'
+        : friendship.status === 'pending_sent'
+        ? 'Cerere trimisă'
+        : friendship.status === 'pending_received'
+        ? 'Acceptă'
+        : 'Adaugă';
+    const actionable = friendship.status === 'none' || friendship.status === 'pending_received';
+
     return (
       <AnimatedPressable
         key={person.id}
@@ -88,17 +119,19 @@ export default function Search() {
           </Text>
         </View>
         <AnimatedPressable
-          onPress={() => handleAdd(person)}
-          disabled={isFollowing}
+          onPress={() =>
+            friendship.status === 'pending_received' && friendship.requestId
+              ? handleAccept(person, friendship.requestId)
+              : handleAdd(person)
+          }
+          disabled={!actionable || updating}
           style={[
             styles.addButton,
-            isFollowing
-              ? { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1 }
-              : { backgroundColor: colors.green500 },
+            actionable ? { backgroundColor: colors.green500 } : { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1 },
           ]}
         >
-          <Text style={[styles.addButtonText, { color: isFollowing ? theme.textSecondary : colors.white }]}>
-            {isFollowing ? 'Adăugat ✓' : 'Adaugă'}
+          <Text style={[styles.addButtonText, { color: actionable ? colors.white : theme.textSecondary }]}>
+            {updating ? 'Se trimite...' : label}
           </Text>
         </AnimatedPressable>
       </AnimatedPressable>

@@ -16,6 +16,7 @@ export type SpritzEvent = {
   maxParticipants: number | null;
   locationIsRented: boolean | null;
   rentalProofPath: string | null;
+  status: 'active' | 'cancelled' | 'completed' | 'hidden';
 };
 
 // Same three real tracks show up at every event — "genul de muzică ascultată"

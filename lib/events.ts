@@ -21,10 +21,11 @@ type EventRow = {
   max_participants: number | null;
   location_is_rented: boolean | null;
   rental_proof_path: string | null;
+  status: SpritzEvent['status'];
 };
 
 const EVENT_COLUMNS =
-  'id, host_id, title, detail, emoji, color, lng, lat, genre, starts_at, entry_fee_ron, drinks_price_ron, max_participants, location_is_rented, rental_proof_path';
+  'id, host_id, title, detail, emoji, color, lng, lat, genre, starts_at, entry_fee_ron, drinks_price_ron, max_participants, location_is_rented, rental_proof_path, status';
 
 function mapEvent(row: EventRow): SpritzEvent {
   return {
@@ -43,6 +44,7 @@ function mapEvent(row: EventRow): SpritzEvent {
     maxParticipants: row.max_participants,
     locationIsRented: row.location_is_rented,
     rentalProofPath: row.rental_proof_path,
+    status: row.status,
   };
 }
 
@@ -83,7 +85,21 @@ export async function getEventAttendeeCount(eventId: string): Promise<number> {
   return data;
 }
 
+// Excludes admin-hidden events — everyone but the admin panel (which uses
+// fetchAllEventsForAdmin below) goes through this.
 export async function fetchEvents(): Promise<SpritzEvent[]> {
+  const { data, error } = await supabase
+    .from('events')
+    .select(EVENT_COLUMNS)
+    .neq('status', 'hidden')
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data.map(mapEvent);
+}
+
+// Admin needs to see hidden events too, to review/unhide them — the only
+// difference from fetchEvents() is the missing status filter.
+export async function fetchAllEventsForAdmin(): Promise<SpritzEvent[]> {
   const { data, error } = await supabase.from('events').select(EVENT_COLUMNS).order('created_at', { ascending: true });
   if (error) throw error;
   return data.map(mapEvent);
@@ -91,7 +107,7 @@ export async function fetchEvents(): Promise<SpritzEvent[]> {
 
 export async function createEvent(
   hostId: string,
-  fields: Omit<SpritzEvent, 'id' | 'hostId'>
+  fields: Omit<SpritzEvent, 'id' | 'hostId' | 'status'>
 ): Promise<SpritzEvent | null> {
   const { data, error } = await supabase
     .from('events')
@@ -129,7 +145,7 @@ export async function createEvent(
 export async function updateEvent(
   eventId: string,
   hostId: string,
-  fields: Omit<SpritzEvent, 'id' | 'hostId'>
+  fields: Omit<SpritzEvent, 'id' | 'hostId' | 'status'>
 ): Promise<SpritzEvent | null> {
   const { data, error } = await supabase
     .from('events')
@@ -199,6 +215,14 @@ export async function fetchAttendees(eventId: string): Promise<EventAttendee[]> 
 
   const { data: profiles } = await supabase.from('profiles').select('id, name, username, avatar_url').in('id', userIds);
   return (profiles ?? []).map((p) => ({ userId: p.id, name: p.name, username: p.username, avatarUrl: p.avatar_url }));
+}
+
+// Host-only — kick_event_participant() checks event.host_id = auth.uid()
+// server-side, so this can't be used by anyone but the real host regardless
+// of what the client believes about who's viewing this screen.
+export async function kickEventParticipant(eventId: string, userId: string): Promise<boolean> {
+  const { error } = await supabase.rpc('kick_event_participant', { p_event_id: eventId, p_user_id: userId });
+  return !error;
 }
 
 export async function hasJoined(eventId: string, userId: string): Promise<boolean> {

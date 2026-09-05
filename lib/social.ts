@@ -8,9 +8,10 @@ export type Profile = {
   avatar_url: string | null;
   instagram_handle: string | null;
   verified: boolean;
+  suspended: boolean;
 }
 
-const PROFILE_COLUMNS = 'id, name, username, bio, avatar_url, instagram_handle, verified';
+const PROFILE_COLUMNS = 'id, name, username, bio, avatar_url, instagram_handle, verified, suspended';
 
 export async function searchProfiles(query: string, excludeId: string): Promise<Profile[]> {
   const trimmed = query.trim().replace(/[,()]/g, '');
@@ -40,74 +41,164 @@ export async function getProfiles(ids: string[]): Promise<Profile[]> {
   return data;
 }
 
-export type FollowStatus = { iFollow: boolean; followsMe: boolean; mutual: boolean };
+// ==================================================== friend requests =====
+// Replaces the old mutual-follow model: "friends" now comes from an
+// explicit pending -> accepted request, backed by supabase/migrations'
+// friend_requests + friendships tables and their RPCs.
 
-export async function getFollowStatus(myId: string, otherId: string): Promise<FollowStatus> {
-  const { data } = await supabase
-    .from('follows')
-    .select('follower_id, followee_id')
-    .or(`and(follower_id.eq.${myId},followee_id.eq.${otherId}),and(follower_id.eq.${otherId},followee_id.eq.${myId})`);
+export type FriendshipStatus = {
+  status: 'none' | 'pending_sent' | 'pending_received' | 'friends';
+  requestId: string | null;
+};
 
-  const iFollow = !!data?.some((row) => row.follower_id === myId);
-  const followsMe = !!data?.some((row) => row.follower_id === otherId);
-  return { iFollow, followsMe, mutual: iFollow && followsMe };
+const NONE_STATUS: FriendshipStatus = { status: 'none', requestId: null };
+
+export async function getFriendshipStatus(myId: string, otherId: string): Promise<FriendshipStatus> {
+  const { data: friendship } = await supabase
+    .from('friendships')
+    .select('user_a')
+    .eq('user_a', myId < otherId ? myId : otherId)
+    .eq('user_b', myId < otherId ? otherId : myId)
+    .maybeSingle();
+
+  if (friendship) return { status: 'friends', requestId: null };
+
+  const { data: request } = await supabase
+    .from('friend_requests')
+    .select('id, sender_id')
+    .or(`and(sender_id.eq.${myId},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${myId})`)
+    .eq('status', 'pending')
+    .maybeSingle();
+
+  if (!request) return NONE_STATUS;
+  return { status: request.sender_id === myId ? 'pending_sent' : 'pending_received', requestId: request.id };
 }
 
-// Same result as calling getFollowStatus once per id, but as 2 queries
-// total instead of up to 2*N — search.tsx was firing one getFollowStatus
-// per search result (up to 20 individual round-trips per debounced
-// keystroke).
-export async function getFollowStatuses(myId: string, otherIds: string[]): Promise<Record<string, FollowStatus>> {
-  const result: Record<string, FollowStatus> = {};
+// Same result as calling getFriendshipStatus once per id, but as 3 queries
+// total instead of up to 2*N — mirrors the getFollowStatuses fix this
+// replaces (search.tsx fires this once per debounced keystroke for up to 20
+// results).
+export async function getFriendshipStatuses(myId: string, otherIds: string[]): Promise<Record<string, FriendshipStatus>> {
+  const result: Record<string, FriendshipStatus> = {};
   if (!otherIds.length) return result;
 
-  const [{ data: following }, { data: followers }] = await Promise.all([
-    supabase.from('follows').select('followee_id').eq('follower_id', myId).in('followee_id', otherIds),
-    supabase.from('follows').select('follower_id').eq('followee_id', myId).in('follower_id', otherIds),
+  const [{ data: asA }, { data: asB }, { data: requests }] = await Promise.all([
+    supabase.from('friendships').select('user_b').eq('user_a', myId).in('user_b', otherIds),
+    supabase.from('friendships').select('user_a').eq('user_b', myId).in('user_a', otherIds),
+    supabase
+      .from('friend_requests')
+      .select('id, sender_id, receiver_id')
+      .eq('status', 'pending')
+      .or(`sender_id.eq.${myId},receiver_id.eq.${myId}`),
   ]);
 
-  const iFollowSet = new Set((following ?? []).map((row) => row.followee_id));
-  const followsMeSet = new Set((followers ?? []).map((row) => row.follower_id));
+  const friendIds = new Set([...(asA ?? []).map((r) => r.user_b), ...(asB ?? []).map((r) => r.user_a)]);
+  const otherIdSet = new Set(otherIds);
+  const requestByOther = new Map<string, { id: string; sentByMe: boolean }>();
+  for (const r of requests ?? []) {
+    const otherId = r.sender_id === myId ? r.receiver_id : r.sender_id;
+    if (!otherIdSet.has(otherId)) continue;
+    requestByOther.set(otherId, { id: r.id, sentByMe: r.sender_id === myId });
+  }
 
   for (const id of otherIds) {
-    const iFollow = iFollowSet.has(id);
-    const followsMe = followsMeSet.has(id);
-    result[id] = { iFollow, followsMe, mutual: iFollow && followsMe };
+    if (friendIds.has(id)) {
+      result[id] = { status: 'friends', requestId: null };
+      continue;
+    }
+    const pending = requestByOther.get(id);
+    result[id] = pending
+      ? { status: pending.sentByMe ? 'pending_sent' : 'pending_received', requestId: pending.id }
+      : NONE_STATUS;
   }
   return result;
 }
 
-export async function follow(myId: string, otherId: string): Promise<boolean> {
-  const { error } = await supabase.from('follows').insert({ follower_id: myId, followee_id: otherId });
-  if (error) return false;
+// Returns the request's resulting status: 'pending' for a normal request, or
+// 'accepted' when the other person already had a pending request to you —
+// send_friend_request() auto-accepts that instead of creating a duplicate.
+export async function sendFriendRequest(otherId: string): Promise<'pending' | 'accepted' | null> {
+  const { data, error } = await supabase.rpc('send_friend_request', { p_receiver_id: otherId });
+  if (error || !data) return null;
 
-  // Best-effort — a failed push shouldn't undo an already-recorded follow.
-  supabase.functions.invoke('notify-follow', { body: { followeeId: otherId } }).catch(() => {});
+  // Best-effort — a failed push/notification shouldn't undo an
+  // already-recorded request.
+  supabase.functions.invoke('notify-friend-request', { body: { receiverId: otherId } }).catch(() => {});
 
+  return data.status as 'pending' | 'accepted';
+}
+
+export async function acceptFriendRequest(requestId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('accept_friend_request', { p_request_id: requestId });
+  if (error || !data) return false;
+
+  supabase.functions.invoke('notify-friend-request', { body: { receiverId: data.sender_id } }).catch(() => {});
   return true;
 }
 
-export async function unfollow(myId: string, otherId: string): Promise<boolean> {
-  const { error } = await supabase.from('follows').delete().eq('follower_id', myId).eq('followee_id', otherId);
+export async function rejectFriendRequest(requestId: string): Promise<boolean> {
+  const { error } = await supabase.rpc('reject_friend_request', { p_request_id: requestId });
   return !error;
 }
 
-// Everyone you follow who also follows you back.
-export async function getMutualFriends(myId: string): Promise<Profile[]> {
-  const { data: following } = await supabase.from('follows').select('followee_id').eq('follower_id', myId);
-  const followingIds = (following ?? []).map((row) => row.followee_id);
-  if (!followingIds.length) return [];
+export async function cancelFriendRequest(requestId: string): Promise<boolean> {
+  const { error } = await supabase.rpc('cancel_friend_request', { p_request_id: requestId });
+  return !error;
+}
 
-  const { data: mutualEdges } = await supabase
-    .from('follows')
-    .select('follower_id')
-    .eq('followee_id', myId)
-    .in('follower_id', followingIds);
-  const mutualIds = (mutualEdges ?? []).map((row) => row.follower_id);
-  if (!mutualIds.length) return [];
+export async function unfriend(otherId: string): Promise<boolean> {
+  const { error } = await supabase.rpc('unfriend', { p_other_id: otherId });
+  return !error;
+}
 
-  const { data: profiles } = await supabase.from('profiles').select(PROFILE_COLUMNS).in('id', mutualIds);
-  return profiles ?? [];
+export type FriendRequest = {
+  id: string;
+  createdAt: string;
+  profile: Profile;
+};
+
+export async function getIncomingRequests(myId: string): Promise<FriendRequest[]> {
+  const { data, error } = await supabase
+    .from('friend_requests')
+    .select(`id, created_at, sender:profiles!friend_requests_sender_id_fkey(${PROFILE_COLUMNS})`)
+    .eq('receiver_id', myId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+
+  if (error || !data) return [];
+  return (data as any[]).map((row) => ({ id: row.id, createdAt: row.created_at, profile: row.sender }));
+}
+
+export async function getOutgoingRequests(myId: string): Promise<FriendRequest[]> {
+  const { data, error } = await supabase
+    .from('friend_requests')
+    .select(`id, created_at, receiver:profiles!friend_requests_receiver_id_fkey(${PROFILE_COLUMNS})`)
+    .eq('sender_id', myId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+
+  if (error || !data) return [];
+  return (data as any[]).map((row) => ({ id: row.id, createdAt: row.created_at, profile: row.receiver }));
+}
+
+export async function getFriends(myId: string): Promise<Profile[]> {
+  const [{ data: asA }, { data: asB }] = await Promise.all([
+    supabase.from('friendships').select(`profile:profiles!friendships_user_b_fkey(${PROFILE_COLUMNS})`).eq('user_a', myId),
+    supabase.from('friendships').select(`profile:profiles!friendships_user_a_fkey(${PROFILE_COLUMNS})`).eq('user_b', myId),
+  ]);
+
+  return [...(asA as any[] ?? []).map((r) => r.profile), ...(asB as any[] ?? []).map((r) => r.profile)];
+}
+
+// ============================================================== blocking ===
+export async function blockUser(otherId: string): Promise<boolean> {
+  const { error } = await supabase.rpc('block_user', { p_target_id: otherId });
+  return !error;
+}
+
+export async function unblockUser(otherId: string): Promise<boolean> {
+  const { error } = await supabase.rpc('unblock_user', { p_target_id: otherId });
+  return !error;
 }
 
 export type FriendPrefs = {

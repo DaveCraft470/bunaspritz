@@ -19,15 +19,17 @@ import { ReviewModal } from '@/components/social/ReviewModal';
 import { ReportModal } from '@/components/social/ReportModal';
 import { addReport, hasActiveReport, USER_REPORT_REASONS } from '@/lib/reports';
 import {
-  FollowStatus,
+  acceptFriendRequest,
+  cancelFriendRequest,
   FriendPrefs,
+  FriendshipStatus,
   Profile,
-  follow,
-  getFollowStatus,
   getFriendPrefs,
+  getFriendshipStatus,
   getProfile,
+  sendFriendRequest,
   setFriendPrefs,
-  unfollow,
+  unfriend,
 } from '@/lib/social';
 import {
   Review,
@@ -48,7 +50,7 @@ export default function PublicProfile() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState(false);
-  const [status, setStatus] = useState<FollowStatus>({ iFollow: false, followsMe: false, mutual: false });
+  const [status, setStatus] = useState<FriendshipStatus>({ status: 'none', requestId: null });
   const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false });
   const [menuOpen, setMenuOpen] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -73,7 +75,7 @@ export default function PublicProfile() {
         setProfileLoading(false);
         setProfileError(true);
       });
-    getFollowStatus(user.id, id).then(setStatus);
+    getFriendshipStatus(user.id, id).then(setStatus);
     getFriendPrefs(user.id, id).then(setPrefs);
     getReviews(id).then(setReviews);
     getReviewSummary(id).then(setReviewSummary);
@@ -89,13 +91,13 @@ export default function PublicProfile() {
       const result = await getProfile(id);
       setProfile(result);
       setProfileError(!result);
-      const [followStatus, friendPrefs, reviewsList, summary] = await Promise.all([
-        getFollowStatus(user.id, id),
+      const [friendshipStatus, friendPrefs, reviewsList, summary] = await Promise.all([
+        getFriendshipStatus(user.id, id),
         getFriendPrefs(user.id, id),
         getReviews(id),
         getReviewSummary(id),
       ]);
-      setStatus(followStatus);
+      setStatus(friendshipStatus);
       setPrefs(friendPrefs);
       setReviews(reviewsList);
       setReviewSummary(summary);
@@ -118,22 +120,31 @@ export default function PublicProfile() {
     return ok;
   }
 
-  async function toggleFollow() {
+  async function handleFriendAction() {
     if (!user || !id || followUpdating) return;
     light();
     setFollowUpdating(true);
     const previous = status;
-    let ok: boolean;
-    if (status.iFollow) {
-      setStatus((s) => ({ ...s, iFollow: false, mutual: false }));
-      ok = await unfollow(user.id, id);
+    let ok = true;
+
+    if (status.status === 'friends') {
+      setStatus({ status: 'none', requestId: null });
+      ok = await unfriend(id);
+    } else if (status.status === 'pending_sent' && status.requestId) {
+      setStatus({ status: 'none', requestId: null });
+      ok = await cancelFriendRequest(status.requestId);
+    } else if (status.status === 'pending_received' && status.requestId) {
+      setStatus({ status: 'friends', requestId: null });
+      ok = await acceptFriendRequest(status.requestId);
     } else {
-      setStatus((s) => ({ ...s, iFollow: true, mutual: s.followsMe }));
-      ok = await follow(user.id, id);
+      const result = await sendFriendRequest(id);
+      ok = !!result;
+      setStatus(result ? { status: result === 'accepted' ? 'friends' : 'pending_sent', requestId: null } : previous);
     }
+
     if (!ok) {
       setStatus(previous);
-      showAlert('A apărut o eroare', 'Nu am putut actualiza urmărirea. Încearcă din nou.');
+      showAlert('A apărut o eroare', 'Nu am putut actualiza prietenia. Încearcă din nou.');
     }
     setFollowUpdating(false);
   }
@@ -185,7 +196,15 @@ export default function PublicProfile() {
     );
   }
 
-  const followLabel = status.iFollow ? 'Urmăresc' : status.followsMe ? 'Urmărește înapoi' : 'Urmărește';
+  const isFriends = status.status === 'friends';
+  const friendLabel =
+    status.status === 'friends'
+      ? 'Prieteni ✓'
+      : status.status === 'pending_sent'
+      ? 'Anulează cererea'
+      : status.status === 'pending_received'
+      ? 'Acceptă cererea'
+      : 'Adaugă prieten';
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -243,35 +262,35 @@ export default function PublicProfile() {
 
         <View style={styles.actionsRow}>
           <AnimatedPressable
-            onPress={toggleFollow}
+            onPress={handleFriendAction}
             disabled={followUpdating}
             style={[
               styles.actionButton,
-              status.iFollow
+              isFriends || status.status === 'pending_sent'
                 ? { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1 }
                 : { backgroundColor: colors.green500 },
             ]}
           >
-            <Text style={[styles.actionText, { color: status.iFollow ? theme.textPrimary : colors.white }]}>
-            {followUpdating ? 'Se actualizează...' : followLabel}
+            <Text style={[styles.actionText, { color: isFriends || status.status === 'pending_sent' ? theme.textPrimary : colors.white }]}>
+            {followUpdating ? 'Se actualizează...' : friendLabel}
             </Text>
           </AnimatedPressable>
 
           <AnimatedPressable
-            onPress={() => status.mutual && router.push({ pathname: '/messages', params: { friendId: id } })}
-            disabled={!status.mutual}
+            onPress={() => isFriends && router.push({ pathname: '/messages', params: { friendId: id } })}
+            disabled={!isFriends}
             style={[
               styles.actionButton,
-              { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1, opacity: status.mutual ? 1 : 0.5 },
+              { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1, opacity: isFriends ? 1 : 0.5 },
             ]}
           >
             <Text style={[styles.actionText, { color: theme.textPrimary }]}>Mesaj</Text>
           </AnimatedPressable>
         </View>
 
-        {!status.mutual && (
+        {!isFriends && (
           <Text style={[styles.hint, { color: theme.textSecondary }]}>
-            Puteți să vă trimiteți mesaje doar dacă vă urmăriți reciproc.
+            Puteți să vă trimiteți mesaje doar dacă sunteți prieteni.
           </Text>
         )}
 
@@ -352,22 +371,24 @@ export default function PublicProfile() {
         targetType="user"
         targetLabel={`@${profile.username}`}
         reasons={USER_REPORT_REASONS}
-        onSubmit={(reason, description) => {
+        onSubmit={async (reason, description) => {
           if (!user || !id) return;
-          if (hasActiveReport(user.id, 'user', id)) {
+          if (await hasActiveReport(user.id, 'user', id)) {
             showAlert('Raport duplicat', 'Ai raportat deja acest utilizator.');
             return;
           }
-          addReport({
+          const report = await addReport({
             reporterId: user.id,
-            reporterLabel: `@${user.username}`,
             targetType: 'user',
             targetId: id,
-            targetLabel: `@${profile.username}`,
             reason,
             description,
           });
-          showAlert('Raport trimis', 'Raportul a fost adăugat local pentru verificare.');
+          if (!report) {
+            showAlert('A apărut o eroare', 'Nu am putut trimite raportul. Încearcă din nou.');
+            return;
+          }
+          showAlert('Raport trimis', 'Raportul a fost trimis pentru verificare.');
         }}
         onClose={() => setReportModalOpen(false)}
       />

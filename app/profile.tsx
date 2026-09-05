@@ -10,7 +10,7 @@ import { useAppTheme } from '@/contexts/ThemeContext';
 import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
 import { InstagramLink } from '@/components/common/InstagramLink';
-import { getMutualFriends } from '@/lib/social';
+import { getFriends } from '@/lib/social';
 import { getUserEventStats } from '@/lib/events';
 
 // Profile design by raulnitu8 — ported from App.tsx's ProfileScreen onto its
@@ -24,13 +24,13 @@ export default function Profile() {
   const [eventStats, setEventStats] = useState({ attended: 0, hosted: 0 });
   const [refreshing, setRefreshing] = useState(false);
 
-  // getMutualFriends/getUserEventStats already resolve to safe defaults
+  // getFriends/getUserEventStats already resolve to safe defaults
   // (empty list / zero counts) rather than throwing, so there's no distinct
   // load-error state to surface here — this just makes "did it actually
   // refetch" pullable instead of only ever loading once on mount.
   const load = useCallback(async () => {
     if (!user) return;
-    const [friends, stats] = await Promise.all([getMutualFriends(user.id), getUserEventStats(user.id)]);
+    const [friends, stats] = await Promise.all([getFriends(user.id), getUserEventStats(user.id)]);
     setFriendCount(friends.length);
     setEventStats(stats);
   }, [user]);

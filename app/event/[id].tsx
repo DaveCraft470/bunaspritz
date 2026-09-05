@@ -459,21 +459,22 @@ export default function EventDetail() {
           targetType="event"
           targetLabel={event.title}
           reasons={EVENT_REPORT_REASONS}
-          onSubmit={(reason, description) => {
-            if (hasActiveReport(user.id, 'event', event.id)) {
+          onSubmit={async (reason, description) => {
+            if (await hasActiveReport(user.id, 'event', event.id)) {
               Alert.alert('Raport duplicat', 'Ai raportat deja acest eveniment.');
               return;
             }
-            addReport({
+            const report = await addReport({
               reporterId: user.id,
-              reporterLabel: `@${user.username}`,
               targetType: 'event',
               targetId: event.id,
-              targetLabel: event.title,
               reason,
               description,
             });
-            Alert.alert('Raport trimis', 'Raportul a fost adăugat local pentru verificare.');
+            Alert.alert(
+              report ? 'Raport trimis' : 'A apărut o eroare',
+              report ? 'Raportul a fost trimis pentru verificare.' : 'Nu am putut trimite raportul. Încearcă din nou.'
+            );
           }}
           onClose={() => setReportModalOpen(false)}
         />

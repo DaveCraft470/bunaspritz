@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,17 +11,23 @@ import { useEvents } from '@/contexts/EventsContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { isAdminAccessEnabled } from '@/lib/admin';
-import { useReports, seedDevelopmentReports } from '@/lib/reports';
+import { getReports, Report } from '@/lib/reports';
 
 export default function Admin() {
   const { colors: theme } = useAppTheme();
   const { events } = useEvents();
   const { user } = useUser();
-  const reports = useReports();
-  const newReports = reports.filter((report) => report.status === 'new').length;
+  const [reports, setReports] = useState<Report[]>([]);
+  const allowed = isAdminAccessEnabled(user);
+
+  useEffect(() => {
+    if (!allowed) return;
+    getReports().then(setReports);
+  }, [allowed]);
+
+  const pendingReports = reports.filter((report) => report.status === 'pending').length;
   const reviewingReports = reports.filter((report) => report.status === 'reviewing').length;
   const resolvedReports = reports.filter((report) => report.status === 'resolved').length;
-  const allowed = isAdminAccessEnabled(user);
   const upcoming = useMemo(() => events.filter((event) => !event.startsAt || new Date(event.startsAt).getTime() >= Date.now()).length, [events]);
 
   if (!allowed) {
@@ -44,21 +50,16 @@ export default function Admin() {
           <Stat label="Evenimente" value={events.length} theme={theme} />
           <Stat label="Viitoare" value={upcoming} theme={theme} />
           <Stat label="Utilizatori" value="Căutare" theme={theme} />
-          <Stat label="Reports noi" value={newReports} theme={theme} />
+          <Stat label="Reports noi" value={pendingReports} theme={theme} />
           <Stat label="În verificare" value={reviewingReports} theme={theme} />
           <Stat label="Rezolvate" value={resolvedReports} theme={theme} />
         </View>
         <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Management</Text>
-        <AdminLink icon="people-outline" title="Users" detail="Caută utilizatori și deschide profilurile lor." onPress={() => router.push('/admin-users')} theme={theme} />
-        <AdminLink icon="calendar-outline" title="Events" detail="Vezi și marchează evenimente pentru moderare." onPress={() => router.push('/admin-events')} theme={theme} />
-        <AdminLink icon="flag-outline" title="Reports" detail="Analizează raportările locale și statusurile lor." onPress={() => router.push('/admin-reports')} theme={theme} />
-        {__DEV__ && (
-          <AnimatedPressable onPress={seedDevelopmentReports} style={[styles.devButton, { borderColor: theme.border }]}>
-            <Text style={[styles.linkDetail, { color: theme.textSecondary }]}>Developer tools · Adaugă reports de test</Text>
-          </AnimatedPressable>
-        )}
+        <AdminLink icon="people-outline" title="Users" detail="Caută utilizatori, suspendă sau repune conturi." onPress={() => router.push('/admin-users')} theme={theme} />
+        <AdminLink icon="calendar-outline" title="Events" detail="Vezi evenimente și ascunde-le pentru moderare." onPress={() => router.push('/admin-events')} theme={theme} />
+        <AdminLink icon="flag-outline" title="Reports" detail="Analizează raportările și rezolvă-le." onPress={() => router.push('/admin-reports')} theme={theme} />
         <Text style={[styles.note, { color: theme.textSecondary }]}>
-          Accesul și acțiunile admin sunt doar pentru development local. Persistența securizată necesită roluri și politici backend.
+          Panoul e vizibil doar în development, dar fiecare acțiune (suspendare, ascundere, rezolvare) trece printr-un RPC verificat server-side pe rolul de admin — nu doar prin acest flag de client.
         </Text>
       </View>
     </SafeAreaView>
@@ -116,7 +117,6 @@ const styles = StyleSheet.create({
   linkTitle: { fontSize: 15, fontWeight: '800' },
   linkDetail: { fontSize: 11, marginTop: 3 },
   note: { fontSize: 11, lineHeight: 16, fontStyle: 'italic', marginTop: spacing.lg },
-  devButton: { borderWidth: 1, borderRadius: 12, padding: 10, marginTop: spacing.sm },
   denied: { textAlign: 'center', padding: spacing.xl, fontSize: 16, fontWeight: '700' },
   deniedBack: { alignSelf: 'center', padding: spacing.md },
 });

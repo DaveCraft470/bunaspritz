@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Modal, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,35 +10,85 @@ import { useAppTheme } from '@/contexts/ThemeContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { isAdminAccessEnabled } from '@/lib/admin';
-import { ReportStatus, ReportTargetType, updateReportStatus, useReports } from '@/lib/reports';
+import { getReports, Report, ReportStatus, ReportTargetType, updateReportStatus } from '@/lib/reports';
+import { getProfiles } from '@/lib/social';
+import { supabase } from '@/lib/supabase';
 
 const STATUS_FILTERS: Array<{ label: string; value: ReportStatus | 'all' }> = [
   { label: 'Toate', value: 'all' },
-  { label: 'Noi', value: 'new' },
+  { label: 'Noi', value: 'pending' },
   { label: 'În verificare', value: 'reviewing' },
   { label: 'Rezolvate', value: 'resolved' },
-  { label: 'Respins', value: 'dismissed' },
+  { label: 'Respins', value: 'rejected' },
 ];
+
+// reports only stores ids — labels for the reporter and the target are
+// resolved here in two batched queries (one for every user id involved,
+// one for event titles) instead of one lookup per row.
+async function resolveLabels(reports: Report[]): Promise<Record<string, string>> {
+  const userIds = new Set<string>();
+  const eventIds = new Set<string>();
+  for (const report of reports) {
+    userIds.add(report.reporterId);
+    if (report.targetType === 'user') userIds.add(report.targetId);
+    else eventIds.add(report.targetId);
+  }
+
+  const [profiles, events] = await Promise.all([
+    getProfiles([...userIds]),
+    eventIds.size
+      ? supabase.from('events').select('id, title').in('id', [...eventIds]).then((r) => r.data ?? [])
+      : Promise.resolve([]),
+  ]);
+
+  const labels: Record<string, string> = {};
+  for (const profile of profiles) labels[profile.id] = `@${profile.username}`;
+  for (const event of events) labels[event.id] = event.title;
+  return labels;
+}
 
 export default function AdminReports() {
   const { colors: theme } = useAppTheme();
   const { user } = useUser();
-  const reports = useReports();
+  const allowed = isAdminAccessEnabled(user);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [labels, setLabels] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<ReportStatus | 'all'>('all');
   const [targetType, setTargetType] = useState<ReportTargetType | 'all'>('all');
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  function load() {
+    getReports().then(async (list) => {
+      setReports(list);
+      setLabels(await resolveLabels(list));
+    });
+  }
+
+  useEffect(() => {
+    if (allowed) load();
+  }, [allowed]);
+
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return reports.filter((report) =>
       (status === 'all' || report.status === status) &&
       (targetType === 'all' || report.targetType === targetType) &&
-      (!normalized || `${report.reason} ${report.description} ${report.targetLabel} ${report.reporterLabel}`.toLowerCase().includes(normalized)),
+      (!normalized ||
+        `${report.reason} ${report.description} ${labels[report.targetId] ?? ''} ${labels[report.reporterId] ?? ''}`
+          .toLowerCase()
+          .includes(normalized)),
     );
-  }, [reports, status, targetType, query]);
+  }, [reports, status, targetType, query, labels]);
   const selected = reports.find((report) => report.id === selectedId) ?? null;
 
-  if (!isAdminAccessEnabled(user)) return <AccessDenied />;
+  if (!allowed) return <AccessDenied />;
+
+  async function statusAction(report: Report, next: Exclude<ReportStatus, 'pending'>) {
+    setSelectedId(null);
+    const ok = await updateReportStatus(report.id, next);
+    if (ok) setReports((current) => current.map((r) => (r.id === report.id ? { ...r, status: next } : r)));
+  }
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -70,43 +120,47 @@ export default function AdminReports() {
             </View>
             <Text style={[styles.reason, { color: theme.textPrimary }]}>{item.reason}</Text>
             <Text style={[styles.detail, { color: theme.textSecondary }]} numberOfLines={2}>{item.description || 'Fără descriere'}</Text>
-            <Text style={[styles.detail, { color: theme.textSecondary }]}>{item.reporterLabel} → {item.targetLabel} · {new Date(item.createdAt).toLocaleString('ro-RO')}</Text>
+            <Text style={[styles.detail, { color: theme.textSecondary }]}>{labels[item.reporterId] ?? '…'} → {labels[item.targetId] ?? '…'} · {new Date(item.createdAt).toLocaleString('ro-RO')}</Text>
           </AnimatedPressable>
         )}
       />
-      <ReportDetail report={selected} onClose={() => setSelectedId(null)} />
+      <ReportDetail report={selected} labels={labels} onClose={() => setSelectedId(null)} onStatus={statusAction} />
     </SafeAreaView>
   );
 }
 
-function ReportDetail({ report, onClose }: { report: ReturnType<typeof useReports>[number] | null; onClose: () => void }) {
+function ReportDetail({
+  report,
+  labels,
+  onClose,
+  onStatus,
+}: {
+  report: Report | null;
+  labels: Record<string, string>;
+  onClose: () => void;
+  onStatus: (report: Report, next: Exclude<ReportStatus, 'pending'>) => void;
+}) {
   const { colors: theme } = useAppTheme();
   if (!report) return null;
-  const currentReport = report;
-  function statusAction(next: ReportStatus) {
-    updateReportStatus(currentReport.id, next);
-    onClose();
-  }
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
         <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Detalii report</Text>
-          <Text style={[styles.detail, { color: theme.textSecondary }]}>Reporter: {currentReport.reporterLabel}</Text>
-          <Text style={[styles.detail, { color: theme.textSecondary }]}>Țintă: {currentReport.targetLabel}</Text>
-          <Text style={[styles.reason, { color: theme.textPrimary }]}>{currentReport.reason}</Text>
-          <Text style={[styles.detail, { color: theme.textSecondary }]}>{currentReport.description || 'Fără descriere'}</Text>
-          <Text style={[styles.detail, { color: theme.textSecondary }]}>Creat: {new Date(currentReport.createdAt).toLocaleString('ro-RO')}</Text>
+          <Text style={[styles.detail, { color: theme.textSecondary }]}>Reporter: {labels[report.reporterId] ?? '…'}</Text>
+          <Text style={[styles.detail, { color: theme.textSecondary }]}>Țintă: {labels[report.targetId] ?? '…'}</Text>
+          <Text style={[styles.reason, { color: theme.textPrimary }]}>{report.reason}</Text>
+          <Text style={[styles.detail, { color: theme.textSecondary }]}>{report.description || 'Fără descriere'}</Text>
+          <Text style={[styles.detail, { color: theme.textSecondary }]}>Creat: {new Date(report.createdAt).toLocaleString('ro-RO')}</Text>
           <View style={styles.actions}>
-            <AnimatedPressable onPress={() => statusAction('reviewing')} style={styles.modalButton}><Text style={styles.modalButtonText}>Începe verificarea</Text></AnimatedPressable>
-            <AnimatedPressable onPress={() => statusAction('resolved')} style={[styles.modalButton, { backgroundColor: colors.green500 }]}><Text style={[styles.modalButtonText, { color: colors.white }]}>Rezolvă</Text></AnimatedPressable>
-            <AnimatedPressable onPress={() => statusAction('dismissed')} style={styles.modalButton}><Text style={styles.modalButtonText}>Respinge</Text></AnimatedPressable>
+            <AnimatedPressable onPress={() => onStatus(report, 'reviewing')} style={styles.modalButton}><Text style={styles.modalButtonText}>Începe verificarea</Text></AnimatedPressable>
+            <AnimatedPressable onPress={() => onStatus(report, 'resolved')} style={[styles.modalButton, { backgroundColor: colors.green500 }]}><Text style={[styles.modalButtonText, { color: colors.white }]}>Rezolvă</Text></AnimatedPressable>
+            <AnimatedPressable onPress={() => onStatus(report, 'rejected')} style={styles.modalButton}><Text style={styles.modalButtonText}>Respinge</Text></AnimatedPressable>
           </View>
           <View style={styles.actions}>
-            <AnimatedPressable onPress={() => currentReport.targetType === 'user' ? router.push(`/user/${currentReport.targetId}`) : router.push(`/event/${currentReport.targetId}`)} style={styles.modalButton}><Text style={styles.modalButtonText}>Vezi {currentReport.targetType === 'user' ? 'profilul' : 'evenimentul'}</Text></AnimatedPressable>
+            <AnimatedPressable onPress={() => report.targetType === 'user' ? router.push(`/user/${report.targetId}`) : router.push(`/event/${report.targetId}`)} style={styles.modalButton}><Text style={styles.modalButtonText}>Vezi {report.targetType === 'user' ? 'profilul' : 'evenimentul'}</Text></AnimatedPressable>
             <AnimatedPressable onPress={onClose} style={styles.modalButton}><Text style={styles.modalButtonText}>Închide</Text></AnimatedPressable>
           </View>
-          <Text style={[styles.local, { color: theme.textSecondary }]}>Statusurile sunt locale și nu sunt persistate în backend.</Text>
         </View>
       </View>
     </Modal>
@@ -141,6 +195,5 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 7, marginTop: spacing.md },
   modalButton: { flex: 1, minHeight: 42, borderRadius: 11, backgroundColor: '#EAFBF0', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7 },
   modalButtonText: { fontSize: 10, fontWeight: '800', color: '#0E9A3D', textAlign: 'center' },
-  local: { fontSize: 10, fontStyle: 'italic', marginTop: spacing.md },
   deniedBack: { alignSelf: 'center', padding: spacing.md },
 });
