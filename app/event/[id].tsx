@@ -8,6 +8,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { buildApproxStaticMapUrl, buildDirectionsUrl, buildExactStaticMapUrl } from '@/constants/mapbox';
 import { getSpritzEvent, SPRITZ_SONGS } from '@/constants/events';
 import { colors, shadows } from '@/constants/theme';
+import { VERIFICATION_REQUIRED } from '@/constants/featureFlags';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
@@ -138,7 +139,7 @@ export default function EventDetail() {
 
     if (isFull) return;
 
-    if (!user.verified) {
+    if (VERIFICATION_REQUIRED && !user.verified) {
       router.push({ pathname: '/verification', params: { returnTo: `/event/${event.id}` } });
       return;
     }

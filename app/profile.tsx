@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '@/constants/theme';
+import { VERIFICATION_REQUIRED } from '@/constants/featureFlags';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
@@ -69,7 +70,7 @@ export default function Profile() {
           <View style={styles.profileTitleBlock}>
             <View style={styles.nameRow}>
               <Text style={[styles.profileName, { color: theme.textPrimary }]}>{name}</Text>
-              {user?.verified && (
+              {VERIFICATION_REQUIRED && user?.verified && (
                 <View style={styles.verifiedBadge}>
                   <Text style={styles.verifiedText}>✓</Text>
                 </View>
@@ -103,29 +104,31 @@ export default function Profile() {
           </View>
         </View>
 
-        <Pressable
-          onPress={() => {
-            if (!user?.verified) {
-              router.push({ pathname: '/verification', params: { returnTo: '/profile' } });
-            }
-          }}
-          style={[styles.verifyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        >
-          <View style={[styles.verifyIcon, { backgroundColor: theme.surfaceMuted }]}>
-            <Text style={[styles.verifyIconText, { color: theme.accent }]}>✓</Text>
-          </View>
-          <View style={styles.verifyCopy}>
-            <Text style={[styles.verifyTitle, { color: theme.textPrimary }]}>
-              {user?.verified ? 'Identitate verificată' : 'Verificare identitate'}
-            </Text>
-            <Text style={[styles.verifyDetail, { color: theme.textSecondary }]}>
-              {user?.verified
-                ? 'Contul tău a trecut de verificarea 18+.'
-                : 'Necesară pentru a te alătura unui Spritz.'}
-            </Text>
-          </View>
-          {!user?.verified && <Text style={[styles.verifyArrow, { color: theme.accent }]}>›</Text>}
-        </Pressable>
+        {VERIFICATION_REQUIRED && (
+          <Pressable
+            onPress={() => {
+              if (!user?.verified) {
+                router.push({ pathname: '/verification', params: { returnTo: '/profile' } });
+              }
+            }}
+            style={[styles.verifyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          >
+            <View style={[styles.verifyIcon, { backgroundColor: theme.surfaceMuted }]}>
+              <Text style={[styles.verifyIconText, { color: theme.accent }]}>✓</Text>
+            </View>
+            <View style={styles.verifyCopy}>
+              <Text style={[styles.verifyTitle, { color: theme.textPrimary }]}>
+                {user?.verified ? 'Identitate verificată' : 'Verificare identitate'}
+              </Text>
+              <Text style={[styles.verifyDetail, { color: theme.textSecondary }]}>
+                {user?.verified
+                  ? 'Contul tău a trecut de verificarea 18+.'
+                  : 'Necesară pentru a te alătura unui Spritz.'}
+              </Text>
+            </View>
+            {!user?.verified && <Text style={[styles.verifyArrow, { color: theme.accent }]}>›</Text>}
+          </Pressable>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

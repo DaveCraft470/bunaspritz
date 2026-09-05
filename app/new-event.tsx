@@ -9,6 +9,7 @@ import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 
 import { MAPBOX_INITIAL_VIEW, buildApproxStaticMapUrl } from '@/constants/mapbox';
+import { VERIFICATION_REQUIRED } from '@/constants/featureFlags';
 import { useEvents } from '@/contexts/EventsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
@@ -81,7 +82,7 @@ export default function NewEvent() {
   // back-forward) — hosting requires the same identity verification as
   // joining does, enforced again server-side by the events INSERT policy.
   useEffect(() => {
-    if (!user?.verified) {
+    if (VERIFICATION_REQUIRED && !user?.verified) {
       router.replace({ pathname: '/verification', params: { returnTo: '/new-event' } });
     }
   }, [user]);
