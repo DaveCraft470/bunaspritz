@@ -98,7 +98,7 @@ export function FloatingBottomNav() {
       />
 
       <FadeInUp delay={0} distance={10}>
-        <HomeBottleButton active={pathname === '/'} />
+        <HomeBottleButton />
       </FadeInUp>
 
       <IconIsland

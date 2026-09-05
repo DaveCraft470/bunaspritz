@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Alert } from 'react-native';
 
+import { showAlert } from '@/lib/alert';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
@@ -49,6 +50,7 @@ export default function Friends() {
   const [loadError, setLoadError] = useState(false);
   const [menuFor, setMenuFor] = useState<Profile | null>(null);
   const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false });
+  const [refreshing, setRefreshing] = useState(false);
 
   function load() {
     if (!user) return;
@@ -71,6 +73,27 @@ export default function Friends() {
   useEffect(load, [user]);
   useEffect(() => subscribeToFriendRequests(load), [user]);
 
+  async function onRefresh() {
+    if (!user) return;
+    setRefreshing(true);
+    try {
+      const [friendList, incomingList, outgoingList] = await Promise.all([
+        getFriends(user.id),
+        Promise.resolve(getIncomingFriendRequests(user.id)),
+        Promise.resolve(getOutgoingFriendRequests(user.id)),
+      ]);
+      setFriends(friendList);
+      setIncoming(incomingList);
+      setOutgoing(outgoingList);
+      setRequestProfiles(await getRequestProfiles([...incomingList, ...outgoingList]));
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   async function openMenu(friend: Profile) {
     if (!user) return;
     light();
@@ -86,7 +109,7 @@ export default function Friends() {
     const ok = await setFriendPrefs(user.id, menuFor.id, patch);
     if (!ok) {
       setPrefs(previous);
-      Alert.alert('A apărut o eroare', 'Nu am putut salva preferința. Încearcă din nou.');
+      showAlert('A apărut o eroare', 'Nu am putut salva preferința. Încearcă din nou.');
     }
   }
 
@@ -102,7 +125,7 @@ export default function Friends() {
           const localRemoved = removeFriend(user.id, friend.id);
           const ok = localRemoved || (await unfollow(user.id, friend.id));
           if (!ok) {
-            Alert.alert('A apărut o eroare', 'Nu am putut elimina prietenul. Încearcă din nou.');
+            showAlert('A apărut o eroare', 'Nu am putut elimina prietenul. Încearcă din nou.');
             return;
           }
           setFriends((current) => current.filter((f) => f.id !== friend.id));
@@ -135,13 +158,18 @@ export default function Friends() {
 
       <FriendsHubTabs active="friends" />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.green500} />}
+      >
         {loading && (
           <View style={styles.loadingState}>
             <ActivityIndicator color={colors.green500} />
             <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Se încarcă prietenii...</Text>
           </View>
         )}
+
 
         {!loading && loadError && (
           <>

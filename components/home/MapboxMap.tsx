@@ -4,17 +4,30 @@ import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { router } from 'expo-router';
 
 import {
+  MAP_LOAD_TIMEOUT_MS,
   MAPBOX_ACCESS_TOKEN,
   MAPBOX_GL_JS_VERSION,
   MAPBOX_INITIAL_VIEW,
   MAPBOX_STYLE_URL_DARK,
   MAPBOX_STYLE_URL_LIGHT,
+  MAPLIBRE_GL_JS_VERSION,
+  OPENFREEMAP_STYLE_URL,
 } from '@/constants/mapbox';
 import type { SpritzEvent } from '@/constants/events';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { FakeMapBackdrop } from './FakeMapBackdrop';
 
-const LOAD_TIMEOUT_MS = 10000;
+const LOAD_TIMEOUT_MS = MAP_LOAD_TIMEOUT_MS;
+
+type Provider = 'mapbox' | 'maplibre';
+
+// Sticky across remounts (theme toggle, pull-to-refresh reload) — once
+// Mapbox has proven unreachable/broken this app session, skip straight to
+// the spare map next time instead of re-probing a dead service and making
+// the user sit through another LOAD_TIMEOUT_MS. Native-only counterpart to
+// lib/mapboxGlWeb.ts's markMapboxDead/isMapboxKnownDead (separate JS
+// runtime from the web build, so it can't share that module's state).
+let mapboxKnownDead = false;
 
 type PinData = Pick<SpritzEvent, 'id' | 'emoji' | 'color' | 'lng' | 'lat'>;
 
@@ -24,13 +37,42 @@ function toPinData(events: SpritzEvent[], storyEventIds?: Set<string>): PinWithS
   return events.map((e) => ({ id: e.id, emoji: e.emoji, color: e.color, lng: e.lng, lat: e.lat, hasStories: storyEventIds?.has(e.id) ?? false }));
 }
 
-function buildHtml(styleUrl: string, initialEvents: PinData[]) {
+// `provider` picks the whole library + style + token combo — see
+// MAPLIBRE_GL_JS_VERSION/OPENFREEMAP_STYLE_URL in constants/mapbox.ts for why
+// the fallback is a different library, not just a different style URL
+// (`mapbox://styles/...` is a proprietary scheme MapLibre can't resolve).
+// Everything past that (markers, pins, camera) uses `gl`/`window.mapboxgl ||
+// window.maplibregl`, since MapLibre GL JS is API-compatible with the
+// Mapbox GL JS APIs this app touches.
+function buildHtml(provider: Provider, styleUrl: string, initialEvents: PinData[]) {
+  const libCssUrl =
+    provider === 'mapbox'
+      ? `https://api.mapbox.com/mapbox-gl-js/v${MAPBOX_GL_JS_VERSION}/mapbox-gl.css`
+      : `https://unpkg.com/maplibre-gl@${MAPLIBRE_GL_JS_VERSION}/dist/maplibre-gl.css`;
+  const libScriptUrl =
+    provider === 'mapbox'
+      ? `https://api.mapbox.com/mapbox-gl-js/v${MAPBOX_GL_JS_VERSION}/mapbox-gl.js`
+      : `https://unpkg.com/maplibre-gl@${MAPLIBRE_GL_JS_VERSION}/dist/maplibre-gl.js`;
+  // Only meaningful for Mapbox itself — OpenFreeMap needs no token, and a
+  // network probe against api.mapbox.com would tell us nothing about it.
+  const tokenAndProbeScript =
+    provider === 'mapbox'
+      ? `
+    gl.accessToken = '${MAPBOX_ACCESS_TOKEN}';
+    (function () {
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { ctrl.abort(); }, 5000);
+      fetch('https://api.mapbox.com/styles/v1/mapbox/streets-v12?access_token=${MAPBOX_ACCESS_TOKEN}', { signal: ctrl.signal })
+        .then(function (r) { clearTimeout(timer); send('debug:network probe status ' + r.status); })
+        .catch(function (err) { clearTimeout(timer); send('debug:network probe failed ' + (err && err.message ? err.message : String(err))); });
+    })();`
+      : '';
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <link href="https://api.mapbox.com/mapbox-gl-js/v${MAPBOX_GL_JS_VERSION}/mapbox-gl.css" rel="stylesheet" />
+  <link href="${libCssUrl}" rel="stylesheet" />
   <style>
     html, body, #map { position: absolute; inset: 0; margin: 0; padding: 0; }
     .event-pin {
@@ -82,7 +124,7 @@ function buildHtml(styleUrl: string, initialEvents: PinData[]) {
 </head>
 <body>
   <div id="map"></div>
-  <script src="https://api.mapbox.com/mapbox-gl-js/v${MAPBOX_GL_JS_VERSION}/mapbox-gl.js"></script>
+  <script src="${libScriptUrl}"></script>
   <script>
     function send(message) {
       if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(message);
@@ -91,17 +133,11 @@ function buildHtml(styleUrl: string, initialEvents: PinData[]) {
     document.addEventListener('webglcontextcreationerror', function (e) {
       send('error:webglcontextcreationerror ' + (e.statusMessage || 'unknown'));
     }, false);
-    send('debug:script running, mapboxgl=' + (typeof mapboxgl) + ', webgl2=' + !!document.createElement('canvas').getContext('webgl2'));
-    (function () {
-      var ctrl = new AbortController();
-      var timer = setTimeout(function () { ctrl.abort(); }, 5000);
-      fetch('https://api.mapbox.com/styles/v1/mapbox/streets-v12?access_token=${MAPBOX_ACCESS_TOKEN}', { signal: ctrl.signal })
-        .then(function (r) { clearTimeout(timer); send('debug:network probe status ' + r.status); })
-        .catch(function (err) { clearTimeout(timer); send('debug:network probe failed ' + (err && err.message ? err.message : String(err))); });
-    })();
+    var gl = window.mapboxgl || window.maplibregl;
+    send('debug:script running, provider=${provider}, gl=' + (typeof gl) + ', webgl2=' + !!document.createElement('canvas').getContext('webgl2'));
+    ${tokenAndProbeScript}
     try {
-      mapboxgl.accessToken = '${MAPBOX_ACCESS_TOKEN}';
-      var map = new mapboxgl.Map({
+      var map = new gl.Map({
         container: 'map',
         style: '${styleUrl}',
         center: [${MAPBOX_INITIAL_VIEW.center[0]}, ${MAPBOX_INITIAL_VIEW.center[1]}],
@@ -119,7 +155,7 @@ function buildHtml(styleUrl: string, initialEvents: PinData[]) {
           var p = map.project([ev.lng, ev.lat]);
           send('event:' + ev.id + ':' + Math.round(p.x) + ':' + Math.round(p.y));
         });
-        new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+        new gl.Marker({ element: el, anchor: 'bottom' })
           .setLngLat([ev.lng, ev.lat])
           .addTo(map);
       }
@@ -146,7 +182,7 @@ function buildHtml(styleUrl: string, initialEvents: PinData[]) {
         if (!userMarker) {
           var el = document.createElement('div');
           el.className = 'user-pin';
-          userMarker = new mapboxgl.Marker({ element: el });
+          userMarker = new gl.Marker({ element: el });
           userMarker.setLngLat([lng, lat]).addTo(map);
         } else {
           userMarker.setLngLat([lng, lat]);
@@ -202,24 +238,58 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
 ) {
   const { scheme } = useAppTheme();
   const styleUrl = scheme === 'dark' ? MAPBOX_STYLE_URL_DARK : MAPBOX_STYLE_URL_LIGHT;
-  // Bumped by the explicit reload() below — the only other thing that forces
-  // a rebuild is the theme swapping styles. Deliberately NOT reactive to
-  // `events` growing on its own, since a full reload per new event would be
-  // exactly the costly reload the user wants avoided; a manual reload,
-  // though, should embed whatever `events` currently holds, not a stale
-  // snapshot from first mount — that's what `reloadNonce` is for.
+  // Once Mapbox has proven dead this app session, skip straight to the spare
+  // map on every later mount instead of re-probing a service that just
+  // failed and making the user sit through another LOAD_TIMEOUT_MS.
+  const [provider, setProvider] = useState<Provider>(() => (mapboxKnownDead ? 'maplibre' : 'mapbox'));
+  // OpenFreeMap has no dark variant of its own (see OPENFREEMAP_STYLE_URL) —
+  // this collapses to a constant once in fallback mode, so a theme toggle
+  // while degraded doesn't rebuild (and re-flash) the fallback map.
+  const effectiveStyleUrl = provider === 'mapbox' ? styleUrl : OPENFREEMAP_STYLE_URL;
+  // Bumped by the explicit reload() below — the only other things that force
+  // a rebuild are the theme swapping styles and a provider fallback.
+  // Deliberately NOT reactive to `events` growing on its own, since a full
+  // reload per new event would be exactly the costly reload the user wants
+  // avoided; a manual reload, though, should embed whatever `events`
+  // currently holds, not a stale snapshot from first mount — that's what
+  // `reloadNonce` is for.
   const [reloadNonce, setReloadNonce] = useState(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const html = useMemo(() => buildHtml(styleUrl, toPinData(events, storyEventIds)), [styleUrl, reloadNonce, storyEventIds]);
+  const html = useMemo(
+    () => buildHtml(provider, effectiveStyleUrl, toPinData(events, storyEventIds)),
+    [provider, effectiveStyleUrl, reloadNonce, storyEventIds]
+  );
   const webviewRef = useRef<WebView>(null);
   const knownEventCountRef = useRef(events.length);
 
   const [status, setStatus] = useState<Status>('loading');
   const [lastMessage, setLastMessage] = useState<string | null>(null);
+  // One-shot per attempt (see the html-keyed effect below, which resets this
+  // for every new build) — without it, a late/duplicate failure signal (a
+  // stale timeout firing after an 'error:' message already acted, or the
+  // reverse) could re-trigger the fallback logic after it's already resolved
+  // one way or the other.
+  const settledRef = useRef(false);
 
-  function markError() {
-    setStatus('error');
-    onError?.();
+  function handleFailure(reason: string) {
+    if (settledRef.current) return;
+    settledRef.current = true;
+    if (provider === 'mapbox') {
+      const breadcrumb = 'debug:Mapbox failed (' + reason + '), falling back to MapLibre/OpenFreeMap';
+      if (__DEV__) console.log('[MapboxMap]', breadcrumb);
+      setLastMessage(breadcrumb);
+      mapboxKnownDead = true;
+      setProvider('maplibre');
+      // Deliberately not setStatus('error') here — the html-keyed effect
+      // below fires again for the maplibre rebuild and this stays 'loading'
+      // (and FakeMapBackdrop stays up) until that attempt resolves.
+    } else {
+      const breadcrumb = 'debug:MapLibre fallback also failed (' + reason + ')';
+      if (__DEV__) console.log('[MapboxMap]', breadcrumb);
+      setLastMessage(breadcrumb);
+      setStatus('error');
+      onError?.();
+    }
   }
 
   // A new event appended after the map already loaded gets its pin injected
@@ -260,24 +330,25 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
     // triggered automatically on remount (see the effect above). Rebuilds
     // `html` (via reloadNonce) instead of calling the WebView's own
     // .reload(), which would just re-run the stale HTML from first mount.
+    // Rebuilds whichever provider is currently active — a pull-to-refresh
+    // isn't a request to re-probe a Mapbox that's already known dead.
     reload() {
-      setStatus('loading');
       setReloadNonce((n) => n + 1);
     },
   }));
 
-  // Switching themes swaps the style URL, which reloads the WebView — treat
-  // that like a fresh load so the timeout/debug state track the reload
-  // instead of holding onto the previous theme's status.
+  // Every new attempt (theme swap, explicit reload, or a provider fallback
+  // — anything that changes `html`) gets its own load-timeout window and its
+  // own settled latch, so a stale timer from a previous, already-resolved
+  // attempt can't fire handleFailure again for an attempt that already
+  // succeeded or failed a different way.
   useEffect(() => {
     setStatus('loading');
-  }, [styleUrl]);
-
-  useEffect(() => {
-    if (status !== 'loading') return;
-    const timer = setTimeout(markError, LOAD_TIMEOUT_MS);
+    settledRef.current = false;
+    const timer = setTimeout(() => handleFailure('load timeout'), LOAD_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [status]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [html]);
 
   const handleMessage = (event: WebViewMessageEvent) => {
     const data = event.nativeEvent.data;
@@ -286,10 +357,13 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
     if (__DEV__) console.log('[MapboxMap]', data);
     setLastMessage(data);
     if (data === 'loaded') {
+      settledRef.current = true;
       setStatus('ready');
       onReady?.();
     } else if (data.startsWith('error:')) {
-      markError();
+      // A tile 404 or transient network blip after the map is already up
+      // isn't worth tearing down a working map (or falling back) over.
+      if (status !== 'ready') handleFailure(data.slice('error:'.length));
     } else if (data.startsWith('event:')) {
       const [, id, originX, originY] = data.split(':');
       if (storyEventIds?.has(id)) onOpenStories?.(id);
@@ -315,11 +389,11 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
         onMessage={handleMessage}
         onError={(e) => {
           setLastMessage('webview:onError ' + JSON.stringify(e.nativeEvent));
-          markError();
+          handleFailure('webview:onError');
         }}
         onHttpError={(e) => {
           setLastMessage('webview:onHttpError ' + JSON.stringify(e.nativeEvent));
-          markError();
+          handleFailure('webview:onHttpError');
         }}
       />
       {__DEV__ && status !== 'ready' && lastMessage ? (

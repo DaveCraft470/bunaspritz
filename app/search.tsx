@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { showAlert } from '@/lib/alert';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
@@ -65,7 +66,7 @@ export default function Search() {
         next.delete(person.id);
         return next;
       });
-      Alert.alert('A apărut o eroare', 'Nu am putut urmări acest cont. Încearcă din nou.');
+      showAlert('A apărut o eroare', 'Nu am putut urmări acest cont. Încearcă din nou.');
     }
   }
 

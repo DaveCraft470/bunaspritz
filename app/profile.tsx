@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '@/constants/theme';
+import { VERIFICATION_REQUIRED } from '@/constants/featureFlags';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
@@ -69,7 +70,7 @@ export default function Profile() {
           <View style={styles.profileTitleBlock}>
             <View style={styles.nameRow}>
               <Text style={[styles.profileName, { color: theme.textPrimary }]}>{name}</Text>
-              {effectiveVerified && (
+              {VERIFICATION_REQUIRED && effectiveVerified && (
                 <View style={styles.verifiedBadge}>
                   <Text style={styles.verifiedText}>✓</Text>
                 </View>
@@ -105,46 +106,42 @@ export default function Profile() {
 
         <Pressable
           onPress={() => router.push('/my-events')}
-          style={({ pressed }) => [
-            styles.myEventsButton,
-            { backgroundColor: theme.surface, borderColor: theme.border, opacity: pressed ? 0.82 : 1 },
-          ]}
+          style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
         >
-          <View style={[styles.myEventsIcon, { backgroundColor: theme.surfaceMuted }]}>
-            <Text style={styles.myEventsEmoji}>🎉</Text>
-          </View>
           <View style={styles.myEventsCopy}>
             <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>Evenimentele mele</Text>
             <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
-              Vezi evenimentele la care participi și pe cele organizate de tine
+              Vezi evenimentele la care participi și pe cele organizate de tine.
             </Text>
           </View>
           <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
         </Pressable>
 
-        <Pressable
-          onPress={() => {
-            if (!effectiveVerified) {
-              router.push({ pathname: '/verification', params: { returnTo: '/profile' } });
-            }
-          }}
-          style={[styles.verifyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        >
-          <View style={[styles.verifyIcon, { backgroundColor: theme.surfaceMuted }]}>
-            <Text style={[styles.verifyIconText, { color: theme.accent }]}>✓</Text>
-          </View>
-          <View style={styles.verifyCopy}>
-            <Text style={[styles.verifyTitle, { color: theme.textPrimary }]}>
-              {effectiveVerified ? 'Identitate verificată' : 'Verificare identitate'}
-            </Text>
-            <Text style={[styles.verifyDetail, { color: theme.textSecondary }]}>
-              {effectiveVerified
-                ? 'Contul tău a trecut de verificarea 18+.'
-                : 'Necesară pentru a te alătura unui Spritz.'}
-            </Text>
-          </View>
-          {!effectiveVerified && <Text style={[styles.verifyArrow, { color: theme.accent }]}>›</Text>}
-        </Pressable>
+        {VERIFICATION_REQUIRED && (
+          <Pressable
+            onPress={() => {
+              if (!effectiveVerified) {
+                router.push({ pathname: '/verification', params: { returnTo: '/profile' } });
+              }
+            }}
+            style={[styles.verifyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          >
+            <View style={[styles.verifyIcon, { backgroundColor: theme.surfaceMuted }]}>
+              <Text style={[styles.verifyIconText, { color: theme.accent }]}>✓</Text>
+            </View>
+            <View style={styles.verifyCopy}>
+              <Text style={[styles.verifyTitle, { color: theme.textPrimary }]}>
+                {effectiveVerified ? 'Identitate verificată' : 'Verificare identitate'}
+              </Text>
+              <Text style={[styles.verifyDetail, { color: theme.textSecondary }]}>
+                {effectiveVerified
+                  ? 'Contul tău a trecut de verificarea 18+.'
+                  : 'Necesară pentru a te alătura unui Spritz.'}
+              </Text>
+            </View>
+            {!effectiveVerified && <Text style={[styles.verifyArrow, { color: theme.accent }]}>›</Text>}
+          </Pressable>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

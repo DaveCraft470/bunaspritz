@@ -4,6 +4,7 @@ import { usePathname } from 'expo-router';
 import { colors, shadows } from '@/constants/theme';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useHomeView } from '@/contexts/HomeViewContext';
 import { goToTab } from '@/lib/tabNav';
 
 const SIZE = 68; // noticeably bigger than the 54px profile/messages nav islands
@@ -14,15 +15,26 @@ const SIZE = 68; // noticeably bigger than the 54px profile/messages nav islands
 const IMAGE_HEIGHT = 60 * 0.92;
 const IMAGE_WIDTH = IMAGE_HEIGHT * 0.322;
 
-export function HomeBottleButton({ active }: { active: boolean }) {
+export function HomeBottleButton() {
   const { light } = useHaptics();
   const pathname = usePathname();
+  const { showingMap, setShowingMap } = useHomeView();
+  // Being on '/' isn't enough to call this "home" — the public calendar is
+  // also '/' (a local view toggle, not its own route, see app/index.tsx), so
+  // without the showingMap check this button would look active and do
+  // nothing while the calendar was open.
+  const active = pathname === '/' && showingMap;
   return (
     <AnimatedPressable
       onPress={() => {
         if (active) return;
         light();
-        goToTab(pathname, '/');
+        // Always resets to the map, even when leaving from the calendar view
+        // via a different tab (e.g. calendar -> profile -> home) — otherwise
+        // dismissAll below would just reveal the still-mounted '/' instance
+        // exactly as it was left, calendar and all.
+        setShowingMap(true);
+        if (pathname !== '/') goToTab(pathname, '/');
       }}
       hitSlop={10}
       accessibilityLabel="Acasă"

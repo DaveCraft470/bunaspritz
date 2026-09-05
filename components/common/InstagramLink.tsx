@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { showAlert } from '@/lib/alert';
 
 // Shown on a profile only when a handle is set — opens the person's
 // Instagram profile in the system browser/app.
@@ -11,17 +12,23 @@ export function InstagramLink({ handle, style }: { handle: string | null | undef
   const { light } = useHaptics();
 
   if (!handle) return null;
+  // Defends against handles saved before edit-profile started sanitizing
+  // input — a leading "@" or a pasted full URL would otherwise double up
+  // into a broken link like "instagram.com/@name" or "instagram.com/https://...".
+  const cleanHandle = handle.trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '');
 
   return (
     <Pressable
       onPress={() => {
         light();
-        Linking.openURL(`https://instagram.com/${handle}`).catch(() => {});
+        Linking.openURL(`https://instagram.com/${cleanHandle}`).catch(() =>
+          showAlert('Nu am putut deschide Instagram', 'Încearcă din nou mai târziu.')
+        );
       }}
       style={[styles.chip, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }, style]}
     >
       <Ionicons name="logo-instagram" size={14} color="#E1306C" />
-      <Text style={[styles.text, { color: theme.textPrimary }]}>@{handle}</Text>
+      <Text style={[styles.text, { color: theme.textPrimary }]}>@{cleanHandle}</Text>
     </Pressable>
   );
 }

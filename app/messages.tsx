@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Image,
   Keyboard,
@@ -31,6 +30,7 @@ import { Profile } from '@/lib/social';
 import { getFriends } from '@/lib/friendRequests';
 import { extensionAndTypeForImage } from '@/lib/media';
 import { alertPermissionDenied } from '@/lib/permissions';
+import { showAlert } from '@/lib/alert';
 import {
   DbMessage,
   MediaType,
@@ -44,6 +44,77 @@ import {
   subscribeToIncoming,
   subscribeToReadReceipts,
 } from '@/lib/messaging';
+
+// Sentinel playingMessageId for the not-yet-sent recording preview — no real
+// message has this id, so it can share the shared voicePlayer/playingMessageId
+// state with the sent-message bubbles without colliding.
+const MESSAGE_MAX_LENGTH = 1000;
+
+const VOICE_PREVIEW_ID = '__voice-preview__';
+
+// How many bars the live recording waveform scrolls through.
+const RECORDING_WAVE_BARS = 24;
+
+// expo-audio's recorder metering is a dBFS reading — 0 is the loudest the
+// input can go without clipping, and it falls off fast from there. Normal
+// speech mostly lands in the upper end of this window, so clamping to
+// [-60, 0] (instead of the full theoretical range down to -160) is what
+// actually makes a waveform that moves for talking instead of sitting flat.
+function normalizedMeteringLevel(metering: number | undefined): number {
+  if (metering === undefined || Number.isNaN(metering)) return 0.05;
+  const clamped = Math.max(-60, Math.min(0, metering));
+  return (clamped + 60) / 60;
+}
+
+// How many bars a sent voice message's stored waveform has — fixed so every
+// bubble renders the same width regardless of how long the recording was.
+const SENT_WAVEFORM_BARS = 32;
+
+// Bucket-averages the full per-recording sample history (see fullWaveformRef)
+// down to a fixed bar count at send time, so a 3-second and a 30-second note
+// both render as one consistent-width shape.
+function downsampleWaveform(samples: number[], barCount: number): number[] {
+  if (samples.length === 0) return Array(barCount).fill(0.1);
+  const result: number[] = [];
+  for (let i = 0; i < barCount; i++) {
+    const start = Math.floor((i / barCount) * samples.length);
+    const end = Math.max(start + 1, Math.floor(((i + 1) / barCount) * samples.length));
+    const bucket = samples.slice(start, end);
+    result.push(bucket.reduce((sum, v) => sum + v, 0) / bucket.length);
+  }
+  return result;
+}
+
+// Deterministic placeholder shape for messages sent before waveform capture
+// existed (or if it somehow came back empty) — a real bubble should almost
+// never hit this, but it keeps old messages from rendering as a dead flat line.
+const FALLBACK_WAVEFORM = Array.from({ length: SENT_WAVEFORM_BARS }, (_, i) => 0.35 + 0.35 * Math.abs(Math.sin(i * 0.9)));
+
+let webAudioUnlocked = false;
+
+// Browsers only allow HTMLMediaElement.play() unprompted within a narrow
+// window of an actual user gesture. voicePlayer.play() below always runs
+// after an `await` (a signed-URL fetch, or at least a promise tick) — if a
+// browser's autoplay policy decides that gap disqualifies the gesture, the
+// call fails by rejecting a promise that expo-audio's web player never
+// checks or exposes anywhere, so it's entirely silent: playing:true, no
+// error, no sound. Playing a real (if inaudible) clip synchronously inside
+// the very first gesture handler establishes "user activation" for audio on
+// this page for the rest of the session, so later async-triggered play()
+// calls are then allowed. Native platforms don't have this restriction.
+function unlockWebAudioPlayback() {
+  if (Platform.OS !== 'web' || webAudioUnlocked) return;
+  webAudioUnlocked = true;
+  try {
+    const unlock = new Audio(
+      'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='
+    );
+    unlock.play().catch(() => {});
+  } catch {
+    // Best-effort — worst case playback falls back to whatever the
+    // browser's own gesture heuristics allow.
+  }
+}
 
 // Chat list / message bubble design by nituraul8 — ported from App.tsx onto
 // its own Expo Router screen so it lives alongside the rest of the app.
@@ -60,6 +131,7 @@ type DisplayMessage = {
   mediaType?: MediaType | null;
   mediaPath?: string | null;
   durationMs?: number | null;
+  waveform?: number[] | null;
 };
 type ActiveChat = { kind: 'group'; id: string } | { kind: 'friend'; id: string };
 
@@ -123,27 +195,88 @@ function ImageBubble({ path }: { path: string }) {
 
 // One bubble's voice note. Playback is driven by the single shared player
 // owned by the screen (see Messages()) — this just renders the button/state
-// for whichever message id is currently loaded into it.
+// for whichever message id is currently loaded into it. While playing, the
+// duration counts down from the stored length using the shared player's live
+// currentTime, instead of just sitting on the static recorded length.
 function VoiceBubble({
   isPlaying,
   isMine,
   durationMs,
+  elapsedMs,
+  waveform,
   onToggle,
 }: {
   isPlaying: boolean;
   isMine: boolean;
   durationMs: number | null | undefined;
+  elapsedMs: number;
+  waveform: number[] | null | undefined;
   onToggle: () => void;
 }) {
   const { colors: theme } = useAppTheme();
+  const remainingMs = isPlaying ? Math.max(0, (durationMs ?? 0) - elapsedMs) : durationMs;
+  const progress = isPlaying && durationMs ? Math.min(1, elapsedMs / durationMs) : 0;
+  const bars = waveform && waveform.length > 0 ? waveform : FALLBACK_WAVEFORM;
+  const playedColor = isMine ? colors.white : colors.green500;
+  const unplayedColor = isMine ? 'rgba(255,255,255,0.45)' : 'rgba(37,201,96,0.4)';
   return (
     <Pressable onPress={onToggle} style={styles.voiceBubbleRow} hitSlop={6}>
       <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={30} color={isMine ? colors.white : colors.green500} />
-      <View style={[styles.voiceWave, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.green500 }]} />
+      <View style={styles.voiceWaveformRow}>
+        {bars.map((level, index) => {
+          const played = progress > 0 && index / bars.length <= progress;
+          return (
+            <View
+              key={index}
+              style={[
+                styles.voiceWaveformBar,
+                { height: 3 + level * 15, backgroundColor: played ? playedColor : unplayedColor },
+              ]}
+            />
+          );
+        })}
+      </View>
       <Text style={[styles.voiceDuration, { color: isMine ? colors.white : theme.textPrimary }]}>
-        {formatDuration(durationMs)}
+        {formatDuration(remainingMs)}
       </Text>
     </Pressable>
+  );
+}
+
+// Live mic-level waveform shown in the composer while recording — a rolling
+// window of recent metering samples (see the effect in Messages() that
+// pushes into it), most recent bar on the right.
+function RecordingWaveform({ levels }: { levels: number[] }) {
+  return (
+    <View style={styles.waveformRow}>
+      {levels.map((level, index) => (
+        <View
+          key={index}
+          style={[styles.waveformBar, { height: 6 + level * 26, opacity: 0.4 + level * 0.6 }]}
+        />
+      ))}
+    </View>
+  );
+}
+
+// The recorded-but-unsent preview's waveform — same shape as RecordingWaveform,
+// but a static array (the just-finished recording) with a played/unplayed
+// progress split instead of a scrolling live level.
+function PreviewWaveform({ waveform, progress }: { waveform: number[]; progress: number }) {
+  const playedColor = colors.green500;
+  const unplayedColor = 'rgba(37,201,96,0.35)';
+  return (
+    <View style={styles.waveformRow}>
+      {waveform.map((level, index) => {
+        const played = progress > 0 && index / waveform.length <= progress;
+        return (
+          <View
+            key={index}
+            style={[styles.waveformBar, { height: 6 + level * 26, backgroundColor: played ? playedColor : unplayedColor }]}
+          />
+        );
+      })}
+    </View>
   );
 }
 
@@ -297,6 +430,12 @@ export default function Messages() {
   const [draft, setDraft] = useState('');
   const [sendingMedia, setSendingMedia] = useState(false);
   const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
+  // A stopped-but-unsent recording, waiting for the user to preview-listen
+  // to it and either send or discard it. Reuses the same voicePlayer/
+  // playingMessageId machinery as the message bubbles, under this sentinel id.
+  const [recordedVoice, setRecordedVoice] = useState<{ uri: string; durationMs: number; waveform: number[] } | null>(
+    null
+  );
   const messagesScrollRef = useRef<ScrollView>(null);
   const restingComposerOffset = insets.bottom + 16;
   const composerOffset = useRef(new Animated.Value(restingComposerOffset)).current;
@@ -308,12 +447,43 @@ export default function Messages() {
   // source on tap instead of mounting a player per bubble.
   const voicePlayer = useAudioPlayer();
   const voicePlayerStatus = useAudioPlayerStatus(voicePlayer);
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const recorderState = useAudioRecorderState(audioRecorder);
+  // isMeteringEnabled feeds the live recording waveform below (recorderState.metering).
+  const audioRecorder = useAudioRecorder({ ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true });
+  // Polled twice as fast as the 500ms default so the waveform reads as live
+  // motion instead of visibly stepping.
+  const recorderState = useAudioRecorderState(audioRecorder, 250);
+  const [waveLevels, setWaveLevels] = useState<number[]>(() => Array(RECORDING_WAVE_BARS).fill(0));
+  // Every metering sample from the current recording, start to finish (unlike
+  // waveLevels, which only keeps a fixed-size rolling window for the live
+  // composer view) — downsampled at stop time into the fixed-length waveform
+  // stored with the message, for a real per-message shape instead of a flat bar.
+  const fullWaveformRef = useRef<number[]>([]);
 
   useEffect(() => {
     if (voicePlayerStatus.didJustFinish) setPlayingMessageId(null);
   }, [voicePlayerStatus.didJustFinish]);
+
+  // Playback errors (bad codec, failed decode, network hiccup on a signed
+  // URL, ...) used to fail completely silently — the icon would flip to
+  // "playing" with no sound and no visible signal anything went wrong.
+  useEffect(() => {
+    if (!voicePlayerStatus.error) return;
+    setPlayingMessageId(null);
+    showAlert('Nu am putut reda mesajul vocal', voicePlayerStatus.error);
+  }, [voicePlayerStatus.error]);
+
+  // Scrolling history of recent mic levels while actively recording, for the
+  // waveform in the composer — reset to flat whenever recording isn't live.
+  useEffect(() => {
+    if (!recorderState.isRecording) {
+      setWaveLevels(Array(RECORDING_WAVE_BARS).fill(0));
+      return;
+    }
+    const level = normalizedMeteringLevel(recorderState.metering);
+    fullWaveformRef.current.push(level);
+    setWaveLevels((current) => [...current.slice(1), level]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recorderState.isRecording, recorderState.metering]);
 
   // A playing voice note used to keep going with no visible "now playing"
   // indicator once you left the thread it started in — closing a thread,
@@ -322,14 +492,22 @@ export default function Messages() {
   useEffect(() => {
     voicePlayer.pause();
     setPlayingMessageId(null);
+    setRecordedVoice(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChat]);
 
   useEffect(() => {
-    setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true }).catch(() => {});
+    // interruptionMode defaults to 'mixWithOthers', which on Android means no
+    // audio focus is requested at all — some devices/emulators then play
+    // voice notes back genuinely silently (no error, playing:true, just no
+    // audible output) since nothing ever told the OS this app wants focus.
+    // 'duckOthers' requests real focus while still just lowering (not
+    // stopping) whatever else might be playing.
+    setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true, interruptionMode: 'duckOthers' }).catch(() => {});
   }, []);
 
   async function toggleVoicePlayback(messageId: string, mediaPath: string) {
+    unlockWebAudioPlayback();
     light();
     if (playingMessageId === messageId) {
       voicePlayer.pause();
@@ -345,6 +523,7 @@ export default function Messages() {
 
   async function startRecording() {
     if (!activeFriend || sendingMedia) return;
+    unlockWebAudioPlayback();
 
     const permission = await AudioModule.requestRecordingPermissionsAsync();
     if (!permission.granted) {
@@ -360,26 +539,106 @@ export default function Messages() {
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
     } catch {
-      Alert.alert('A apărut o eroare', 'Nu am putut porni înregistrarea. Încearcă din nou.');
+      showAlert('A apărut o eroare', 'Nu am putut porni înregistrarea. Încearcă din nou.');
     }
   }
 
-  async function stopRecordingAndSend() {
+  // Shared by both the quick-send-while-recording path and sending after a
+  // preview listen — the only difference between them is what stops first.
+  async function sendVoiceUri(uri: string, durationMs: number, waveform: number[]) {
     if (!user || !activeFriend) return;
+
+    // expo-audio records audio/webm on web (the HIGH_QUALITY preset's native
+    // formats are m4a) — tagging a webm blob as m4a uploads fine but breaks
+    // playback, since the container doesn't match the extension/content-type.
+    const [audioExtension, audioContentType] =
+      Platform.OS === 'web' ? ['.webm', 'audio/webm'] : ['.m4a', 'audio/m4a'];
+
+    setSendingMedia(true);
+    try {
+      const sent = await sendMediaMessage(
+        user.id,
+        activeFriend.id,
+        uri,
+        'audio',
+        audioExtension,
+        audioContentType,
+        durationMs,
+        waveform
+      );
+      if (sent) {
+        setFriendMessages((current) => [...current, sent]);
+        setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
+        setRecordedVoice(null);
+        if (playingMessageId === VOICE_PREVIEW_ID) {
+          voicePlayer.pause();
+          setPlayingMessageId(null);
+        }
+      } else {
+        showAlert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
+      }
+    } catch {
+      showAlert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
+    } finally {
+      setSendingMedia(false);
+    }
+  }
+
+  // The send button, pressed mid-recording: stop and upload straight away,
+  // skipping the preview step.
+  async function stopRecordingAndSend() {
     light();
     const durationMs = Math.round(recorderState.durationMillis);
+    const waveform = downsampleWaveform(fullWaveformRef.current, SENT_WAVEFORM_BARS);
     await audioRecorder.stop();
     const uri = audioRecorder.uri;
     if (!uri || durationMs < 500) return;
+    await sendVoiceUri(uri, durationMs, waveform);
+  }
 
-    setSendingMedia(true);
-    const sent = await sendMediaMessage(user.id, activeFriend.id, uri, 'audio', '.m4a', 'audio/m4a', durationMs);
-    setSendingMedia(false);
-    if (sent) {
-      setFriendMessages((current) => [...current, sent]);
-      setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
+  // The mic/stop button, pressed mid-recording: stop but hold the recording
+  // for a preview listen instead of sending immediately.
+  async function stopRecordingToPreview() {
+    light();
+    const durationMs = Math.round(recorderState.durationMillis);
+    const waveform = downsampleWaveform(fullWaveformRef.current, SENT_WAVEFORM_BARS);
+    await audioRecorder.stop();
+    const uri = audioRecorder.uri;
+    if (!uri || durationMs < 500) return;
+    setRecordedVoice({ uri, durationMs, waveform });
+  }
+
+  function togglePreviewPlayback() {
+    if (!recordedVoice) return;
+    light();
+    if (playingMessageId === VOICE_PREVIEW_ID) {
+      voicePlayer.pause();
+      setPlayingMessageId(null);
+      return;
+    }
+    voicePlayer.replace({ uri: recordedVoice.uri });
+    voicePlayer.play();
+    setPlayingMessageId(VOICE_PREVIEW_ID);
+  }
+
+  function discardRecordedVoice() {
+    light();
+    if (playingMessageId === VOICE_PREVIEW_ID) {
+      voicePlayer.pause();
+      setPlayingMessageId(null);
+    }
+    setRecordedVoice(null);
+  }
+
+  // The send button: sends whatever's active right now — a mid-recording
+  // stop+send, a previewed recording, or the typed draft.
+  function handleSendPress() {
+    if (recorderState.isRecording) {
+      stopRecordingAndSend();
+    } else if (recordedVoice) {
+      sendVoiceUri(recordedVoice.uri, recordedVoice.durationMs, recordedVoice.waveform);
     } else {
-      Alert.alert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
+      sendMessage();
     }
   }
 
@@ -399,13 +658,18 @@ export default function Messages() {
 
     light();
     setSendingMedia(true);
-    const sent = await sendMediaMessage(user.id, activeFriend.id, asset.uri, 'image', extension, contentType);
-    setSendingMedia(false);
-    if (sent) {
-      setFriendMessages((current) => [...current, sent]);
-      setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
-    } else {
-      Alert.alert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
+    try {
+      const sent = await sendMediaMessage(user.id, activeFriend.id, asset.uri, 'image', extension, contentType);
+      if (sent) {
+        setFriendMessages((current) => [...current, sent]);
+        setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
+      } else {
+        showAlert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
+      }
+    } catch {
+      showAlert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
+    } finally {
+      setSendingMedia(false);
     }
   }
 
@@ -498,6 +762,7 @@ export default function Messages() {
         mediaType: m.media_type,
         mediaPath: m.media_path,
         durationMs: m.duration_ms,
+        waveform: m.waveform,
       }));
     }
     return [];
@@ -571,7 +836,7 @@ export default function Messages() {
       // typed text on a failed send (instead of just letting the user retry)
       // is the same silent-failure shape already fixed for follow()/photos.
       setDraft(text);
-      Alert.alert('A apărut o eroare', 'Nu am putut trimite mesajul. Încearcă din nou.');
+      showAlert('A apărut o eroare', 'Nu am putut trimite mesajul. Încearcă din nou.');
     }
   }
 
@@ -747,6 +1012,8 @@ export default function Messages() {
                         isPlaying={playingMessageId === message.id}
                         isMine={message.mine}
                         durationMs={message.durationMs}
+                        elapsedMs={playingMessageId === message.id ? voicePlayerStatus.currentTime * 1000 : 0}
+                        waveform={message.waveform}
                         onToggle={() => toggleVoicePlayback(message.id, message.mediaPath!)}
                       />
                     ) : (
@@ -784,33 +1051,100 @@ export default function Messages() {
                 { marginBottom: composerOffset, backgroundColor: theme.surface, borderColor: theme.border },
               ]}
             >
+              {recordedVoice && !recorderState.isRecording ? (
+                <Pressable
+                  onPress={discardRecordedVoice}
+                  disabled={sendingMedia}
+                  style={[styles.discard, { backgroundColor: theme.surfaceMuted, opacity: sendingMedia ? 0.5 : 1 }]}
+                  accessibilityLabel="Șterge înregistrarea"
+                >
+                  <Ionicons name="trash" size={16} color={theme.textSecondary} />
+                </Pressable>
+              ) : (
+                <Pressable
+                  onPress={pickAndSendImage}
+                  disabled={sendingMedia || recorderState.isRecording}
+                  style={[styles.add, { backgroundColor: theme.surfaceMuted, opacity: sendingMedia ? 0.5 : 1 }]}
+                  accessibilityLabel="Trimite o poză"
+                >
+                  <Text style={[styles.addText, { color: theme.accent }]}>+</Text>
+                </Pressable>
+              )}
+              {recorderState.isRecording ? (
+                <View style={styles.recordingRow}>
+                  <RecordingWaveform levels={waveLevels} />
+                  <Text style={[styles.recordingTimer, { color: colors.green500 }]}>
+                    {formatDuration(recorderState.durationMillis)}
+                  </Text>
+                </View>
+              ) : recordedVoice ? (
+                <View style={styles.recordingRow}>
+                  <PreviewWaveform
+                    waveform={recordedVoice.waveform}
+                    progress={
+                      playingMessageId === VOICE_PREVIEW_ID && recordedVoice.durationMs
+                        ? Math.min(1, (voicePlayerStatus.currentTime * 1000) / recordedVoice.durationMs)
+                        : 0
+                    }
+                  />
+                  <Text style={[styles.recordingTimer, { color: theme.textSecondary }]}>
+                    {formatDuration(
+                      playingMessageId === VOICE_PREVIEW_ID
+                        ? Math.max(0, recordedVoice.durationMs - voicePlayerStatus.currentTime * 1000)
+                        : recordedVoice.durationMs
+                    )}
+                  </Text>
+                </View>
+              ) : (
+                <TextInput
+                  value={draft}
+                  onChangeText={setDraft}
+                  onSubmitEditing={sendMessage}
+                  placeholder="Scrie un mesaj..."
+                  placeholderTextColor={theme.textSecondary}
+                  style={[styles.input, { color: theme.textPrimary }]}
+                  returnKeyType="send"
+                  maxLength={MESSAGE_MAX_LENGTH}
+                />
+              )}
               <Pressable
-                onPress={pickAndSendImage}
-                disabled={sendingMedia || recorderState.isRecording}
-                style={[styles.add, { backgroundColor: theme.surfaceMuted, opacity: sendingMedia ? 0.5 : 1 }]}
-                accessibilityLabel="Trimite o poză"
-              >
-                <Text style={[styles.addText, { color: theme.accent }]}>+</Text>
-              </Pressable>
-              <TextInput
-                value={draft}
-                onChangeText={setDraft}
-                onSubmitEditing={sendMessage}
-                placeholder={recorderState.isRecording ? `Se înregistrează... ${formatDuration(recorderState.durationMillis)}` : 'Scrie un mesaj...'}
-                placeholderTextColor={recorderState.isRecording ? colors.green500 : theme.textSecondary}
-                editable={!recorderState.isRecording}
-                style={[styles.input, { color: theme.textPrimary }]}
-                returnKeyType="send"
-              />
-              <Pressable
-                onPress={recorderState.isRecording ? stopRecordingAndSend : startRecording}
+                onPress={
+                  recorderState.isRecording
+                    ? stopRecordingToPreview
+                    : recordedVoice
+                      ? togglePreviewPlayback
+                      : startRecording
+                }
                 disabled={sendingMedia}
                 style={[styles.voice, recorderState.isRecording && styles.voiceActive, { opacity: sendingMedia ? 0.5 : 1 }]}
-                accessibilityLabel={recorderState.isRecording ? 'Oprește și trimite mesajul vocal' : 'Înregistrează mesaj vocal'}
+                accessibilityLabel={
+                  recorderState.isRecording
+                    ? 'Oprește înregistrarea'
+                    : recordedVoice
+                      ? 'Redă înregistrarea'
+                      : 'Înregistrează mesaj vocal'
+                }
               >
-                <Ionicons name={recorderState.isRecording ? 'stop' : 'mic'} size={20} color={colors.white} />
+                <Ionicons
+                  name={
+                    recorderState.isRecording
+                      ? 'stop'
+                      : recordedVoice
+                        ? playingMessageId === VOICE_PREVIEW_ID
+                          ? 'pause'
+                          : 'play'
+                        : 'mic'
+                  }
+                  size={20}
+                  color={colors.white}
+                />
               </Pressable>
-              <Pressable onPress={sendMessage} style={[styles.send, !draft.trim() && styles.sendOff]}>
+              <Pressable
+                onPress={handleSendPress}
+                disabled={sendingMedia}
+                style={[styles.send, !draft.trim() && !recorderState.isRecording && !recordedVoice && styles.sendOff]}
+                accessibilityLabel="Trimite"
+              >
                 <Text style={styles.sendText}>↑</Text>
               </Pressable>
             </Animated.View>
@@ -912,15 +1246,26 @@ const styles = StyleSheet.create({
   add: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   addText: { fontSize: 25, fontWeight: '300', marginTop: -2 },
   input: { flex: 1, fontSize: 15, paddingVertical: 8 },
+  // minWidth: 0 matters specifically on web — react-native-web's flex
+  // children default to a CSS min-width of "auto" (their content size), not
+  // 0 like native RN, so a flex:1 row nested inside another flex:1 row can
+  // collapse to near-nothing there instead of sharing the available width.
+  recordingRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingLeft: 4 },
+  recordingTimer: { fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  waveformRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'flex-end', gap: 2, height: 32 },
+  waveformBar: { flex: 1, minWidth: 3, borderRadius: 2, backgroundColor: '#12C854' },
   send: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#12C854', alignItems: 'center', justifyContent: 'center' },
   sendOff: { backgroundColor: '#BDEBCB' },
   sendText: { color: '#FFFFFF', fontSize: 22, fontWeight: '700', marginTop: -4 },
   voice: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#12C854', alignItems: 'center', justifyContent: 'center' },
   voiceText: { fontSize: 23 },
   voiceActive: { backgroundColor: '#E5484D' },
+  discard: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   imageBubble: { width: 200, height: 200, borderRadius: 14 },
   imageBubbleLoading: { alignItems: 'center', justifyContent: 'center' },
   voiceBubbleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4, minWidth: 160 },
-  voiceWave: { flex: 1, height: 3, borderRadius: 2 },
+  // minWidth: 0 matters on web — see the composer waveform's identical note.
+  voiceWaveformRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 2, height: 18 },
+  voiceWaveformBar: { flex: 1, minWidth: 2, borderRadius: 1 },
   voiceDuration: { fontSize: 12, fontWeight: '700' },
 });

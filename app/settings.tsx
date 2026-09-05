@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
+import { VERIFICATION_REQUIRED } from '@/constants/featureFlags';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
@@ -148,7 +149,7 @@ export default function Settings() {
       <AnimatedPressable
         onPress={() => {
           light();
-          if (!effectiveVerified) {
+          if (VERIFICATION_REQUIRED && !effectiveVerified) {
             router.push({ pathname: '/verification', params: { returnTo: '/new-event' } });
             return;
           }
@@ -159,7 +160,7 @@ export default function Settings() {
         <View style={styles.rowText}>
           <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Adaugă eveniment nou</Text>
           <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
-            {effectiveVerified
+            {!VERIFICATION_REQUIRED || effectiveVerified
               ? 'Publică un eveniment nou pe hartă.'
               : 'Necesită verificarea identității — apasă pentru a începe.'}
           </Text>

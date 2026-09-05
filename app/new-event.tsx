@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,11 +9,13 @@ import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 
 import { MAPBOX_INITIAL_VIEW, buildApproxStaticMapUrl } from '@/constants/mapbox';
+import { VERIFICATION_REQUIRED } from '@/constants/featureFlags';
 import { useEvents } from '@/contexts/EventsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { createEvent, removeRentalProof, uploadRentalProof } from '@/lib/events';
 import { alertPermissionDenied } from '@/lib/permissions';
+import { showAlert } from '@/lib/alert';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
@@ -30,6 +32,7 @@ import { MusicPlaylistEditor } from '@/components/event/MusicPlaylistEditor';
 
 const TITLE_MAX_LENGTH = 60;
 const DETAIL_MAX_LENGTH = 200;
+const GENRE_MAX_LENGTH = 40;
 
 const EMOJI_CHOICES = ['🎉', '🍻', '🎷', '🎸', '🌮', '🎲', '🥾', '🧺', '⛰️', '🍹'];
 const COLOR_CHOICES = ['#FF9F5A', '#5FD98A', '#5AA9E6', '#FFD25A', '#FF6B81', '#B388FF', '#4ED9C9'];
@@ -107,7 +110,7 @@ export default function NewEvent() {
   // back-forward) — hosting requires the same identity verification as
   // joining does, enforced again server-side by the events INSERT policy.
   useEffect(() => {
-    if (!effectiveVerified) {
+    if (VERIFICATION_REQUIRED && !effectiveVerified) {
       router.replace({ pathname: '/verification', params: { returnTo: '/new-event' } });
     }
   }, [effectiveVerified]);
@@ -196,20 +199,20 @@ export default function NewEvent() {
   async function handlePublish() {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
-      Alert.alert('Mai e nevoie de un nume', 'Dă-i evenimentului un titlu înainte să-l publici.');
+      showAlert('Mai e nevoie de un nume', 'Dă-i evenimentului un titlu înainte să-l publici.');
       return;
     }
     if (!user || publishingRef.current) return;
 
     if (!isSelectedDateValid()) {
-      Alert.alert('Data invalidă', 'Alege o dată între azi și peste o lună.');
+      showAlert('Data invalidă', 'Alege o dată între azi și peste o lună.');
       return;
     }
 
     // The default hour/minute (now + 1h, capped at 23:00) can land in the
     // past when the event is created late at night.
     if (buildStartsAt().getTime() < Date.now()) {
-      Alert.alert('Ora aleasă a trecut deja', 'Alege o oră care nu a trecut încă.');
+      showAlert('Ora aleasă a trecut deja', 'Alege o oră care nu a trecut încă.');
       return;
     }
 
@@ -218,16 +221,33 @@ export default function NewEvent() {
     const parsedDrinksPrice = drinksPrice.trim() ? Number(drinksPrice.replace(',', '.')) : null;
     const parsedMaxParticipants = maxParticipants.trim() ? Number(maxParticipants) : null;
 
+    // Non-numeric leftovers (stray characters that survive the decimal/
+    // number-pad keyboard, or a paste) used to be silently treated as "field
+    // left empty" via the NaN-skipping checks below — tell the user instead
+    // of quietly discarding what they typed.
+    if (parsedEntryFee !== null && Number.isNaN(parsedEntryFee)) {
+      showAlert('Preț invalid', 'Introdu un preț valid pentru intrare sau lasă câmpul gol.');
+      return;
+    }
+    if (parsedDrinksPrice !== null && Number.isNaN(parsedDrinksPrice)) {
+      showAlert('Preț invalid', 'Introdu un preț valid pentru băuturi sau lasă câmpul gol.');
+      return;
+    }
+    if (parsedMaxParticipants !== null && Number.isNaN(parsedMaxParticipants)) {
+      showAlert('Număr invalid', 'Introdu un număr valid de participanți sau lasă câmpul gol.');
+      return;
+    }
+
     // The DB rejects a negative entry_fee_ron/drinks_price_ron (see
     // events_entry_fee_non_negative / events_drinks_price_non_negative), but
     // used to only surface that as the generic "couldn't publish" error
     // after a round-trip — catch it here with a specific message instead.
-    if (parsedEntryFee !== null && !Number.isNaN(parsedEntryFee) && parsedEntryFee < 0) {
-      Alert.alert('Preț invalid', 'Prețul intrării nu poate fi negativ.');
+    if (parsedEntryFee !== null && parsedEntryFee < 0) {
+      showAlert('Preț invalid', 'Prețul intrării nu poate fi negativ.');
       return;
     }
-    if (parsedDrinksPrice !== null && !Number.isNaN(parsedDrinksPrice) && parsedDrinksPrice < 0) {
-      Alert.alert('Preț invalid', 'Prețul băuturilor nu poate fi negativ.');
+    if (parsedDrinksPrice !== null && parsedDrinksPrice < 0) {
+      showAlert('Preț invalid', 'Prețul băuturilor nu poate fi negativ.');
       return;
     }
 
@@ -265,7 +285,7 @@ export default function NewEvent() {
         // clean it up rather than leaving an orphaned file, same as
         // sendMediaMessage does for message media.
         if (rentalProofPath) removeRentalProof(rentalProofPath).catch(() => {});
-        Alert.alert('A apărut o eroare', 'Nu am putut publica evenimentul. Încearcă din nou.');
+        showAlert('A apărut o eroare', 'Nu am putut publica evenimentul. Încearcă din nou.');
         return;
       }
 
@@ -407,7 +427,11 @@ export default function NewEvent() {
           placeholder="Ex: Manele & trap"
           placeholderTextColor={theme.textSecondary}
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
+          maxLength={GENRE_MAX_LENGTH}
         />
+        <Text style={[styles.counter, { color: theme.textSecondary }]}>
+          {genre.length}/{GENRE_MAX_LENGTH}
+        </Text>
 
         <Text style={[styles.label, { color: theme.textSecondary }]}>PREȚ INTRARE (RON)</Text>
         <TextInput
@@ -473,19 +497,34 @@ export default function NewEvent() {
 
         {locationIsRented === true && (
           <>
-            <AnimatedPressable
-              onPress={handlePickRentalProof}
-              style={[styles.rentalProofCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            >
-              {rentalProofAsset ? (
-                <Image source={{ uri: rentalProofAsset.uri }} style={styles.rentalProofPreview} resizeMode="cover" />
-              ) : (
-                <Ionicons name="camera-outline" size={20} color={theme.accent} />
+            <View style={styles.rentalProofWrap}>
+              <AnimatedPressable
+                onPress={handlePickRentalProof}
+                style={[styles.rentalProofCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              >
+                {rentalProofAsset ? (
+                  <Image source={{ uri: rentalProofAsset.uri }} style={styles.rentalProofPreview} resizeMode="cover" />
+                ) : (
+                  <Ionicons name="camera-outline" size={20} color={theme.accent} />
+                )}
+                <Text style={[styles.rentalProofText, { color: theme.textPrimary }]}>
+                  {rentalProofAsset ? 'Schimbă dovada' : 'Atașează dovada (opțional)'}
+                </Text>
+              </AnimatedPressable>
+              {rentalProofAsset && (
+                <AnimatedPressable
+                  onPress={() => {
+                    light();
+                    setRentalProofAsset(null);
+                  }}
+                  hitSlop={10}
+                  accessibilityLabel="Elimină dovada"
+                  style={[styles.rentalProofClear, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}
+                >
+                  <Ionicons name="close" size={13} color={theme.textSecondary} />
+                </AnimatedPressable>
               )}
-              <Text style={[styles.rentalProofText, { color: theme.textPrimary }]}>
-                {rentalProofAsset ? 'Schimbă dovada' : 'Atașează dovada (opțional)'}
-              </Text>
-            </AnimatedPressable>
+            </View>
             <Text style={[styles.rentalProofHint, { color: theme.textSecondary }]}>
               Rămâne privată — doar tu o vezi, nu apare public pe eveniment.
             </Text>
@@ -594,6 +633,7 @@ const styles = StyleSheet.create({
   selectedDateText: { textAlign: 'center', fontSize: 12, fontWeight: '700', marginTop: 8, textTransform: 'capitalize' },
   rentedRow: { flexDirection: 'row', gap: 10 },
   rentedChip: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 13, borderWidth: 2 },
+  rentalProofWrap: { position: 'relative', alignSelf: 'flex-start', marginTop: 10 },
   rentalProofCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -602,7 +642,17 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    marginTop: 10,
+  },
+  rentalProofClear: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rentalProofPreview: { width: 34, height: 34, borderRadius: 8 },
   rentalProofText: { fontSize: 13, fontWeight: '700' },

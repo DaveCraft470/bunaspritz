@@ -80,7 +80,7 @@ export default function EditProfile() {
       name: name.trim(),
       username: username.trim(),
       bio: bio.trim(),
-      instagramHandle,
+      instagramHandle: instagramHandle.trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, ''),
     });
     setSaving(false);
 

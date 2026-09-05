@@ -17,6 +17,7 @@ import { FredokaOne_400Regular } from '@expo-google-fonts/fredoka-one';
 import { FloatingBottomNav } from '@/components/layout/FloatingBottomNav';
 import { ThemeProvider, useAppTheme } from '@/contexts/ThemeContext';
 import { NavVisibilityProvider } from '@/contexts/NavVisibilityContext';
+import { HomeViewProvider } from '@/contexts/HomeViewContext';
 import { HapticsProvider } from '@/contexts/HapticsContext';
 import { EventsProvider } from '@/contexts/EventsContext';
 import { UserProvider, useUser } from '@/contexts/UserContext';
@@ -134,13 +135,15 @@ export default function RootLayout() {
                 <HapticsProvider>
                   <EventsProvider>
                     <NavVisibilityProvider>
-                      {!splashDone ? (
-                        <AnimatedSplash onFinish={() => setSplashDone(true)} />
-                      ) : (
-                        <View style={{ flex: 1 }}>
-                          <AppChrome />
-                        </View>
-                      )}
+                      <HomeViewProvider>
+                        {!splashDone ? (
+                          <AnimatedSplash onFinish={() => setSplashDone(true)} />
+                        ) : (
+                          <View style={{ flex: 1 }}>
+                            <AppChrome />
+                          </View>
+                        )}
+                      </HomeViewProvider>
                     </NavVisibilityProvider>
                   </EventsProvider>
                 </HapticsProvider>

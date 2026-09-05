@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },
   backButton: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 18, fontWeight: '800' },
-  tabs: { flexDirection: 'row', marginHorizontal: spacing.lg, marginBottom: spacing.md, padding: 4, borderRadius: 16, borderWidth: 1 },
+  tabs: { flexDirection: 'row', gap: 4, marginHorizontal: spacing.lg, marginBottom: spacing.md, padding: 4, borderRadius: 16, borderWidth: 1 },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12 },
   tabText: { fontSize: 13, fontWeight: '800' },
   content: { paddingHorizontal: spacing.lg, paddingBottom: 120 },

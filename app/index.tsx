@@ -20,6 +20,7 @@ import { useUser } from '@/contexts/UserContext';
 import { useStories } from '@/contexts/StoriesContext';
 import { type StoryGroup } from '@/components/stories/StoriesRow';
 import { StoryViewer } from '@/components/stories/StoryViewer';
+import { useHomeView } from '@/contexts/HomeViewContext';
 
 function PublicEventRow({ event }: { event: SpritzEvent }) {
   const { colors: theme } = useAppTheme();
@@ -207,8 +208,7 @@ function PublicCalendar({ onShowMap }: { onShowMap: () => void }) {
 }
 
 export default function Home() {
-  const [view, setView] = useState<'map' | 'calendar'>('map');
-  const insets = useSafeAreaInsets();
+  const { showingMap, setShowingMap } = useHomeView();
   const { user } = useUser();
   const { mapStories, getEventStories } = useStories();
   const storyEventIds = useMemo(
@@ -250,31 +250,36 @@ export default function Home() {
 
   return (
     <View style={styles.root}>
-      {view === 'map' ? (
-        <>
-          <MapPlaceholder
-            onOpenCalendar={() => setView('calendar')}
-            storyEventIds={storyEventIds}
-            onOpenStories={(eventId) => {
-              const stories = getEventStories(eventId);
-              if (stories.length) setViewerStories({ userId: eventId, label: 'Stories', stories });
-            }}
-          />
-          <AnimatedPressable
-            onPress={() => router.push('/discover')}
-            style={styles.exploreButton}
-            accessibilityLabel="Explorează evenimente"
-          >
-            <Ionicons name="compass-outline" size={18} color={colors.green700} />
-            <Text style={styles.exploreButtonText}>Explorează</Text>
-          </AnimatedPressable>
-          <View style={[styles.recommendationsPanel, { bottom: insets.bottom + 92 }]}>
-            <Text style={styles.recommendationsTitle}>Pentru tine</Text>
+      {/* Always mounted, even while the calendar covers it — MapboxMap (see
+          MapboxMap.web.tsx) tears down and fully rebuilds its GL context on
+          unmount/remount, re-fetching style and tiles from scratch, which
+          made the map visibly reload every time someone bounced between the
+          calendar and the map. Toggling it via pointerEvents/opacity instead
+          keeps that GL context alive underneath. */}
+      <View style={[styles.mapLayer, !showingMap && styles.hiddenBehindCalendar]} pointerEvents={showingMap ? 'box-none' : 'none'}>
+        <MapPlaceholder
+          onOpenCalendar={() => setShowingMap(false)}
+          storyEventIds={storyEventIds}
+          onOpenStories={(eventId) => {
+            const stories = getEventStories(eventId);
+            if (stories.length) setViewerStories({ userId: eventId, label: 'Stories', stories });
+          }}
+        />
+        <AnimatedPressable
+          onPress={() => router.push('/discover')}
+          style={styles.exploreButton}
+          accessibilityLabel="Explorează evenimente"
+        >
+          <Ionicons name="compass-outline" size={18} color={colors.green700} />
+          <Text style={styles.exploreButtonText}>Explorează</Text>
+        </AnimatedPressable>
+        {(eventsLoading || joinedLoading || joinedError || recommendations.length > 0) && (
+          <View style={styles.recommendationsPanel}>
             {eventsLoading || joinedLoading ? (
               <Text style={styles.recommendationsStatus}>Se încarcă recomandările...</Text>
             ) : joinedError ? (
               <Text style={styles.recommendationsStatus}>Recomandările nu sunt disponibile momentan.</Text>
-            ) : recommendations.length ? (
+            ) : (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recommendationsList}>
                 {recommendations.map((recommendation) => (
                   <View key={recommendation.event.id} style={styles.recommendationItem}>
@@ -282,13 +287,15 @@ export default function Home() {
                   </View>
                 ))}
               </ScrollView>
-            ) : (
-              <Text style={styles.recommendationsStatus}>Nu avem momentan recomandări pentru tine.</Text>
             )}
           </View>
-        </>
-      ) : (
-        <PublicCalendar onShowMap={() => setView('map')} />
+        )}
+      </View>
+
+      {!showingMap && (
+        <View style={StyleSheet.absoluteFill}>
+          <PublicCalendar onShowMap={() => setShowingMap(true)} />
+        </View>
       )}
       <StoryViewer
         visible={!!viewerStories}
@@ -307,6 +314,12 @@ export default function Home() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  mapLayer: {
+    flex: 1,
+  },
+  hiddenBehindCalendar: {
+    opacity: 0,
   },
   calendarSafeArea: { flex: 1 },
   calendarTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },
@@ -333,7 +346,6 @@ const styles = StyleSheet.create({
   emptyText: { textAlign: 'center', fontSize: 14, paddingVertical: spacing.xl },
   recommendationReason: { fontSize: 11, fontWeight: '700', marginTop: 4 },
   recommendationsPanel: { position: 'absolute', left: spacing.lg, right: spacing.lg, bottom: 28 },
-  recommendationsTitle: { color: colors.white, fontSize: 18, fontWeight: '800', marginBottom: 8 },
   recommendationsList: { gap: spacing.sm },
   recommendationItem: { width: 300 },
   recommendationsStatus: { color: colors.white, fontSize: 13, paddingVertical: 8 },
