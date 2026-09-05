@@ -43,6 +43,11 @@ import {
   subscribeToReadReceipts,
 } from '@/lib/messaging';
 
+// Sentinel playingMessageId for the not-yet-sent recording preview — no real
+// message has this id, so it can share the shared voicePlayer/playingMessageId
+// state with the sent-message bubbles without colliding.
+const VOICE_PREVIEW_ID = '__voice-preview__';
+
 // Chat list / message bubble design by nituraul8 — ported from App.tsx onto
 // its own Expo Router screen so it lives alongside the rest of the app.
 // The 3 group chats below stay mock/decorative; real 1:1 friend DMs are a
@@ -292,6 +297,10 @@ export default function Messages() {
   const [draft, setDraft] = useState('');
   const [sendingMedia, setSendingMedia] = useState(false);
   const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
+  // A stopped-but-unsent recording, waiting for the user to preview-listen
+  // to it and either send or discard it. Reuses the same voicePlayer/
+  // playingMessageId machinery as the message bubbles, under this sentinel id.
+  const [recordedVoice, setRecordedVoice] = useState<{ uri: string; durationMs: number } | null>(null);
   const messagesScrollRef = useRef<ScrollView>(null);
   const restingComposerOffset = insets.bottom + 16;
   const composerOffset = useRef(new Animated.Value(restingComposerOffset)).current;
@@ -317,6 +326,7 @@ export default function Messages() {
   useEffect(() => {
     voicePlayer.pause();
     setPlayingMessageId(null);
+    setRecordedVoice(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChat]);
 
@@ -359,13 +369,10 @@ export default function Messages() {
     }
   }
 
-  async function stopRecordingAndSend() {
+  // Shared by both the quick-send-while-recording path and sending after a
+  // preview listen — the only difference between them is what stops first.
+  async function sendVoiceUri(uri: string, durationMs: number) {
     if (!user || !activeFriend) return;
-    light();
-    const durationMs = Math.round(recorderState.durationMillis);
-    await audioRecorder.stop();
-    const uri = audioRecorder.uri;
-    if (!uri || durationMs < 500) return;
 
     // expo-audio records audio/webm on web (the HIGH_QUALITY preset's native
     // formats are m4a) — tagging a webm blob as m4a uploads fine but breaks
@@ -379,6 +386,11 @@ export default function Messages() {
       if (sent) {
         setFriendMessages((current) => [...current, sent]);
         setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
+        setRecordedVoice(null);
+        if (playingMessageId === VOICE_PREVIEW_ID) {
+          voicePlayer.pause();
+          setPlayingMessageId(null);
+        }
       } else {
         Alert.alert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
       }
@@ -386,6 +398,62 @@ export default function Messages() {
       Alert.alert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
     } finally {
       setSendingMedia(false);
+    }
+  }
+
+  // The send button, pressed mid-recording: stop and upload straight away,
+  // skipping the preview step.
+  async function stopRecordingAndSend() {
+    light();
+    const durationMs = Math.round(recorderState.durationMillis);
+    await audioRecorder.stop();
+    const uri = audioRecorder.uri;
+    if (!uri || durationMs < 500) return;
+    await sendVoiceUri(uri, durationMs);
+  }
+
+  // The mic/stop button, pressed mid-recording: stop but hold the recording
+  // for a preview listen instead of sending immediately.
+  async function stopRecordingToPreview() {
+    light();
+    const durationMs = Math.round(recorderState.durationMillis);
+    await audioRecorder.stop();
+    const uri = audioRecorder.uri;
+    if (!uri || durationMs < 500) return;
+    setRecordedVoice({ uri, durationMs });
+  }
+
+  function togglePreviewPlayback() {
+    if (!recordedVoice) return;
+    light();
+    if (playingMessageId === VOICE_PREVIEW_ID) {
+      voicePlayer.pause();
+      setPlayingMessageId(null);
+      return;
+    }
+    voicePlayer.replace({ uri: recordedVoice.uri });
+    voicePlayer.play();
+    setPlayingMessageId(VOICE_PREVIEW_ID);
+  }
+
+  function discardRecordedVoice() {
+    light();
+    if (playingMessageId === VOICE_PREVIEW_ID) {
+      voicePlayer.pause();
+      setPlayingMessageId(null);
+    }
+    setRecordedVoice(null);
+  }
+
+  // The send button: sends whatever's active right now — a mid-recording
+  // stop+send, a previewed recording, or the typed draft.
+  function handleSendPress() {
+    if (recorderState.isRecording) {
+      stopRecordingAndSend();
+    } else if (recordedVoice) {
+      sendVoiceUri(recordedVoice.uri, recordedVoice.durationMs);
+    } else {
+      sendMessage();
     }
   }
 
@@ -761,33 +829,79 @@ export default function Messages() {
                 { marginBottom: composerOffset, backgroundColor: theme.surface, borderColor: theme.border },
               ]}
             >
-              <Pressable
-                onPress={pickAndSendImage}
-                disabled={sendingMedia || recorderState.isRecording}
-                style={[styles.add, { backgroundColor: theme.surfaceMuted, opacity: sendingMedia ? 0.5 : 1 }]}
-                accessibilityLabel="Trimite o poză"
-              >
-                <Text style={[styles.addText, { color: theme.accent }]}>+</Text>
-              </Pressable>
+              {recordedVoice && !recorderState.isRecording ? (
+                <Pressable
+                  onPress={discardRecordedVoice}
+                  disabled={sendingMedia}
+                  style={[styles.discard, { backgroundColor: theme.surfaceMuted, opacity: sendingMedia ? 0.5 : 1 }]}
+                  accessibilityLabel="Șterge înregistrarea"
+                >
+                  <Ionicons name="trash" size={16} color={theme.textSecondary} />
+                </Pressable>
+              ) : (
+                <Pressable
+                  onPress={pickAndSendImage}
+                  disabled={sendingMedia || recorderState.isRecording}
+                  style={[styles.add, { backgroundColor: theme.surfaceMuted, opacity: sendingMedia ? 0.5 : 1 }]}
+                  accessibilityLabel="Trimite o poză"
+                >
+                  <Text style={[styles.addText, { color: theme.accent }]}>+</Text>
+                </Pressable>
+              )}
               <TextInput
                 value={draft}
                 onChangeText={setDraft}
                 onSubmitEditing={sendMessage}
-                placeholder={recorderState.isRecording ? `Se înregistrează... ${formatDuration(recorderState.durationMillis)}` : 'Scrie un mesaj...'}
+                placeholder={
+                  recorderState.isRecording
+                    ? `Se înregistrează... ${formatDuration(recorderState.durationMillis)}`
+                    : recordedVoice
+                      ? `Mesaj vocal • ${formatDuration(recordedVoice.durationMs)}`
+                      : 'Scrie un mesaj...'
+                }
                 placeholderTextColor={recorderState.isRecording ? colors.green500 : theme.textSecondary}
-                editable={!recorderState.isRecording}
+                editable={!recorderState.isRecording && !recordedVoice}
                 style={[styles.input, { color: theme.textPrimary }]}
                 returnKeyType="send"
               />
               <Pressable
-                onPress={recorderState.isRecording ? stopRecordingAndSend : startRecording}
+                onPress={
+                  recorderState.isRecording
+                    ? stopRecordingToPreview
+                    : recordedVoice
+                      ? togglePreviewPlayback
+                      : startRecording
+                }
                 disabled={sendingMedia}
                 style={[styles.voice, recorderState.isRecording && styles.voiceActive, { opacity: sendingMedia ? 0.5 : 1 }]}
-                accessibilityLabel={recorderState.isRecording ? 'Oprește și trimite mesajul vocal' : 'Înregistrează mesaj vocal'}
+                accessibilityLabel={
+                  recorderState.isRecording
+                    ? 'Oprește înregistrarea'
+                    : recordedVoice
+                      ? 'Redă înregistrarea'
+                      : 'Înregistrează mesaj vocal'
+                }
               >
-                <Ionicons name={recorderState.isRecording ? 'stop' : 'mic'} size={20} color={colors.white} />
+                <Ionicons
+                  name={
+                    recorderState.isRecording
+                      ? 'stop'
+                      : recordedVoice
+                        ? playingMessageId === VOICE_PREVIEW_ID
+                          ? 'pause'
+                          : 'play'
+                        : 'mic'
+                  }
+                  size={20}
+                  color={colors.white}
+                />
               </Pressable>
-              <Pressable onPress={sendMessage} style={[styles.send, !draft.trim() && styles.sendOff]}>
+              <Pressable
+                onPress={handleSendPress}
+                disabled={sendingMedia}
+                style={[styles.send, !draft.trim() && !recorderState.isRecording && !recordedVoice && styles.sendOff]}
+                accessibilityLabel="Trimite"
+              >
                 <Text style={styles.sendText}>↑</Text>
               </Pressable>
             </Animated.View>
@@ -891,6 +1005,7 @@ const styles = StyleSheet.create({
   voice: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#12C854', alignItems: 'center', justifyContent: 'center' },
   voiceText: { fontSize: 23 },
   voiceActive: { backgroundColor: '#E5484D' },
+  discard: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   imageBubble: { width: 200, height: 200, borderRadius: 14 },
   imageBubbleLoading: { alignItems: 'center', justifyContent: 'center' },
   voiceBubbleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4, minWidth: 160 },
