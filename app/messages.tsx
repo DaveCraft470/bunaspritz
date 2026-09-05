@@ -26,7 +26,9 @@ import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
-import { Profile, getMutualFriends } from '@/lib/social';
+import { FriendsHubTabs } from '@/components/friends/FriendsHubTabs';
+import { Profile } from '@/lib/social';
+import { getFriends } from '@/lib/friendRequests';
 import { extensionAndTypeForImage } from '@/lib/media';
 import { alertPermissionDenied } from '@/lib/permissions';
 import {
@@ -416,7 +418,7 @@ export default function Messages() {
     }
     setFriendsLoading(true);
     setFriendsError(false);
-    getMutualFriends(user.id)
+    getFriends(user.id)
       .then(async (list) => {
         setFriends(list);
         const [lastMessages, unreadCounts] = await Promise.all([
@@ -595,6 +597,8 @@ export default function Messages() {
                 <Text style={styles.roundButtonText}>+</Text>
               </Pressable>
             </View>
+
+            <FriendsHubTabs active="messages" />
 
             <ScrollView
               contentContainerStyle={{ paddingBottom: insets.bottom + 116 }}

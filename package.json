@@ -49,6 +49,7 @@
   },
   "scripts": {
     "start": "expo start",
+    "deezer-proxy": "node scripts/deezer-proxy.mjs",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"

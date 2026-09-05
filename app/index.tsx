@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 
 import { MapPlaceholder } from '@/components/home/MapPlaceholder';
@@ -17,6 +17,9 @@ import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { getUserJoinedEventIds } from '@/lib/events';
 import { getRecommendedEvents, RecommendedEvent } from '@/lib/recommendations';
 import { useUser } from '@/contexts/UserContext';
+import { useStories } from '@/contexts/StoriesContext';
+import { type StoryGroup } from '@/components/stories/StoriesRow';
+import { StoryViewer } from '@/components/stories/StoryViewer';
 
 function PublicEventRow({ event }: { event: SpritzEvent }) {
   const { colors: theme } = useAppTheme();
@@ -205,7 +208,14 @@ function PublicCalendar({ onShowMap }: { onShowMap: () => void }) {
 
 export default function Home() {
   const [view, setView] = useState<'map' | 'calendar'>('map');
+  const insets = useSafeAreaInsets();
   const { user } = useUser();
+  const { mapStories, getEventStories } = useStories();
+  const storyEventIds = useMemo(
+    () => new Set(mapStories.map((story) => story.eventId).filter((eventId): eventId is string => !!eventId)),
+    [mapStories],
+  );
+  const [viewerStories, setViewerStories] = useState<StoryGroup | null>(null);
   const { events, loading: eventsLoading } = useEvents();
   const [joinedEventIds, setJoinedEventIds] = useState<Set<string>>(new Set());
   const [joinedLoading, setJoinedLoading] = useState(false);
@@ -242,7 +252,14 @@ export default function Home() {
     <View style={styles.root}>
       {view === 'map' ? (
         <>
-          <MapPlaceholder onOpenCalendar={() => setView('calendar')} />
+          <MapPlaceholder
+            onOpenCalendar={() => setView('calendar')}
+            storyEventIds={storyEventIds}
+            onOpenStories={(eventId) => {
+              const stories = getEventStories(eventId);
+              if (stories.length) setViewerStories({ userId: eventId, label: 'Stories', stories });
+            }}
+          />
           <AnimatedPressable
             onPress={() => router.push('/discover')}
             style={styles.exploreButton}
@@ -251,7 +268,7 @@ export default function Home() {
             <Ionicons name="compass-outline" size={18} color={colors.green700} />
             <Text style={styles.exploreButtonText}>Explorează</Text>
           </AnimatedPressable>
-          <View style={styles.recommendationsPanel}>
+          <View style={[styles.recommendationsPanel, { bottom: insets.bottom + 92 }]}>
             <Text style={styles.recommendationsTitle}>Pentru tine</Text>
             {eventsLoading || joinedLoading ? (
               <Text style={styles.recommendationsStatus}>Se încarcă recomandările...</Text>
@@ -273,6 +290,16 @@ export default function Home() {
       ) : (
         <PublicCalendar onShowMap={() => setView('map')} />
       )}
+      <StoryViewer
+        visible={!!viewerStories}
+        stories={viewerStories?.stories ?? []}
+        currentUserId={user?.id}
+        onClose={() => setViewerStories(null)}
+        onEventPress={(eventId) => {
+          setViewerStories(null);
+          router.push(`/event/${eventId}`);
+        }}
+      />
     </View>
   );
 }

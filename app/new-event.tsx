@@ -3,8 +3,8 @@ import { Alert, Image, Platform, ScrollView, StyleSheet, Text, TextInput, View }
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useLocalSearchParams } from 'expo-router';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -22,6 +22,11 @@ import { LocationPickerModal } from '@/components/event/LocationPickerModal';
 import { extensionAndTypeForImage } from '@/lib/media';
 import { addMonths, isDateBetween, startOfDay } from '@/lib/calendar';
 import { WheelPicker } from '@/components/common/WheelPicker';
+import { getEventPreviewDraft, setEventPreviewDraft } from '@/lib/eventPreview';
+import { DrinkListEditor } from '@/components/event/DrinkListEditor';
+import { setEventDrinks, type EventDrink } from '@/lib/drinks';
+import { setEventSongs, type SongCatalogItem } from '@/lib/music';
+import { MusicPlaylistEditor } from '@/components/event/MusicPlaylistEditor';
 
 const TITLE_MAX_LENGTH = 60;
 const DETAIL_MAX_LENGTH = 200;
@@ -33,7 +38,9 @@ const MINUTES = [0, 15, 30, 45];
 const MONTHS = ['IANUARIE', 'FEBRUARIE', 'MARTIE', 'APRILIE', 'MAI', 'IUNIE', 'IULIE', 'AUGUST', 'SEPTEMBRIE', 'OCTOMBRIE', 'NOIEMBRIE', 'DECEMBRIE'];
 
 export default function NewEvent() {
+  const { publish } = useLocalSearchParams<{ publish?: string }>();
   const { colors: theme, scheme } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { addEvent } = useEvents();
   const { user, effectiveVerified } = useUser();
   const { light, medium } = useHaptics();
@@ -42,6 +49,7 @@ export default function NewEvent() {
   // first setPublishing(true) could both pass a state-only guard and both
   // insert an event. The ref updates synchronously, closing that window.
   const publishingRef = useRef(false);
+  const [draftHydrated, setDraftHydrated] = useState(false);
 
   const [title, setTitle] = useState('');
   const [detail, setDetail] = useState('');
@@ -65,6 +73,34 @@ export default function NewEvent() {
   // active chip again resets to null instead of forcing a binary answer.
   const [locationIsRented, setLocationIsRented] = useState<boolean | null>(null);
   const [rentalProofAsset, setRentalProofAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [drinks, setDrinks] = useState<EventDrink[]>([]);
+  const [songs, setSongs] = useState<SongCatalogItem[]>([]);
+
+  useEffect(() => {
+    const draft = getEventPreviewDraft();
+    if (draft?.mode === 'create') {
+      setTitle(draft.title);
+      setDetail(draft.detail);
+      setGenre(draft.genre);
+      setEmoji(draft.emoji);
+      setColor(draft.color);
+      setCoords(draft.lng !== null && draft.lat !== null ? { lng: draft.lng, lat: draft.lat } : null);
+      setEntryFee(draft.entryFeeRon === null ? '' : String(draft.entryFeeRon));
+      setDrinksPrice(draft.drinksPriceRon === null ? '' : String(draft.drinksPriceRon));
+      setMaxParticipants(draft.maxParticipants === null ? '' : String(draft.maxParticipants));
+      setLocationIsRented(draft.locationIsRented);
+      setRentalProofAsset(draft.rentalProofAsset ?? null);
+      setDrinks(draft.drinks ?? []);
+      setSongs(draft.songs ?? []);
+      if (draft.startsAt) {
+        const date = new Date(draft.startsAt);
+        setSelectedDate(startOfDay(date));
+        setHour(date.getHours());
+        setMinute(date.getMinutes());
+      }
+    }
+    setDraftHydrated(true);
+  }, []);
 
   // settings.tsx already redirects to /verification before ever linking
   // here, but guard against reaching this screen another way (deep link,
@@ -79,6 +115,7 @@ export default function NewEvent() {
   // Just a starting point, not the only option anymore — the host can move
   // the pin anywhere via LocationPickerModal.
   useEffect(() => {
+    if (getEventPreviewDraft()?.mode === 'create') return;
     (async () => {
       try {
         const { status } = await Location.getForegroundPermissionsAsync();
@@ -233,6 +270,8 @@ export default function NewEvent() {
       }
 
       medium();
+      setEventDrinks(created.id, drinks);
+      setEventSongs(created.id, songs);
       addEvent(created);
       router.replace({ pathname: '/event/[id]', params: { id: created.id } });
     } finally {
@@ -240,6 +279,31 @@ export default function NewEvent() {
       setPublishing(false);
     }
   }
+
+  function handlePreview() {
+    const parsedEntryFee = entryFee.trim() ? Number(entryFee.replace(',', '.')) : null;
+    const parsedDrinksPrice = drinksPrice.trim() ? Number(drinksPrice.replace(',', '.')) : null;
+    const parsedMaxParticipants = maxParticipants.trim() ? Number(maxParticipants) : null;
+    setEventPreviewDraft({
+      mode: 'create', title, detail, genre, emoji, color,
+      startsAt: buildStartsAt().toISOString(),
+      entryFeeRon: parsedEntryFee !== null && Number.isFinite(parsedEntryFee) ? parsedEntryFee : null,
+      drinksPriceRon: parsedDrinksPrice !== null && Number.isFinite(parsedDrinksPrice) ? parsedDrinksPrice : null,
+      maxParticipants: parsedMaxParticipants !== null && Number.isFinite(parsedMaxParticipants) && parsedMaxParticipants > 0 ? Math.floor(parsedMaxParticipants) : null,
+      lng: coords?.lng ?? null, lat: coords?.lat ?? null,
+      locationIsRented, rentalProofAttached: !!rentalProofAsset, rentalProofAsset,
+      drinks,
+      songs,
+    });
+    light();
+    router.push('/event-preview');
+  }
+
+  useEffect(() => {
+    if (publish === '1' && draftHydrated) {
+      void handlePublish();
+    }
+  }, [draftHydrated, publish]);
 
   const mapPreviewUrl = coords ? buildApproxStaticMapUrl(coords.lng, coords.lat, scheme, 640, 160) : null;
 
@@ -265,7 +329,7 @@ export default function NewEvent() {
       </View>
 
       <KeyboardAwareScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 116 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         enableOnAndroid
@@ -335,7 +399,8 @@ export default function NewEvent() {
           <WheelPicker label="MINUTE" options={MINUTES.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={minute} onValueChange={setMinute} />
         </View>
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>MUZICĂ / GEN</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>MUZICĂ</Text>
+        <Text style={[styles.subLabel, { color: theme.textSecondary }]}>GEN MUZICAL</Text>
         <TextInput
           value={genre}
           onChangeText={setGenre}
@@ -363,6 +428,12 @@ export default function NewEvent() {
           keyboardType="decimal-pad"
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
         />
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>BĂUTURI LA EVENIMENT</Text>
+        <DrinkListEditor value={drinks} onChange={setDrinks} />
+
+        <Text style={[styles.subLabel, { color: theme.textSecondary }]}>MELODII REPREZENTATIVE</Text>
+        <MusicPlaylistEditor value={songs} onChange={setSongs} />
 
         <Text style={[styles.label, { color: theme.textSecondary }]}>MAX PARTICIPANȚI</Text>
         <TextInput
@@ -460,10 +531,11 @@ export default function NewEvent() {
         </View>
 
         <AnimatedPressable
-          onPress={handlePublish}
+          onPress={handlePreview}
+          disabled={publishing}
           style={[styles.publishButton, shadows.glowGreen, publishing && styles.publishButtonDisabled]}
         >
-          <Text style={styles.publishText}>{publishing ? 'Se publică...' : 'Publică evenimentul'}</Text>
+          <Text style={styles.publishText}>{publishing ? 'Se publică...' : 'Previzualizează evenimentul'}</Text>
         </AnimatedPressable>
       </KeyboardAwareScrollView>
 
@@ -502,6 +574,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '800' },
   content: { paddingHorizontal: spacing.lg, paddingBottom: 60, gap: 6 },
   label: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginTop: 14, marginBottom: 6 },
+  subLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginTop: 6, marginBottom: 4 },
   counter: { fontSize: 10, textAlign: 'right' },
   input: {
     borderWidth: 1,

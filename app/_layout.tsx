@@ -20,6 +20,8 @@ import { NavVisibilityProvider } from '@/contexts/NavVisibilityContext';
 import { HapticsProvider } from '@/contexts/HapticsContext';
 import { EventsProvider } from '@/contexts/EventsContext';
 import { UserProvider, useUser } from '@/contexts/UserContext';
+import { NotificationProvider } from '@/contexts/NotificationContext';
+import { StoriesProvider } from '@/contexts/StoriesContext';
 import { AnimatedSplash } from '@/components/common/AnimatedSplash';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -127,19 +129,23 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ThemeProvider>
           <UserProvider>
-            <HapticsProvider>
-              <EventsProvider>
-                <NavVisibilityProvider>
-                  {!splashDone ? (
-                    <AnimatedSplash onFinish={() => setSplashDone(true)} />
-                  ) : (
-                    <View style={{ flex: 1 }}>
-                      <AppChrome />
-                    </View>
-                  )}
-                </NavVisibilityProvider>
-              </EventsProvider>
-            </HapticsProvider>
+            <NotificationProvider>
+              <StoriesProvider>
+                <HapticsProvider>
+                  <EventsProvider>
+                    <NavVisibilityProvider>
+                      {!splashDone ? (
+                        <AnimatedSplash onFinish={() => setSplashDone(true)} />
+                      ) : (
+                        <View style={{ flex: 1 }}>
+                          <AppChrome />
+                        </View>
+                      )}
+                    </NavVisibilityProvider>
+                  </EventsProvider>
+                </HapticsProvider>
+              </StoriesProvider>
+            </NotificationProvider>
           </UserProvider>
         </ThemeProvider>
       </SafeAreaProvider>

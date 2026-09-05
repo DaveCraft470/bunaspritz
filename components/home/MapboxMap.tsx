@@ -18,8 +18,10 @@ const LOAD_TIMEOUT_MS = 10000;
 
 type PinData = Pick<SpritzEvent, 'id' | 'emoji' | 'color' | 'lng' | 'lat'>;
 
-function toPinData(events: SpritzEvent[]): PinData[] {
-  return events.map((e) => ({ id: e.id, emoji: e.emoji, color: e.color, lng: e.lng, lat: e.lat }));
+type PinWithStory = PinData & { hasStories: boolean };
+
+function toPinData(events: SpritzEvent[], storyEventIds?: Set<string>): PinWithStory[] {
+  return events.map((e) => ({ id: e.id, emoji: e.emoji, color: e.color, lng: e.lng, lat: e.lat, hasStories: storyEventIds?.has(e.id) ?? false }));
 }
 
 function buildHtml(styleUrl: string, initialEvents: PinData[]) {
@@ -47,6 +49,13 @@ function buildHtml(styleUrl: string, initialEvents: PinData[]) {
       display: block;
       transform: rotate(45deg);
       font-size: 17px;
+    }
+    .event-pin.story-pin::after {
+      content: '';
+      position: absolute;
+      inset: -5px;
+      border: 2px solid #1FD460;
+      border-radius: 50%;
     }
     .user-pin {
       width: 18px;
@@ -103,7 +112,7 @@ function buildHtml(styleUrl: string, initialEvents: PinData[]) {
       send('debug:map constructed');
       function addEventPin(ev) {
         var el = document.createElement('div');
-        el.className = 'event-pin';
+        el.className = 'event-pin' + (ev.hasStories ? ' story-pin' : '');
         el.style.background = ev.color;
         el.innerHTML = '<span>' + ev.emoji + '</span>';
         el.addEventListener('click', function () {
@@ -179,6 +188,8 @@ export type MapboxMapHandle = {
 
 type MapboxMapProps = {
   events: SpritzEvent[];
+  storyEventIds?: Set<string>;
+  onOpenStories?: (eventId: string) => void;
   onReady?: () => void;
   onLocated?: () => void;
   onUserPanned?: () => void;
@@ -186,7 +197,7 @@ type MapboxMapProps = {
 };
 
 export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function MapboxMap(
-  { events, onReady, onLocated, onUserPanned, onError },
+  { events, storyEventIds, onOpenStories, onReady, onLocated, onUserPanned, onError },
   ref
 ) {
   const { scheme } = useAppTheme();
@@ -199,7 +210,7 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
   // snapshot from first mount — that's what `reloadNonce` is for.
   const [reloadNonce, setReloadNonce] = useState(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const html = useMemo(() => buildHtml(styleUrl, toPinData(events)), [styleUrl, reloadNonce]);
+  const html = useMemo(() => buildHtml(styleUrl, toPinData(events, storyEventIds)), [styleUrl, reloadNonce, storyEventIds]);
   const webviewRef = useRef<WebView>(null);
   const knownEventCountRef = useRef(events.length);
 
@@ -216,14 +227,14 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
   useEffect(() => {
     if (events.length > knownEventCountRef.current) {
       const newOnes = events.slice(knownEventCountRef.current);
-      for (const pin of toPinData(newOnes)) {
+      for (const pin of toPinData(newOnes, storyEventIds)) {
         webviewRef.current?.injectJavaScript(
           `window.__addEventPin && window.__addEventPin(${JSON.stringify(pin)}); true;`
         );
       }
     }
     knownEventCountRef.current = events.length;
-  }, [events]);
+  }, [events, storyEventIds]);
 
   // Whenever html actually rebuilds from a fresh reload (not from events
   // growing — see above), the new HTML embeds `events` as of THIS render, so
@@ -281,7 +292,8 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
       markError();
     } else if (data.startsWith('event:')) {
       const [, id, originX, originY] = data.split(':');
-      router.push({ pathname: '/event/[id]', params: { id, originX, originY } });
+      if (storyEventIds?.has(id)) onOpenStories?.(id);
+      else router.push({ pathname: '/event/[id]', params: { id, originX, originY } });
     } else if (data === 'located') {
       onLocated?.();
     } else if (data === 'userpanned') {

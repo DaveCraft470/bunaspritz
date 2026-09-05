@@ -47,20 +47,27 @@ export default function Verification() {
 
   const startVerification = async () => {
     setStatus('starting');
+    try {
+      const { data, error } = await supabase.functions.invoke('create-verification-session');
+      if (error || !data?.url) {
+        setStatus('error');
+        return;
+      }
 
-    const { data, error } = await supabase.functions.invoke('create-verification-session');
-    if (error || !data?.url) {
+      if (Platform.OS === 'web') {
+        const opened = window.open(data.url, '_blank');
+        if (!opened) {
+          setStatus('error');
+          return;
+        }
+      } else {
+        await WebBrowser.openBrowserAsync(data.url);
+      }
+
+      setStatus('waiting');
+    } catch {
       setStatus('error');
-      return;
     }
-
-    if (Platform.OS === 'web') {
-      window.open(data.url, '_blank');
-    } else {
-      await WebBrowser.openBrowserAsync(data.url);
-    }
-
-    setStatus('waiting');
   };
 
   return (
