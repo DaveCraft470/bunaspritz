@@ -17,6 +17,7 @@ import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { getUserJoinedEventIds } from '@/lib/events';
 import { getRecommendedEvents, RecommendedEvent } from '@/lib/recommendations';
 import { useUser } from '@/contexts/UserContext';
+import { useHomeView } from '@/contexts/HomeViewContext';
 
 function PublicEventRow({ event }: { event: SpritzEvent }) {
   const { colors: theme } = useAppTheme();
@@ -204,7 +205,7 @@ function PublicCalendar({ onShowMap }: { onShowMap: () => void }) {
 }
 
 export default function Home() {
-  const [view, setView] = useState<'map' | 'calendar'>('map');
+  const { showingMap, setShowingMap } = useHomeView();
   const { user } = useUser();
   const { events, loading: eventsLoading } = useEvents();
   const [joinedEventIds, setJoinedEventIds] = useState<Set<string>>(new Set());
@@ -240,9 +241,9 @@ export default function Home() {
 
   return (
     <View style={styles.root}>
-      {view === 'map' ? (
+      {showingMap ? (
         <>
-          <MapPlaceholder onOpenCalendar={() => setView('calendar')} />
+          <MapPlaceholder onOpenCalendar={() => setShowingMap(false)} />
           <AnimatedPressable
             onPress={() => router.push('/discover')}
             style={styles.exploreButton}
@@ -251,27 +252,26 @@ export default function Home() {
             <Ionicons name="compass-outline" size={18} color={colors.green700} />
             <Text style={styles.exploreButtonText}>Explorează</Text>
           </AnimatedPressable>
-          <View style={styles.recommendationsPanel}>
-            <Text style={styles.recommendationsTitle}>Pentru tine</Text>
-            {eventsLoading || joinedLoading ? (
-              <Text style={styles.recommendationsStatus}>Se încarcă recomandările...</Text>
-            ) : joinedError ? (
-              <Text style={styles.recommendationsStatus}>Recomandările nu sunt disponibile momentan.</Text>
-            ) : recommendations.length ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recommendationsList}>
-                {recommendations.map((recommendation) => (
-                  <View key={recommendation.event.id} style={styles.recommendationItem}>
-                    <RecommendationRow recommendation={recommendation} />
-                  </View>
-                ))}
-              </ScrollView>
-            ) : (
-              <Text style={styles.recommendationsStatus}>Nu avem momentan recomandări pentru tine.</Text>
-            )}
-          </View>
+          {(eventsLoading || joinedLoading || joinedError || recommendations.length > 0) && (
+            <View style={styles.recommendationsPanel}>
+              {eventsLoading || joinedLoading ? (
+                <Text style={styles.recommendationsStatus}>Se încarcă recomandările...</Text>
+              ) : joinedError ? (
+                <Text style={styles.recommendationsStatus}>Recomandările nu sunt disponibile momentan.</Text>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recommendationsList}>
+                  {recommendations.map((recommendation) => (
+                    <View key={recommendation.event.id} style={styles.recommendationItem}>
+                      <RecommendationRow recommendation={recommendation} />
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+          )}
         </>
       ) : (
-        <PublicCalendar onShowMap={() => setView('map')} />
+        <PublicCalendar onShowMap={() => setShowingMap(true)} />
       )}
     </View>
   );
@@ -306,7 +306,6 @@ const styles = StyleSheet.create({
   emptyText: { textAlign: 'center', fontSize: 14, paddingVertical: spacing.xl },
   recommendationReason: { fontSize: 11, fontWeight: '700', marginTop: 4 },
   recommendationsPanel: { position: 'absolute', left: spacing.lg, right: spacing.lg, bottom: 28 },
-  recommendationsTitle: { color: colors.white, fontSize: 18, fontWeight: '800', marginBottom: 8 },
   recommendationsList: { gap: spacing.sm },
   recommendationItem: { width: 300 },
   recommendationsStatus: { color: colors.white, fontSize: 13, paddingVertical: 8 },

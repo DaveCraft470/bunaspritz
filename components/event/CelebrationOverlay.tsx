@@ -13,6 +13,14 @@ export function CelebrationOverlay({ onDone }: { onDone: () => void }) {
   const mugRightX = useRef(new Animated.Value(160)).current;
   const textOpacity = useRef(new Animated.Value(0)).current;
   const textTranslateY = useRef(new Animated.Value(16)).current;
+  // The caller (EventDetail) passes a fresh `onDone` closure on every render
+  // — attendee data resolving mid-celebration re-renders it — so this reads
+  // onDone through a ref instead of putting it in the effect's deps. With it
+  // in the deps, that re-render used to re-run the whole effect, restarting
+  // Animated.sequence on values already at (or near) their target, which
+  // resolved almost instantly and rushed the celebration to its end.
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
   useEffect(() => {
     Animated.sequence([
@@ -31,10 +39,11 @@ export function CelebrationOverlay({ onDone }: { onDone: () => void }) {
         ]),
         Animated.delay(1300),
         Animated.timing(overlayOpacity, { toValue: 0, duration: 260, useNativeDriver: true }),
-      ]).start(() => onDone());
+      ]).start(() => onDoneRef.current());
     });
+    // Runs once on mount only — see onDoneRef above for why.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overlayOpacity, mugLeftX, mugRightX, textOpacity, textTranslateY, onDone]);
+  }, []);
 
   return (
     <Animated.View style={[StyleSheet.absoluteFill, styles.overlay, { opacity: overlayOpacity }]} pointerEvents="none">
