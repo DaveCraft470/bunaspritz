@@ -1,7 +1,7 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
 
 import { SpritzEvent } from '@/constants/events';
-import { fetchEvents, subscribeToNewEvents } from '@/lib/events';
+import { fetchEvents, subscribeToDeletedEvents, subscribeToNewEvents } from '@/lib/events';
 import { useUser } from '@/contexts/UserContext';
 
 type EventsContextValue = {
@@ -21,6 +21,10 @@ export function EventsProvider({ children }: PropsWithChildren) {
     setEvents((current) => (current.some((e) => e.id === event.id) ? current : [...current, event]));
   }
 
+  function removeById(eventId: string) {
+    setEvents((current) => current.filter((e) => e.id !== eventId));
+  }
+
   // Gated on auth: the "events" SELECT/Realtime policy requires an
   // authenticated caller, and a Realtime channel that joins before the
   // session lands authenticates as anon and silently never gets resubscribed.
@@ -30,7 +34,15 @@ export function EventsProvider({ children }: PropsWithChildren) {
       return;
     }
     fetchEvents().then(setEvents);
-    return subscribeToNewEvents(appendIfNew);
+    const unsubscribeInserts = subscribeToNewEvents(appendIfNew);
+    // Otherwise a host cancelling their own event only disappears locally
+    // for that host — everyone else with the map/list already loaded keeps
+    // seeing the stale pin/entry until they manually pull to refresh.
+    const unsubscribeDeletes = subscribeToDeletedEvents(removeById);
+    return () => {
+      unsubscribeInserts();
+      unsubscribeDeletes();
+    };
   }, [authenticated]);
 
   const value = useMemo<EventsContextValue>(
@@ -42,9 +54,7 @@ export function EventsProvider({ children }: PropsWithChildren) {
       addEvent: appendIfNew,
       // A host cancelling their own event — drops it locally right away
       // instead of waiting on a refetch, matching addEvent's local-first idiom.
-      removeEvent(eventId: string) {
-        setEvents((current) => current.filter((e) => e.id !== eventId));
-      },
+      removeEvent: removeById,
       // Manual pull-to-reload: re-fetches the full list rather than relying
       // on Realtime, in case something was missed while disconnected.
       async refresh() {

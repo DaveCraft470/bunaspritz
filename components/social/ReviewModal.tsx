@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { showAlert } from '@/lib/alert';
 import { colors, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
@@ -42,7 +43,7 @@ export function ReviewModal({
       setComment('');
       onClose();
     } else {
-      Alert.alert('A apărut o eroare', 'Nu am putut trimite review-ul. Încearcă din nou.');
+      showAlert('A apărut o eroare', 'Nu am putut trimite review-ul. Încearcă din nou.');
     }
   }
 

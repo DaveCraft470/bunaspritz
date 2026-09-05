@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { showAlert } from '@/lib/alert';
 import { buildApproxStaticMapUrl, buildDirectionsUrl, buildExactStaticMapUrl } from '@/constants/mapbox';
 import { getSpritzEvent, SPRITZ_SONGS } from '@/constants/events';
 import { colors, shadows } from '@/constants/theme';
@@ -88,7 +89,7 @@ export default function EventDetail() {
           const ok = await leaveEvent(event.id, user.id);
           setJoining(false);
           if (!ok) {
-            Alert.alert('A apărut o eroare', 'Nu am putut anula participarea. Încearcă din nou.');
+            showAlert('A apărut o eroare', 'Nu am putut anula participarea. Încearcă din nou.');
             return;
           }
           setJoined(false);
@@ -119,7 +120,7 @@ export default function EventDetail() {
           const ok = await deleteEvent(event.id, user.id, event.rentalProofPath);
           setJoining(false);
           if (!ok) {
-            Alert.alert('A apărut o eroare', 'Nu am putut anula evenimentul. Încearcă din nou.');
+            showAlert('A apărut o eroare', 'Nu am putut anula evenimentul. Încearcă din nou.');
             return;
           }
           removeEvent(event.id);
@@ -148,7 +149,7 @@ export default function EventDetail() {
     const ok = await joinEvent(event.id, user.id);
     setJoining(false);
     if (!ok) {
-      Alert.alert('A apărut o eroare', 'Nu am putut confirma participarea. Încearcă din nou.');
+      showAlert('A apărut o eroare', 'Nu am putut confirma participarea. Încearcă din nou.');
       return;
     }
     medium();
@@ -303,7 +304,11 @@ export default function EventDetail() {
                   <Image source={{ uri: exactMapUrl }} style={styles.mapImage} resizeMode="cover" />
                 </View>
                 <AnimatedPressable
-                  onPress={() => Linking.openURL(buildDirectionsUrl(event.lng, event.lat)).catch(() => {})}
+                  onPress={() =>
+                    Linking.openURL(buildDirectionsUrl(event.lng, event.lat)).catch(() =>
+                      showAlert('Nu am putut deschide harta', 'Încearcă din nou mai târziu.')
+                    )
+                  }
                   style={[styles.directionsButton, { backgroundColor: theme.surfaceMuted }]}
                 >
                   <Ionicons name="navigate" size={14} color={colors.green500} />

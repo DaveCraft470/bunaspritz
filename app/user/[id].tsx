@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { showAlert } from '@/lib/alert';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
@@ -52,6 +53,7 @@ export default function PublicProfile() {
   const [reviewSummary, setReviewSummary] = useState<ReviewSummary>({ average: 0, count: 0 });
   const [reviewableEvents, setReviewableEvents] = useState<ReviewableEvent[]>([]);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   function loadProfile() {
     if (!user || !id) return;
@@ -75,6 +77,31 @@ export default function PublicProfile() {
   }
 
   useEffect(loadProfile, [user, id]);
+
+  async function onRefresh() {
+    if (!user || !id) return;
+    setRefreshing(true);
+    try {
+      const result = await getProfile(id);
+      setProfile(result);
+      setProfileError(!result);
+      const [followStatus, friendPrefs, reviewsList, summary] = await Promise.all([
+        getFollowStatus(user.id, id),
+        getFriendPrefs(user.id, id),
+        getReviews(id),
+        getReviewSummary(id),
+      ]);
+      setStatus(followStatus);
+      setPrefs(friendPrefs);
+      setReviews(reviewsList);
+      setReviewSummary(summary);
+      if (user.id !== id) setReviewableEvents(await getReviewableEvents(id));
+    } catch {
+      setProfileError(true);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function handleSubmitReview(eventId: string, rating: number, comment: string) {
     if (!user || !id) return false;
@@ -101,7 +128,7 @@ export default function PublicProfile() {
     }
     if (!ok) {
       setStatus(previous);
-      Alert.alert('A apărut o eroare', 'Nu am putut actualiza urmărirea. Încearcă din nou.');
+      showAlert('A apărut o eroare', 'Nu am putut actualiza urmărirea. Încearcă din nou.');
     }
   }
 
@@ -113,7 +140,7 @@ export default function PublicProfile() {
     const ok = await setFriendPrefs(user.id, id, patch);
     if (!ok) {
       setPrefs(previous);
-      Alert.alert('A apărut o eroare', 'Nu am putut salva preferința. Încearcă din nou.');
+      showAlert('A apărut o eroare', 'Nu am putut salva preferința. Încearcă din nou.');
     }
   }
 
@@ -188,7 +215,11 @@ export default function PublicProfile() {
         </AnimatedPressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.green500} />}
+      >
         <View style={styles.header}>
           <Avatar
             uri={profile.avatar_url}

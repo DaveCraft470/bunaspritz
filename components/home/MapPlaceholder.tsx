@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Animated, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 
+import { showAlert } from '@/lib/alert';
 import { colors, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
@@ -77,7 +78,7 @@ export function MapPlaceholder() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permisiune necesară', 'Activează locația ca să te putem găsi pe hartă.');
+        showAlert('Permisiune necesară', 'Activează locația ca să te putem găsi pe hartă.');
         return;
       }
       // getLastKnownPositionAsync returns a cached fix instantly; only fall
@@ -92,7 +93,7 @@ export function MapPlaceholder() {
       lastFlownRef.current = { lng: coords.longitude, lat: coords.latitude };
       hasPannedAwayRef.current = false;
     } catch {
-      Alert.alert('Nu te găsim', 'Nu am putut lua locația ta. Încearcă din nou.');
+      showAlert('Nu te găsim', 'Nu am putut lua locația ta. Încearcă din nou.');
     } finally {
       isLocatingRef.current = false;
     }

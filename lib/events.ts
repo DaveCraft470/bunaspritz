@@ -139,6 +139,24 @@ export function subscribeToNewEvents(onInsert: (event: SpritzEvent) => void) {
   };
 }
 
+// A host cancelling their own event (deleteEvent) only ever updated that
+// host's own local list — everyone else who already had the map/list loaded
+// kept seeing the stale pin/entry until they manually pulled to refresh.
+// payload.old only carries the primary key without REPLICA IDENTITY FULL on
+// this table, which is exactly (and only) what's needed here.
+export function subscribeToDeletedEvents(onDelete: (eventId: string) => void) {
+  const channel = supabase
+    .channel('events-deletes')
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'events' }, (payload) => {
+      onDelete((payload.old as { id: string }).id);
+    })
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
 export type EventAttendee = { userId: string; name: string; username: string; avatarUrl: string | null };
 
 // Reads visible_event_attendees (not the raw table) so hide_activity_from is

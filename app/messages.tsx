@@ -46,6 +46,8 @@ import {
 // Sentinel playingMessageId for the not-yet-sent recording preview — no real
 // message has this id, so it can share the shared voicePlayer/playingMessageId
 // state with the sent-message bubbles without colliding.
+const MESSAGE_MAX_LENGTH = 1000;
+
 const VOICE_PREVIEW_ID = '__voice-preview__';
 
 // How many bars the live recording waveform scrolls through.
@@ -1063,6 +1065,7 @@ export default function Messages() {
                   placeholderTextColor={theme.textSecondary}
                   style={[styles.input, { color: theme.textPrimary }]}
                   returnKeyType="send"
+                  maxLength={MESSAGE_MAX_LENGTH}
                 />
               )}
               <Pressable

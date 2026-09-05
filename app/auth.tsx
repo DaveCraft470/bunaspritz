@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, View, Pressable, Platform } from 'react-native';
+import { StyleSheet, Text, TextInput, View, Pressable, Platform } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import { useUser } from '@/contexts/UserContext';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/constants/theme';
 import { LogoWordmark } from '@/components/home/LogoWordmark';
+import { showAlert } from '@/lib/alert';
 
 type Mode = 'login' | 'signup';
 
@@ -121,11 +122,11 @@ export default function Auth() {
     setResettingPassword(false);
 
     if (resetError) {
-      Alert.alert('A apărut o eroare', resetError.message);
+      showAlert('A apărut o eroare', resetError.message);
       return;
     }
 
-    Alert.alert('Email trimis', `Verifică ${trimmedEmail} pentru linkul de resetare a parolei.`);
+    showAlert('Email trimis', `Verifică ${trimmedEmail} pentru linkul de resetare a parolei.`);
   };
 
   const switchMode = (newMode: Mode) => {
@@ -416,6 +417,7 @@ export default function Auth() {
                   setShowPassword(!showPassword)
                 }
                 hitSlop={10}
+                accessibilityLabel={showPassword ? 'Ascunde parola' : 'Arată parola'}
               >
                 <Ionicons
                   name={
