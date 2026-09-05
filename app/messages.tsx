@@ -62,6 +62,30 @@ function normalizedMeteringLevel(metering: number | undefined): number {
   return (clamped + 60) / 60;
 }
 
+// How many bars a sent voice message's stored waveform has — fixed so every
+// bubble renders the same width regardless of how long the recording was.
+const SENT_WAVEFORM_BARS = 32;
+
+// Bucket-averages the full per-recording sample history (see fullWaveformRef)
+// down to a fixed bar count at send time, so a 3-second and a 30-second note
+// both render as one consistent-width shape.
+function downsampleWaveform(samples: number[], barCount: number): number[] {
+  if (samples.length === 0) return Array(barCount).fill(0.1);
+  const result: number[] = [];
+  for (let i = 0; i < barCount; i++) {
+    const start = Math.floor((i / barCount) * samples.length);
+    const end = Math.max(start + 1, Math.floor(((i + 1) / barCount) * samples.length));
+    const bucket = samples.slice(start, end);
+    result.push(bucket.reduce((sum, v) => sum + v, 0) / bucket.length);
+  }
+  return result;
+}
+
+// Deterministic placeholder shape for messages sent before waveform capture
+// existed (or if it somehow came back empty) — a real bubble should almost
+// never hit this, but it keeps old messages from rendering as a dead flat line.
+const FALLBACK_WAVEFORM = Array.from({ length: SENT_WAVEFORM_BARS }, (_, i) => 0.35 + 0.35 * Math.abs(Math.sin(i * 0.9)));
+
 let webAudioUnlocked = false;
 
 // Browsers only allow HTMLMediaElement.play() unprompted within a narrow
@@ -103,6 +127,7 @@ type DisplayMessage = {
   mediaType?: MediaType | null;
   mediaPath?: string | null;
   durationMs?: number | null;
+  waveform?: number[] | null;
 };
 type ActiveChat = { kind: 'group'; id: string } | { kind: 'friend'; id: string };
 
@@ -174,20 +199,39 @@ function VoiceBubble({
   isMine,
   durationMs,
   elapsedMs,
+  waveform,
   onToggle,
 }: {
   isPlaying: boolean;
   isMine: boolean;
   durationMs: number | null | undefined;
   elapsedMs: number;
+  waveform: number[] | null | undefined;
   onToggle: () => void;
 }) {
   const { colors: theme } = useAppTheme();
   const remainingMs = isPlaying ? Math.max(0, (durationMs ?? 0) - elapsedMs) : durationMs;
+  const progress = isPlaying && durationMs ? Math.min(1, elapsedMs / durationMs) : 0;
+  const bars = waveform && waveform.length > 0 ? waveform : FALLBACK_WAVEFORM;
+  const playedColor = isMine ? colors.white : colors.green500;
+  const unplayedColor = isMine ? 'rgba(255,255,255,0.45)' : 'rgba(37,201,96,0.4)';
   return (
     <Pressable onPress={onToggle} style={styles.voiceBubbleRow} hitSlop={6}>
       <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={30} color={isMine ? colors.white : colors.green500} />
-      <View style={[styles.voiceWave, { backgroundColor: isMine ? 'rgba(255,255,255,0.5)' : colors.green500 }]} />
+      <View style={styles.voiceWaveformRow}>
+        {bars.map((level, index) => {
+          const played = progress > 0 && index / bars.length <= progress;
+          return (
+            <View
+              key={index}
+              style={[
+                styles.voiceWaveformBar,
+                { height: 3 + level * 15, backgroundColor: played ? playedColor : unplayedColor },
+              ]}
+            />
+          );
+        })}
+      </View>
       <Text style={[styles.voiceDuration, { color: isMine ? colors.white : theme.textPrimary }]}>
         {formatDuration(remainingMs)}
       </Text>
@@ -207,6 +251,27 @@ function RecordingWaveform({ levels }: { levels: number[] }) {
           style={[styles.waveformBar, { height: 6 + level * 26, opacity: 0.4 + level * 0.6 }]}
         />
       ))}
+    </View>
+  );
+}
+
+// The recorded-but-unsent preview's waveform — same shape as RecordingWaveform,
+// but a static array (the just-finished recording) with a played/unplayed
+// progress split instead of a scrolling live level.
+function PreviewWaveform({ waveform, progress }: { waveform: number[]; progress: number }) {
+  const playedColor = colors.green500;
+  const unplayedColor = 'rgba(37,201,96,0.35)';
+  return (
+    <View style={styles.waveformRow}>
+      {waveform.map((level, index) => {
+        const played = progress > 0 && index / waveform.length <= progress;
+        return (
+          <View
+            key={index}
+            style={[styles.waveformBar, { height: 6 + level * 26, backgroundColor: played ? playedColor : unplayedColor }]}
+          />
+        );
+      })}
     </View>
   );
 }
@@ -361,7 +426,9 @@ export default function Messages() {
   // A stopped-but-unsent recording, waiting for the user to preview-listen
   // to it and either send or discard it. Reuses the same voicePlayer/
   // playingMessageId machinery as the message bubbles, under this sentinel id.
-  const [recordedVoice, setRecordedVoice] = useState<{ uri: string; durationMs: number } | null>(null);
+  const [recordedVoice, setRecordedVoice] = useState<{ uri: string; durationMs: number; waveform: number[] } | null>(
+    null
+  );
   const messagesScrollRef = useRef<ScrollView>(null);
   const restingComposerOffset = insets.bottom + 16;
   const composerOffset = useRef(new Animated.Value(restingComposerOffset)).current;
@@ -379,6 +446,11 @@ export default function Messages() {
   // motion instead of visibly stepping.
   const recorderState = useAudioRecorderState(audioRecorder, 250);
   const [waveLevels, setWaveLevels] = useState<number[]>(() => Array(RECORDING_WAVE_BARS).fill(0));
+  // Every metering sample from the current recording, start to finish (unlike
+  // waveLevels, which only keeps a fixed-size rolling window for the live
+  // composer view) — downsampled at stop time into the fixed-length waveform
+  // stored with the message, for a real per-message shape instead of a flat bar.
+  const fullWaveformRef = useRef<number[]>([]);
 
   useEffect(() => {
     if (voicePlayerStatus.didJustFinish) setPlayingMessageId(null);
@@ -400,7 +472,9 @@ export default function Messages() {
       setWaveLevels(Array(RECORDING_WAVE_BARS).fill(0));
       return;
     }
-    setWaveLevels((current) => [...current.slice(1), normalizedMeteringLevel(recorderState.metering)]);
+    const level = normalizedMeteringLevel(recorderState.metering);
+    fullWaveformRef.current.push(level);
+    setWaveLevels((current) => [...current.slice(1), level]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recorderState.isRecording, recorderState.metering]);
 
@@ -464,7 +538,7 @@ export default function Messages() {
 
   // Shared by both the quick-send-while-recording path and sending after a
   // preview listen — the only difference between them is what stops first.
-  async function sendVoiceUri(uri: string, durationMs: number) {
+  async function sendVoiceUri(uri: string, durationMs: number, waveform: number[]) {
     if (!user || !activeFriend) return;
 
     // expo-audio records audio/webm on web (the HIGH_QUALITY preset's native
@@ -475,7 +549,16 @@ export default function Messages() {
 
     setSendingMedia(true);
     try {
-      const sent = await sendMediaMessage(user.id, activeFriend.id, uri, 'audio', audioExtension, audioContentType, durationMs);
+      const sent = await sendMediaMessage(
+        user.id,
+        activeFriend.id,
+        uri,
+        'audio',
+        audioExtension,
+        audioContentType,
+        durationMs,
+        waveform
+      );
       if (sent) {
         setFriendMessages((current) => [...current, sent]);
         setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
@@ -499,10 +582,11 @@ export default function Messages() {
   async function stopRecordingAndSend() {
     light();
     const durationMs = Math.round(recorderState.durationMillis);
+    const waveform = downsampleWaveform(fullWaveformRef.current, SENT_WAVEFORM_BARS);
     await audioRecorder.stop();
     const uri = audioRecorder.uri;
     if (!uri || durationMs < 500) return;
-    await sendVoiceUri(uri, durationMs);
+    await sendVoiceUri(uri, durationMs, waveform);
   }
 
   // The mic/stop button, pressed mid-recording: stop but hold the recording
@@ -510,10 +594,11 @@ export default function Messages() {
   async function stopRecordingToPreview() {
     light();
     const durationMs = Math.round(recorderState.durationMillis);
+    const waveform = downsampleWaveform(fullWaveformRef.current, SENT_WAVEFORM_BARS);
     await audioRecorder.stop();
     const uri = audioRecorder.uri;
     if (!uri || durationMs < 500) return;
-    setRecordedVoice({ uri, durationMs });
+    setRecordedVoice({ uri, durationMs, waveform });
   }
 
   function togglePreviewPlayback() {
@@ -544,7 +629,7 @@ export default function Messages() {
     if (recorderState.isRecording) {
       stopRecordingAndSend();
     } else if (recordedVoice) {
-      sendVoiceUri(recordedVoice.uri, recordedVoice.durationMs);
+      sendVoiceUri(recordedVoice.uri, recordedVoice.durationMs, recordedVoice.waveform);
     } else {
       sendMessage();
     }
@@ -662,6 +747,7 @@ export default function Messages() {
         mediaType: m.media_type,
         mediaPath: m.media_path,
         durationMs: m.duration_ms,
+        waveform: m.waveform,
       }));
     }
     return [];
@@ -886,6 +972,7 @@ export default function Messages() {
                         isMine={message.mine}
                         durationMs={message.durationMs}
                         elapsedMs={playingMessageId === message.id ? voicePlayerStatus.currentTime * 1000 : 0}
+                        waveform={message.waveform}
                         onToggle={() => toggleVoicePlayback(message.id, message.mediaPath!)}
                       />
                     ) : (
@@ -949,22 +1036,31 @@ export default function Messages() {
                     {formatDuration(recorderState.durationMillis)}
                   </Text>
                 </View>
+              ) : recordedVoice ? (
+                <View style={styles.recordingRow}>
+                  <PreviewWaveform
+                    waveform={recordedVoice.waveform}
+                    progress={
+                      playingMessageId === VOICE_PREVIEW_ID && recordedVoice.durationMs
+                        ? Math.min(1, (voicePlayerStatus.currentTime * 1000) / recordedVoice.durationMs)
+                        : 0
+                    }
+                  />
+                  <Text style={[styles.recordingTimer, { color: theme.textSecondary }]}>
+                    {formatDuration(
+                      playingMessageId === VOICE_PREVIEW_ID
+                        ? Math.max(0, recordedVoice.durationMs - voicePlayerStatus.currentTime * 1000)
+                        : recordedVoice.durationMs
+                    )}
+                  </Text>
+                </View>
               ) : (
                 <TextInput
                   value={draft}
                   onChangeText={setDraft}
                   onSubmitEditing={sendMessage}
-                  placeholder={
-                    recordedVoice
-                      ? `Mesaj vocal • ${formatDuration(
-                          playingMessageId === VOICE_PREVIEW_ID
-                            ? Math.max(0, recordedVoice.durationMs - voicePlayerStatus.currentTime * 1000)
-                            : recordedVoice.durationMs
-                        )}`
-                      : 'Scrie un mesaj...'
-                  }
+                  placeholder="Scrie un mesaj..."
                   placeholderTextColor={theme.textSecondary}
-                  editable={!recordedVoice}
                   style={[styles.input, { color: theme.textPrimary }]}
                   returnKeyType="send"
                 />
@@ -1122,6 +1218,8 @@ const styles = StyleSheet.create({
   imageBubble: { width: 200, height: 200, borderRadius: 14 },
   imageBubbleLoading: { alignItems: 'center', justifyContent: 'center' },
   voiceBubbleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4, minWidth: 160 },
-  voiceWave: { flex: 1, height: 3, borderRadius: 2 },
+  // minWidth: 0 matters on web — see the composer waveform's identical note.
+  voiceWaveformRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 2, height: 18 },
+  voiceWaveformBar: { flex: 1, minWidth: 2, borderRadius: 1 },
   voiceDuration: { fontSize: 12, fontWeight: '700' },
 });

@@ -21,9 +21,14 @@ export type DbMessage = {
   media_path: string | null;
   media_type: MediaType | null;
   duration_ms: number | null;
+  // Normalized (0-1) amplitude samples captured live while recording, for
+  // rendering a real static waveform in the bubble instead of a plain bar.
+  // Null for messages sent before this existed, or non-audio messages.
+  waveform: number[] | null;
 };
 
-const MESSAGE_COLUMNS = 'id, sender_id, recipient_id, text, created_at, read_at, media_path, media_type, duration_ms';
+const MESSAGE_COLUMNS =
+  'id, sender_id, recipient_id, text, created_at, read_at, media_path, media_type, duration_ms, waveform';
 
 function threadFilter(myId: string, friendId: string) {
   return `and(sender_id.eq.${myId},recipient_id.eq.${friendId}),and(sender_id.eq.${friendId},recipient_id.eq.${myId})`;
@@ -101,7 +106,8 @@ export async function sendMediaMessage(
   mediaType: MediaType,
   extension: string,
   contentType: string,
-  durationMs?: number
+  durationMs?: number,
+  waveform?: number[]
 ): Promise<DbMessage | null> {
   // expo-file-system's File class is a no-op stub on the web build (it only
   // warns "not supported on web"), and audioRecorder.uri there is a blob:
@@ -125,6 +131,7 @@ export async function sendMediaMessage(
       media_path: path,
       media_type: mediaType,
       duration_ms: mediaType === 'audio' ? durationMs ?? null : null,
+      waveform: mediaType === 'audio' ? waveform ?? null : null,
     })
     .select(MESSAGE_COLUMNS)
     .single();
