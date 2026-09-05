@@ -2,6 +2,7 @@ import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useSt
 
 import { supabase } from '@/lib/supabase';
 import { registerForPushNotifications, unregisterPushToken } from '@/lib/pushTokens';
+import { freshChannel } from '@/lib/realtime';
 import {
   PublicUser,
   devSkipAuth,
@@ -75,8 +76,7 @@ export function UserProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!user) return;
 
-    const channel = supabase
-      .channel(`profile-${user.id}`)
+    const channel = freshChannel(`profile-${user.id}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },

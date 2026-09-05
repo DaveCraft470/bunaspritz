@@ -1,6 +1,7 @@
 import { File } from 'expo-file-system';
 
 import { supabase } from '@/lib/supabase';
+import { freshChannel } from '@/lib/realtime';
 
 const MEDIA_BUCKET = 'message-media';
 // Fetched once per bubble mount and cached in component state (see
@@ -148,8 +149,7 @@ export async function getSignedMediaUrl(path: string): Promise<string | null> {
 // received; the caller checks payload.sender_id against whichever thread
 // (if any) is currently open.
 export function subscribeToIncoming(myId: string, onMessage: (message: DbMessage) => void) {
-  const channel = supabase
-    .channel(`messages-recipient-${myId}`)
+  const channel = freshChannel(`messages-recipient-${myId}`)
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages', filter: `recipient_id=eq.${myId}` },
@@ -166,8 +166,7 @@ export function subscribeToIncoming(myId: string, onMessage: (message: DbMessage
 // single-check tick can flip to a double-check live instead of only on the
 // next time the thread list happens to reload.
 export function subscribeToReadReceipts(myId: string, onRead: (message: DbMessage) => void) {
-  const channel = supabase
-    .channel(`messages-sender-${myId}`)
+  const channel = freshChannel(`messages-sender-${myId}`)
     .on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'messages', filter: `sender_id=eq.${myId}` },

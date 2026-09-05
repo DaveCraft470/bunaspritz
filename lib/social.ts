@@ -71,7 +71,12 @@ export async function getFollowStatuses(myId: string, otherIds: string[]): Promi
 
 export async function follow(myId: string, otherId: string): Promise<boolean> {
   const { error } = await supabase.from('follows').insert({ follower_id: myId, followee_id: otherId });
-  return !error;
+  if (error) return false;
+
+  // Best-effort — a failed push shouldn't undo an already-recorded follow.
+  supabase.functions.invoke('notify-follow', { body: { followeeId: otherId } }).catch(() => {});
+
+  return true;
 }
 
 export async function unfollow(myId: string, otherId: string): Promise<boolean> {

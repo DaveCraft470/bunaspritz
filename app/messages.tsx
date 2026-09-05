@@ -362,7 +362,7 @@ export default function Messages() {
   async function stopRecordingAndSend() {
     if (!user || !activeFriend) return;
     light();
-    const durationMs = Math.round(audioRecorder.currentTime * 1000);
+    const durationMs = Math.round(recorderState.durationMillis);
     await audioRecorder.stop();
     const uri = audioRecorder.uri;
     if (!uri || durationMs < 500) return;
