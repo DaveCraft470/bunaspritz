@@ -1,5 +1,3 @@
-import { File } from 'expo-file-system';
-
 import { supabase } from '@/lib/supabase';
 import { freshChannel } from '@/lib/realtime';
 
@@ -105,8 +103,11 @@ export async function sendMediaMessage(
   contentType: string,
   durationMs?: number
 ): Promise<DbMessage | null> {
-  const file = new File(localUri);
-  const bytes = await file.arrayBuffer();
+  // expo-file-system's File class is a no-op stub on the web build (it only
+  // warns "not supported on web"), and audioRecorder.uri there is a blob:
+  // URL anyway — fetch() reads both file:// (native) and blob:/data: (web)
+  // uris the same way, so it works everywhere without a platform branch.
+  const bytes = await (await fetch(localUri)).arrayBuffer();
   if (bytes.byteLength === 0) return null;
 
   const path = `${myId}/${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;

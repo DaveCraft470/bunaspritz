@@ -367,14 +367,25 @@ export default function Messages() {
     const uri = audioRecorder.uri;
     if (!uri || durationMs < 500) return;
 
+    // expo-audio records audio/webm on web (the HIGH_QUALITY preset's native
+    // formats are m4a) — tagging a webm blob as m4a uploads fine but breaks
+    // playback, since the container doesn't match the extension/content-type.
+    const [audioExtension, audioContentType] =
+      Platform.OS === 'web' ? ['.webm', 'audio/webm'] : ['.m4a', 'audio/m4a'];
+
     setSendingMedia(true);
-    const sent = await sendMediaMessage(user.id, activeFriend.id, uri, 'audio', '.m4a', 'audio/m4a', durationMs);
-    setSendingMedia(false);
-    if (sent) {
-      setFriendMessages((current) => [...current, sent]);
-      setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
-    } else {
+    try {
+      const sent = await sendMediaMessage(user.id, activeFriend.id, uri, 'audio', audioExtension, audioContentType, durationMs);
+      if (sent) {
+        setFriendMessages((current) => [...current, sent]);
+        setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
+      } else {
+        Alert.alert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
+      }
+    } catch {
       Alert.alert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
+    } finally {
+      setSendingMedia(false);
     }
   }
 
@@ -394,13 +405,18 @@ export default function Messages() {
 
     light();
     setSendingMedia(true);
-    const sent = await sendMediaMessage(user.id, activeFriend.id, asset.uri, 'image', extension, contentType);
-    setSendingMedia(false);
-    if (sent) {
-      setFriendMessages((current) => [...current, sent]);
-      setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
-    } else {
+    try {
+      const sent = await sendMediaMessage(user.id, activeFriend.id, asset.uri, 'image', extension, contentType);
+      if (sent) {
+        setFriendMessages((current) => [...current, sent]);
+        setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
+      } else {
+        Alert.alert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
+      }
+    } catch {
       Alert.alert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
+    } finally {
+      setSendingMedia(false);
     }
   }
 
