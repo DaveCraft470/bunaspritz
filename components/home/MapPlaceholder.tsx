@@ -206,6 +206,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     overflow: 'hidden',
+    // Explicit (not the shared View default) so MapboxMap.web.tsx's
+    // absolutely-positioned container has a definite containing block to
+    // stretch against — without this its top/bottom:0 can resolve to a
+    // height of 0 on web despite this view itself being full height.
+    position: 'relative',
   },
   headerCluster: {
     position: 'absolute',

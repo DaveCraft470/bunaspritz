@@ -57,6 +57,12 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
   // Bumped by the explicit reload() below, same idiom as the native version —
   // the only other thing that tears down and rebuilds the map is a theme swap.
   const [reloadNonce, setReloadNonce] = useState(0);
+  // Mapbox GL JS paints a blank canvas the instant it's constructed, well
+  // before the style/tiles have actually loaded — without gating visibility
+  // on this, that blank canvas flashes on top of FakeMapBackdrop before the
+  // real map appears. Stays false forever on error, so the backdrop remains
+  // as the permanent fallback.
+  const [ready, setReady] = useState(false);
 
   function addEventPin(map: any, ev: PinData) {
     const mapboxgl = (window as any).mapboxgl;
@@ -90,6 +96,7 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
   // for it — mirrors the native version's html useMemo keyed on the same deps.
   useEffect(() => {
     let cancelled = false;
+    setReady(false);
 
     for (const marker of eventMarkersRef.current.values()) marker.remove();
     eventMarkersRef.current.clear();
@@ -126,6 +133,7 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
           if (cancelled) return;
           knownEventCountRef.current = eventsRef.current.length;
           for (const pin of toPinData(eventsRef.current)) addEventPin(map, pin);
+          setReady(true);
           onReady?.();
         });
         map.on('dragstart', () => onUserPanned?.());
@@ -182,7 +190,7 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
       {/* Sits underneath the real map at all times — same as native, shows
           through until tiles paint over it and stays as the error fallback. */}
       <FakeMapBackdrop />
-      <View ref={containerRef} style={styles.webview} />
+      <View ref={containerRef} style={[styles.webview, !ready && styles.hidden]} />
     </>
   );
 });
@@ -194,6 +202,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    // Belt-and-suspenders alongside top/left/right/bottom: percentage sizing
+    // doesn't depend on the parent being resolved as a positioned containing
+    // block, so this still fills correctly even if that ever regresses again.
+    width: '100%',
+    height: '100%',
     backgroundColor: 'transparent',
+  },
+  hidden: {
+    opacity: 0,
   },
 });
