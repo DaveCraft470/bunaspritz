@@ -6,7 +6,10 @@ import { useUser } from '@/contexts/UserContext';
 
 type EventsContextValue = {
   events: SpritzEvent[];
+  loading: boolean;
+  error: boolean;
   addEvent: (event: SpritzEvent) => void;
+  updateEvent: (event: SpritzEvent) => void;
   removeEvent: (eventId: string) => void;
   refresh: () => Promise<void>;
 };
@@ -16,6 +19,8 @@ const EventsContext = createContext<EventsContextValue | null>(null);
 export function EventsProvider({ children }: PropsWithChildren) {
   const { authenticated } = useUser();
   const [events, setEvents] = useState<SpritzEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   function appendIfNew(event: SpritzEvent) {
     setEvents((current) => (current.some((e) => e.id === event.id) ? current : [...current, event]));
@@ -31,9 +36,16 @@ export function EventsProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!authenticated) {
       setEvents([]);
+      setLoading(false);
+      setError(false);
       return;
     }
-    fetchEvents().then(setEvents);
+    setLoading(true);
+    setError(false);
+    fetchEvents()
+      .then(setEvents)
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
     const unsubscribeInserts = subscribeToNewEvents(appendIfNew);
     // Otherwise a host cancelling their own event only disappears locally
     // for that host — everyone else with the map/list already loaded keeps
@@ -48,10 +60,15 @@ export function EventsProvider({ children }: PropsWithChildren) {
   const value = useMemo<EventsContextValue>(
     () => ({
       events,
+      loading,
+      error,
       // New events are appended, never inserted/reordered — MapboxMap relies
       // on the list only ever growing at the end to add just the new pin
       // instead of reloading the whole map.
       addEvent: appendIfNew,
+      updateEvent(event: SpritzEvent) {
+        setEvents((current) => current.map((existing) => (existing.id === event.id ? event : existing)));
+      },
       // A host cancelling their own event — drops it locally right away
       // instead of waiting on a refetch, matching addEvent's local-first idiom.
       removeEvent: removeById,
@@ -59,11 +76,19 @@ export function EventsProvider({ children }: PropsWithChildren) {
       // on Realtime, in case something was missed while disconnected.
       async refresh() {
         if (!authenticated) return;
-        const fresh = await fetchEvents();
-        setEvents(fresh);
+        setLoading(true);
+        setError(false);
+        try {
+          const fresh = await fetchEvents();
+          setEvents(fresh);
+        } catch {
+          setError(true);
+        } finally {
+          setLoading(false);
+        }
       },
     }),
-    [events, authenticated]
+    [events, authenticated, loading, error]
   );
 
   return <EventsContext.Provider value={value}>{children}</EventsContext.Provider>;

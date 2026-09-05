@@ -22,6 +22,8 @@ import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { LocationPickerModal } from '@/components/event/LocationPickerModal';
 import { extensionAndTypeForImage } from '@/lib/media';
+import { addMonths, isDateBetween, startOfDay } from '@/lib/calendar';
+import { WheelPicker } from '@/components/common/WheelPicker';
 
 const TITLE_MAX_LENGTH = 60;
 const DETAIL_MAX_LENGTH = 200;
@@ -31,25 +33,12 @@ const EMOJI_CHOICES = ['🎉', '🍻', '🎷', '🎸', '🌮', '🎲', '🥾', '
 const COLOR_CHOICES = ['#FF9F5A', '#5FD98A', '#5AA9E6', '#FFD25A', '#FF6B81', '#B388FF', '#4ED9C9'];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = [0, 15, 30, 45];
-
-function dayLabel(date: Date, index: number) {
-  if (index === 0) return 'Azi';
-  if (index === 1) return 'Mâine';
-  return date.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' });
-}
-
-function buildDayOptions() {
-  return Array.from({ length: 10 }, (_, i) => {
-    const date = new Date();
-    date.setDate(date.getDate() + i);
-    return date;
-  });
-}
+const MONTHS = ['IANUARIE', 'FEBRUARIE', 'MARTIE', 'APRILIE', 'MAI', 'IUNIE', 'IULIE', 'AUGUST', 'SEPTEMBRIE', 'OCTOMBRIE', 'NOIEMBRIE', 'DECEMBRIE'];
 
 export default function NewEvent() {
   const { colors: theme, scheme } = useAppTheme();
   const { addEvent } = useEvents();
-  const { user } = useUser();
+  const { user, effectiveVerified } = useUser();
   const { light, medium } = useHaptics();
   const [publishing, setPublishing] = useState(false);
   // A ref alongside the state: two taps landing before React commits the
@@ -65,10 +54,11 @@ export default function NewEvent() {
   const [coords, setCoords] = useState<{ lng: number; lat: number } | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const dayOptions = useMemo(buildDayOptions, []);
-  const [dayIndex, setDayIndex] = useState(0);
   const [hour, setHour] = useState(Math.min(new Date().getHours() + 1, 23));
   const [minute, setMinute] = useState(0);
+  const today = startOfDay(new Date());
+  const latestDate = addMonths(today, 1);
+  const [selectedDate, setSelectedDate] = useState(today);
 
   const [entryFee, setEntryFee] = useState('');
   const [drinksPrice, setDrinksPrice] = useState('');
@@ -84,10 +74,10 @@ export default function NewEvent() {
   // back-forward) — hosting requires the same identity verification as
   // joining does, enforced again server-side by the events INSERT policy.
   useEffect(() => {
-    if (VERIFICATION_REQUIRED && !user?.verified) {
+    if (VERIFICATION_REQUIRED && !effectiveVerified) {
       router.replace({ pathname: '/verification', params: { returnTo: '/new-event' } });
     }
-  }, [user]);
+  }, [effectiveVerified]);
 
   // Just a starting point, not the only option anymore — the host can move
   // the pin anywhere via LocationPickerModal.
@@ -105,10 +95,54 @@ export default function NewEvent() {
   }, []);
 
   function buildStartsAt() {
-    const date = dayOptions[dayIndex] ?? new Date();
-    const startsAt = new Date(date);
+    const startsAt = new Date(selectedDate);
     startsAt.setHours(hour, minute, 0, 0);
     return startsAt;
+  }
+
+  function isSelectedDateValid() {
+    return isDateBetween(selectedDate, today, latestDate);
+  }
+
+  const dateDays = useMemo(
+    () =>
+      Array.from({ length: 31 }, (_, day) => {
+        const value = day + 1;
+        const candidate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), value);
+        return {
+          label: String(value).padStart(2, '0'),
+          value,
+          disabled: candidate.getDate() !== value || !isDateBetween(candidate, today, latestDate),
+        };
+      }),
+    [selectedDate, today, latestDate]
+  );
+  const dateMonths = useMemo(
+    () => {
+      const firstMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const lastMonth = new Date(latestDate.getFullYear(), latestDate.getMonth(), 1);
+      const monthCount = (lastMonth.getFullYear() - firstMonth.getFullYear()) * 12 + lastMonth.getMonth() - firstMonth.getMonth() + 1;
+      return Array.from({ length: monthCount }, (_, index) => {
+        const date = new Date(firstMonth.getFullYear(), firstMonth.getMonth() + index, 1);
+        const value = date.getFullYear() * 12 + date.getMonth();
+        const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+        return {
+          label: MONTHS[date.getMonth()],
+          value,
+          disabled: !Array.from({ length: daysInMonth }, (_, day) => isDateBetween(new Date(date.getFullYear(), date.getMonth(), day + 1), today, latestDate)).some(Boolean),
+        };
+      });
+    },
+    [selectedDate, today, latestDate]
+  );
+
+  function selectDatePart(part: 'day' | 'month', value: number) {
+    const year = part === 'month' ? Math.floor(value / 12) : selectedDate.getFullYear();
+    const month = part === 'month' ? value % 12 : selectedDate.getMonth();
+    const day = part === 'day' ? value : selectedDate.getDate();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const candidate = new Date(year, month, Math.min(day, daysInMonth));
+    if (isDateBetween(candidate, today, latestDate)) setSelectedDate(candidate);
   }
 
   async function handlePickRentalProof() {
@@ -133,9 +167,13 @@ export default function NewEvent() {
     }
     if (!user || publishingRef.current) return;
 
+    if (!isSelectedDateValid()) {
+      showAlert('Data invalidă', 'Alege o dată între azi și peste o lună.');
+      return;
+    }
+
     // The default hour/minute (now + 1h, capped at 23:00) can land in the
-    // past for a "today" event created late at night — e.g. picking 23:45
-    // defaults to 23:00 today, already 45 minutes gone by publish time.
+    // past when the event is created late at night.
     if (buildStartsAt().getTime() < Date.now()) {
       showAlert('Ora aleasă a trecut deja', 'Alege o oră care nu a trecut încă.');
       return;
@@ -302,68 +340,20 @@ export default function NewEvent() {
         </AnimatedPressable>
 
         <Text style={[styles.label, { color: theme.textSecondary }]}>DATĂ</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-          {dayOptions.map((date, index) => (
-            <AnimatedPressable
-              key={date.toDateString()}
-              onPress={() => {
-                light();
-                setDayIndex(index);
-              }}
-              style={[
-                styles.chip,
-                { backgroundColor: theme.surface, borderColor: index === dayIndex ? colors.green500 : theme.border },
-                index === dayIndex && styles.chipActive,
-              ]}
-            >
-              <Text style={[styles.chipText, { color: index === dayIndex ? colors.green500 : theme.textPrimary }]}>
-                {dayLabel(date, index)}
-              </Text>
-            </AnimatedPressable>
-          ))}
-        </ScrollView>
+        <View style={[styles.wheelGroup, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <WheelPicker label="ZI" options={dateDays} selectedValue={selectedDate.getDate()} onValueChange={(value) => selectDatePart('day', value)} />
+          <WheelPicker label="LUNĂ" options={dateMonths} selectedValue={selectedDate.getFullYear() * 12 + selectedDate.getMonth()} onValueChange={(value) => selectDatePart('month', value)} />
+          <Text style={[styles.selectedDateText, { color: theme.textSecondary }]}>
+            {selectedDate.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </Text>
+        </View>
 
         <Text style={[styles.label, { color: theme.textSecondary }]}>ORĂ</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-          {HOURS.map((h) => (
-            <AnimatedPressable
-              key={h}
-              onPress={() => {
-                light();
-                setHour(h);
-              }}
-              style={[
-                styles.chipSmall,
-                { backgroundColor: theme.surface, borderColor: h === hour ? colors.green500 : theme.border },
-                h === hour && styles.chipActive,
-              ]}
-            >
-              <Text style={[styles.chipText, { color: h === hour ? colors.green500 : theme.textPrimary }]}>
-                {String(h).padStart(2, '0')}
-              </Text>
-            </AnimatedPressable>
-          ))}
-        </ScrollView>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-          {MINUTES.map((m) => (
-            <AnimatedPressable
-              key={m}
-              onPress={() => {
-                light();
-                setMinute(m);
-              }}
-              style={[
-                styles.chipSmall,
-                { backgroundColor: theme.surface, borderColor: m === minute ? colors.green500 : theme.border },
-                m === minute && styles.chipActive,
-              ]}
-            >
-              <Text style={[styles.chipText, { color: m === minute ? colors.green500 : theme.textPrimary }]}>
-                :{String(m).padStart(2, '0')}
-              </Text>
-            </AnimatedPressable>
-          ))}
-        </ScrollView>
+        <View style={[styles.wheelGroup, styles.timeWheelGroup, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <WheelPicker label="ORE" options={HOURS.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={hour} onValueChange={setHour} />
+          <Text style={[styles.timeSeparator, { color: theme.textPrimary }]}>:</Text>
+          <WheelPicker label="MINUTE" options={MINUTES.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={minute} onValueChange={setMinute} />
+        </View>
 
         <Text style={[styles.label, { color: theme.textSecondary }]}>MUZICĂ / GEN</Text>
         <TextInput
@@ -564,7 +554,10 @@ const styles = StyleSheet.create({
   locationPreviewEmpty: {},
   locationCardFooter: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10 },
   locationCardText: { fontSize: 13, fontWeight: '700' },
-  chipScroll: { marginBottom: 4 },
+  wheelGroup: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 16, padding: 10 },
+  timeWheelGroup: { justifyContent: 'center' },
+  timeSeparator: { fontSize: 24, fontWeight: '900', marginTop: 12 },
+  selectedDateText: { textAlign: 'center', fontSize: 12, fontWeight: '700', marginTop: 8, textTransform: 'capitalize' },
   rentedRow: { flexDirection: 'row', gap: 10 },
   rentedChip: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 13, borderWidth: 2 },
   rentalProofWrap: { position: 'relative', alignSelf: 'flex-start', marginTop: 10 },
@@ -591,10 +584,8 @@ const styles = StyleSheet.create({
   rentalProofPreview: { width: 34, height: 34, borderRadius: 8 },
   rentalProofText: { fontSize: 13, fontWeight: '700' },
   rentalProofHint: { fontSize: 11, fontStyle: 'italic', marginTop: 6 },
-  chip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 13, borderWidth: 2, marginRight: 8 },
-  chipSmall: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 11, borderWidth: 2, marginRight: 6 },
-  chipActive: { transform: [{ scale: 1.03 }] },
   chipText: { fontSize: 13, fontWeight: '700' },
+  chipActive: { transform: [{ scale: 1.03 }] },
   emojiRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   emojiChip: {
     width: 48,

@@ -419,6 +419,9 @@ export default function Messages() {
   }, [friendId]);
   const [groupMessages, setGroupMessages] = useState<DisplayMessage[]>(starterMessages);
   const [friends, setFriends] = useState<Profile[]>([]);
+  const [friendsLoading, setFriendsLoading] = useState(true);
+  const [friendsError, setFriendsError] = useState(false);
+  const [friendsReloadKey, setFriendsReloadKey] = useState(0);
   const [friendLast, setFriendLast] = useState<Record<string, DbMessage | null>>({});
   const [friendUnread, setFriendUnread] = useState<Record<string, number>>({});
   const [friendMessages, setFriendMessages] = useState<DbMessage[]>([]);
@@ -671,23 +674,31 @@ export default function Messages() {
   // Load your mutual friends + their last message and unread count, for the
   // "PRIETENI" section of the list screen.
   useEffect(() => {
-    if (!user) return;
-    getMutualFriends(user.id).then(async (list) => {
-      setFriends(list);
-      const [lastMessages, unreadCounts] = await Promise.all([
-        Promise.all(list.map((f) => getLastMessage(user.id, f.id))),
-        Promise.all(list.map((f) => getUnreadCount(user.id, f.id))),
-      ]);
-      const lastMap: Record<string, DbMessage | null> = {};
-      const unreadMap: Record<string, number> = {};
-      list.forEach((f, i) => {
-        lastMap[f.id] = lastMessages[i];
-        unreadMap[f.id] = unreadCounts[i];
-      });
-      setFriendLast(lastMap);
-      setFriendUnread(unreadMap);
-    });
-  }, [user]);
+    if (!user) {
+      setFriendsLoading(false);
+      return;
+    }
+    setFriendsLoading(true);
+    setFriendsError(false);
+    getMutualFriends(user.id)
+      .then(async (list) => {
+        setFriends(list);
+        const [lastMessages, unreadCounts] = await Promise.all([
+          Promise.all(list.map((f) => getLastMessage(user.id, f.id))),
+          Promise.all(list.map((f) => getUnreadCount(user.id, f.id))),
+        ]);
+        const lastMap: Record<string, DbMessage | null> = {};
+        const unreadMap: Record<string, number> = {};
+        list.forEach((f, i) => {
+          lastMap[f.id] = lastMessages[i];
+          unreadMap[f.id] = unreadCounts[i];
+        });
+        setFriendLast(lastMap);
+        setFriendUnread(unreadMap);
+      })
+      .catch(() => setFriendsError(true))
+      .finally(() => setFriendsLoading(false));
+  }, [user, friendsReloadKey]);
 
   // Load the full thread whenever a friend conversation is opened, and clear
   // their unread badge — mirrors the "opening a chat marks it read" behavior
@@ -874,7 +885,31 @@ export default function Messages() {
                 </ScrollView>
               </View>
 
-              {friends.length > 0 && (
+              {friendsLoading && (
+                <View style={styles.listState}>
+                  <ActivityIndicator color={colors.green500} />
+                  <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Se încarcă prietenii...</Text>
+                </View>
+              )}
+
+              {!friendsLoading && friendsError && (
+                <View style={styles.listState}>
+                  <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                    Nu am putut încărca prietenii pentru mesaje.
+                  </Text>
+                  <Pressable onPress={() => setFriendsReloadKey((key) => key + 1)} style={styles.retryButton}>
+                    <Text style={styles.retryText}>Reîncearcă</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              {!friendsLoading && !friendsError && friends.length === 0 && (
+                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                  Nu ai încă prieteni disponibili pentru mesaje.
+                </Text>
+              )}
+
+              {!friendsLoading && !friendsError && friends.length > 0 && (
                 <View style={styles.friendsSection}>
                   <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>PRIETENI</Text>
                   {friends.map((friend) => {
@@ -1151,6 +1186,10 @@ const styles = StyleSheet.create({
   groupCardTitle: { fontSize: 12, fontWeight: '800', textAlign: 'center', marginTop: 4 },
   groupCardDetail: { fontSize: 10, textAlign: 'center', marginTop: 2 },
   friendsSection: { paddingHorizontal: 18, paddingTop: 22 },
+  listState: { alignItems: 'center', paddingVertical: 24, gap: 8 },
+  emptyText: { textAlign: 'center', fontSize: 13, paddingVertical: 12 },
+  retryButton: { alignSelf: 'center', borderRadius: 12, backgroundColor: colors.green500, paddingHorizontal: 16, paddingVertical: 9 },
+  retryText: { color: colors.white, fontSize: 12, fontWeight: '800' },
   sectionLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginBottom: 6 },
   chatRow: {
     flexDirection: 'row',

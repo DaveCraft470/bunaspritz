@@ -16,6 +16,8 @@ import { InstagramLink } from '@/components/common/InstagramLink';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { FriendPrefsModal } from '@/components/social/FriendPrefsModal';
 import { ReviewModal } from '@/components/social/ReviewModal';
+import { ReportModal } from '@/components/social/ReportModal';
+import { addReport, hasActiveReport, USER_REPORT_REASONS } from '@/lib/reports';
 import {
   FollowStatus,
   FriendPrefs,
@@ -54,6 +56,8 @@ export default function PublicProfile() {
   const [reviewableEvents, setReviewableEvents] = useState<ReviewableEvent[]>([]);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [followUpdating, setFollowUpdating] = useState(false);
 
   function loadProfile() {
     if (!user || !id) return;
@@ -115,8 +119,9 @@ export default function PublicProfile() {
   }
 
   async function toggleFollow() {
-    if (!user || !id) return;
+    if (!user || !id || followUpdating) return;
     light();
+    setFollowUpdating(true);
     const previous = status;
     let ok: boolean;
     if (status.iFollow) {
@@ -130,6 +135,7 @@ export default function PublicProfile() {
       setStatus(previous);
       showAlert('A apărut o eroare', 'Nu am putut actualiza urmărirea. Încearcă din nou.');
     }
+    setFollowUpdating(false);
   }
 
   async function updatePref(patch: Partial<FriendPrefs>) {
@@ -238,6 +244,7 @@ export default function PublicProfile() {
         <View style={styles.actionsRow}>
           <AnimatedPressable
             onPress={toggleFollow}
+            disabled={followUpdating}
             style={[
               styles.actionButton,
               status.iFollow
@@ -246,7 +253,7 @@ export default function PublicProfile() {
             ]}
           >
             <Text style={[styles.actionText, { color: status.iFollow ? theme.textPrimary : colors.white }]}>
-              {followLabel}
+            {followUpdating ? 'Se actualizează...' : followLabel}
             </Text>
           </AnimatedPressable>
 
@@ -266,6 +273,12 @@ export default function PublicProfile() {
           <Text style={[styles.hint, { color: theme.textSecondary }]}>
             Puteți să vă trimiteți mesaje doar dacă vă urmăriți reciproc.
           </Text>
+        )}
+
+        {user && user.id !== id && (
+          <AnimatedPressable onPress={() => setReportModalOpen(true)} style={[styles.reportButton, { borderColor: theme.border }]}>
+            <Text style={[styles.reportButtonText, { color: theme.textSecondary }]}>Raportează utilizatorul</Text>
+          </AnimatedPressable>
         )}
 
         <View style={styles.reviewsSection}>
@@ -334,6 +347,30 @@ export default function PublicProfile() {
         onSubmit={handleSubmitReview}
         onClose={() => setReviewModalOpen(false)}
       />
+      <ReportModal
+        visible={reportModalOpen}
+        targetType="user"
+        targetLabel={`@${profile.username}`}
+        reasons={USER_REPORT_REASONS}
+        onSubmit={(reason, description) => {
+          if (!user || !id) return;
+          if (hasActiveReport(user.id, 'user', id)) {
+            showAlert('Raport duplicat', 'Ai raportat deja acest utilizator.');
+            return;
+          }
+          addReport({
+            reporterId: user.id,
+            reporterLabel: `@${user.username}`,
+            targetType: 'user',
+            targetId: id,
+            targetLabel: `@${profile.username}`,
+            reason,
+            description,
+          });
+          showAlert('Raport trimis', 'Raportul a fost adăugat local pentru verificare.');
+        }}
+        onClose={() => setReportModalOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -380,6 +417,8 @@ const styles = StyleSheet.create({
   actionButton: { flex: 1, minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   actionText: { fontSize: 14, fontWeight: '800' },
   hint: { fontSize: 11, fontStyle: 'italic', marginTop: 14, textAlign: 'center', maxWidth: 300 },
+  reportButton: { alignSelf: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9, marginTop: 18 },
+  reportButtonText: { fontSize: 11, fontWeight: '700' },
   reviewsSection: { width: '100%', maxWidth: 360, marginTop: 26 },
   reviewsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   reviewsSummary: { flexDirection: 'row', alignItems: 'center', gap: 5 },

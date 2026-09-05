@@ -3,6 +3,7 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, V
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
+import type { Href } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 
@@ -26,16 +27,17 @@ const WAIT_TIMEOUT_MS = 3 * 60 * 1000;
 
 export default function Verification() {
   const { colors: theme } = useAppTheme();
-  const { user } = useUser();
+  const { user, effectiveVerified } = useUser();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
 
   const [status, setStatus] = useState<Status>('idle');
 
   useEffect(() => {
-    if (user?.verified) {
-      router.replace((returnTo as any) || '/');
+    if (effectiveVerified) {
+      const destination: Href = returnTo && returnTo.startsWith('/') ? (returnTo as Href) : '/';
+      router.replace(destination);
     }
-  }, [user?.verified, returnTo]);
+  }, [effectiveVerified, returnTo]);
 
   useEffect(() => {
     if (status !== 'waiting') return;

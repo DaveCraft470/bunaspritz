@@ -12,13 +12,14 @@ import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
+import { isAdminAccessEnabled } from '@/lib/admin';
 
 const DANGER_COLOR = '#E5484D';
 
 export default function Settings() {
   const { scheme, colors: theme, toggleScheme } = useAppTheme();
   const { enabled: hapticsEnabled, setEnabled: setHapticsEnabled, light } = useHaptics();
-  const { user, signOut, setNotifyFriendsOnJoin } = useUser();
+  const { user, effectiveVerified, signOut, setNotifyFriendsOnJoin } = useUser();
 
   async function handleSignOut() {
     light();
@@ -126,7 +127,7 @@ export default function Settings() {
       <AnimatedPressable
         onPress={() => {
           light();
-          if (VERIFICATION_REQUIRED && !user?.verified) {
+          if (VERIFICATION_REQUIRED && !effectiveVerified) {
             router.push({ pathname: '/verification', params: { returnTo: '/new-event' } });
             return;
           }
@@ -137,9 +138,43 @@ export default function Settings() {
         <View style={styles.rowText}>
           <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Adaugă eveniment nou</Text>
           <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
-            {!VERIFICATION_REQUIRED || user?.verified
+            {!VERIFICATION_REQUIRED || effectiveVerified
               ? 'Publică un eveniment nou pe hartă.'
               : 'Necesită verificarea identității — apasă pentru a începe.'}
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+      </AnimatedPressable>
+
+      {isAdminAccessEnabled(user) && (
+        <AnimatedPressable
+          onPress={() => {
+            light();
+            router.push('/admin');
+          }}
+          style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        >
+          <View style={styles.rowText}>
+            <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Admin Panel</Text>
+            <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
+              Instrumente locale de administrare și moderare.
+            </Text>
+          </View>
+          <Ionicons name="shield-checkmark-outline" size={18} color={theme.accent} />
+        </AnimatedPressable>
+      )}
+
+      <AnimatedPressable
+        onPress={() => {
+          light();
+          router.push('/organizer');
+        }}
+        style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+      >
+        <View style={styles.rowText}>
+          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Organizer Mode</Text>
+          <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
+            Gestionează evenimentele create de tine.
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />

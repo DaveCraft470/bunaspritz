@@ -7,9 +7,10 @@ export type Profile = {
   bio: string;
   avatar_url: string | null;
   instagram_handle: string | null;
-};
+  verified: boolean;
+}
 
-const PROFILE_COLUMNS = 'id, name, username, bio, avatar_url, instagram_handle';
+const PROFILE_COLUMNS = 'id, name, username, bio, avatar_url, instagram_handle, verified';
 
 export async function searchProfiles(query: string, excludeId: string): Promise<Profile[]> {
   const trimmed = query.trim().replace(/[,()]/g, '');
@@ -29,6 +30,13 @@ export async function searchProfiles(query: string, excludeId: string): Promise<
 export async function getProfile(id: string): Promise<Profile | null> {
   const { data, error } = await supabase.from('profiles').select(PROFILE_COLUMNS).eq('id', id).single();
   if (error) return null;
+  return data;
+}
+
+export async function getProfiles(ids: string[]): Promise<Profile[]> {
+  if (!ids.length) return [];
+  const { data, error } = await supabase.from('profiles').select(PROFILE_COLUMNS).in('id', ids);
+  if (error) return [];
   return data;
 }
 

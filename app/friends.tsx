@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -126,6 +126,14 @@ export default function Friends() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.green500} />}
       >
+        {loading && (
+          <View style={styles.loadingState}>
+            <ActivityIndicator color={colors.green500} />
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Se încarcă prietenii...</Text>
+          </View>
+        )}
+
+
         {!loading && loadError && (
           <>
             <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
@@ -202,6 +210,8 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: '800' },
   content: { paddingHorizontal: spacing.lg, paddingBottom: 40 },
+  loadingState: { alignItems: 'center', paddingVertical: 32, gap: 10 },
+  loadingText: { fontSize: 13 },
   emptyText: { fontSize: 13, fontStyle: 'italic', paddingVertical: 20, textAlign: 'center' },
   retryButton: { alignSelf: 'center', marginTop: 4, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 14, borderWidth: 1 },
   retryText: { fontSize: 13, fontWeight: '700' },

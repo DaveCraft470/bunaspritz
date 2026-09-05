@@ -85,7 +85,7 @@ export async function getEventAttendeeCount(eventId: string): Promise<number> {
 
 export async function fetchEvents(): Promise<SpritzEvent[]> {
   const { data, error } = await supabase.from('events').select(EVENT_COLUMNS).order('created_at', { ascending: true });
-  if (error) return [];
+  if (error) throw error;
   return data.map(mapEvent);
 }
 
@@ -123,6 +123,37 @@ export async function createEvent(
   // Best-effort — a failed push shouldn't undo an already-published event.
   supabase.functions.invoke('notify-new-event', { body: { eventId: data.id } }).catch(() => {});
 
+  return mapEvent(data);
+}
+
+export async function updateEvent(
+  eventId: string,
+  hostId: string,
+  fields: Omit<SpritzEvent, 'id' | 'hostId'>
+): Promise<SpritzEvent | null> {
+  const { data, error } = await supabase
+    .from('events')
+    .update({
+      title: fields.title,
+      detail: fields.detail,
+      emoji: fields.emoji,
+      color: fields.color,
+      lng: fields.lng,
+      lat: fields.lat,
+      genre: fields.genre,
+      starts_at: fields.startsAt,
+      entry_fee_ron: fields.entryFeeRon,
+      drinks_price_ron: fields.drinksPriceRon,
+      max_participants: fields.maxParticipants,
+      location_is_rented: fields.locationIsRented,
+      rental_proof_path: fields.rentalProofPath,
+    })
+    .eq('id', eventId)
+    .eq('host_id', hostId)
+    .select(EVENT_COLUMNS)
+    .single();
+
+  if (error || !data) return null;
   return mapEvent(data);
 }
 
@@ -178,6 +209,12 @@ export async function hasJoined(eventId: string, userId: string): Promise<boolea
     .eq('user_id', userId)
     .maybeSingle();
   return !!data;
+}
+
+export async function getUserJoinedEventIds(userId: string): Promise<string[]> {
+  const { data, error } = await supabase.from('event_attendees').select('event_id').eq('user_id', userId);
+  if (error) throw error;
+  return data.map((row) => row.event_id);
 }
 
 // joinEvent's "hosting an event auto-joins you as an attendee" means the

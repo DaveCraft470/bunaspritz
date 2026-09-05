@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Dimensions, Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -20,6 +20,8 @@ import { getProfile } from '@/lib/social';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { CelebrationOverlay } from '@/components/event/CelebrationOverlay';
+import { ReportModal } from '@/components/social/ReportModal';
+import { addReport, EVENT_REPORT_REASONS, hasActiveReport } from '@/lib/reports';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -43,13 +45,13 @@ function formatPrice(value: number | null) {
 
 export default function EventDetail() {
   const { id, originX, originY } = useLocalSearchParams<{ id: string; originX?: string; originY?: string }>();
-  const { events, removeEvent } = useEvents();
+  const { events, loading: eventsLoading, error: eventsError, refresh, removeEvent } = useEvents();
   const event = getSpritzEvent(events, id);
   const insets = useSafeAreaInsets();
   const { scheme, colors: theme } = useAppTheme();
   const { setHidden } = useNavVisibility();
   const { light, medium } = useHaptics();
-  const { user } = useUser();
+  const { user, effectiveVerified } = useUser();
   const [celebrating, setCelebrating] = useState(false);
   const [attendees, setAttendees] = useState<EventAttendee[]>([]);
   // A separate, privacy-safe true count — attendees (above) comes from
@@ -60,6 +62,7 @@ export default function EventDetail() {
   const [hostName, setHostName] = useState<string | null>(null);
   const [joined, setJoined] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
 
   useEffect(() => {
     if (!event || !user) return;
@@ -140,7 +143,7 @@ export default function EventDetail() {
 
     if (isFull) return;
 
-    if (VERIFICATION_REQUIRED && !user.verified) {
+    if (VERIFICATION_REQUIRED && !effectiveVerified) {
       router.push({ pathname: '/verification', params: { returnTo: `/event/${event.id}` } });
       return;
     }
@@ -196,7 +199,20 @@ export default function EventDetail() {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
         <StatusBar style={theme.statusBar} />
-        <Text style={{ color: theme.textPrimary, padding: 22 }}>Eveniment negăsit.</Text>
+        <View style={styles.missingState}>
+          {eventsLoading && <ActivityIndicator color={colors.green500} />}
+          <Text style={[styles.missingText, { color: theme.textPrimary }]}>
+            {eventsLoading ? 'Se încarcă evenimentul...' : eventsError ? 'Nu am putut încărca evenimentul.' : 'Eveniment negăsit.'}
+          </Text>
+          {eventsError && (
+            <AnimatedPressable onPress={refresh} style={[styles.retryButton, { borderColor: theme.border }]}>
+              <Text style={[styles.retryText, { color: theme.textPrimary }]}>Reîncearcă</Text>
+            </AnimatedPressable>
+          )}
+          <AnimatedPressable onPress={() => router.back()} style={styles.missingBack}>
+            <Text style={[styles.retryText, { color: theme.accent }]}>Înapoi</Text>
+          </AnimatedPressable>
+        </View>
       </SafeAreaView>
     );
   }
@@ -332,7 +348,7 @@ export default function EventDetail() {
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>CINE VINE</Text>
             <Text style={[styles.attendeeCount, { color: theme.textPrimary }]}>
-              {attendees.length}{event.maxParticipants !== null ? ` / ${event.maxParticipants}` : ''} persoane
+              {attendeeCount}{event.maxParticipants !== null ? ` / ${event.maxParticipants}` : ''} persoane
             </Text>
             <View style={styles.attendeeRow}>
               {attendees.map((attendee) => (
@@ -351,6 +367,23 @@ export default function EventDetail() {
                 </AnimatedPressable>
               ))}
             </View>
+            {isHost && (
+              <AnimatedPressable
+                onPress={() => router.push({ pathname: '/organizer-participants/[id]', params: { id: event.id } })}
+                style={[styles.manageParticipantsButton, { borderColor: theme.border }]}
+              >
+                <Ionicons name="settings-outline" size={15} color={theme.accent} />
+                <Text style={[styles.manageParticipantsText, { color: theme.accent }]}>Gestionează participanții</Text>
+              </AnimatedPressable>
+            )}
+            {!isHost && (
+              <AnimatedPressable
+                onPress={() => setReportModalOpen(true)}
+                style={[styles.reportEventButton, { borderColor: theme.border }]}
+              >
+                <Text style={[styles.reportEventText, { color: theme.textSecondary }]}>Raportează evenimentul</Text>
+              </AnimatedPressable>
+            )}
           </View>
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -378,10 +411,19 @@ export default function EventDetail() {
           </View>
 
           {isHost && (
-            <AnimatedPressable onPress={confirmCancelEvent} style={styles.cancelEventButton}>
-              <Ionicons name="trash-outline" size={14} color="#E5484D" />
-              <Text style={styles.cancelEventText}>Anulează evenimentul</Text>
-            </AnimatedPressable>
+            <>
+              <AnimatedPressable
+                onPress={() => router.push({ pathname: '/edit-event/[id]', params: { id: event.id } })}
+                style={[styles.editEventButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              >
+                <Ionicons name="create-outline" size={15} color={theme.accent} />
+                <Text style={[styles.editEventText, { color: theme.accent }]}>Editează evenimentul</Text>
+              </AnimatedPressable>
+              <AnimatedPressable onPress={confirmCancelEvent} style={styles.cancelEventButton}>
+                <Ionicons name="trash-outline" size={14} color="#E5484D" />
+                <Text style={styles.cancelEventText}>Anulează evenimentul</Text>
+              </AnimatedPressable>
+            </>
           )}
         </ScrollView>
 
@@ -411,12 +453,42 @@ export default function EventDetail() {
           notch/status-bar included, and isn't shrunk by the entrance/exit
           transform (it's a separate, later, user-triggered overlay). */}
       {celebrating ? <CelebrationOverlay onDone={() => setCelebrating(false)} /> : null}
+      {event && user ? (
+        <ReportModal
+          visible={reportModalOpen}
+          targetType="event"
+          targetLabel={event.title}
+          reasons={EVENT_REPORT_REASONS}
+          onSubmit={(reason, description) => {
+            if (hasActiveReport(user.id, 'event', event.id)) {
+              Alert.alert('Raport duplicat', 'Ai raportat deja acest eveniment.');
+              return;
+            }
+            addReport({
+              reporterId: user.id,
+              reporterLabel: `@${user.username}`,
+              targetType: 'event',
+              targetId: event.id,
+              targetLabel: event.title,
+              reason,
+              description,
+            });
+            Alert.alert('Raport trimis', 'Raportul a fost adăugat local pentru verificare.');
+          }}
+          onClose={() => setReportModalOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  missingState: { alignItems: 'center', justifyContent: 'center', flex: 1, padding: 24 },
+  missingText: { fontSize: 15, fontWeight: '700', textAlign: 'center', marginTop: 12 },
+  retryButton: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginTop: 16 },
+  retryText: { fontSize: 13, fontWeight: '700' },
+  missingBack: { padding: 12, marginTop: 4 },
   animatedRoot: { flex: 1 },
   safeArea: { flex: 1 },
   topBar: {
@@ -483,6 +555,10 @@ const styles = StyleSheet.create({
   directionsText: { fontSize: 13, fontWeight: '800' },
   attendeeCount: { fontSize: 18, fontWeight: '800' },
   attendeeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 2 },
+  manageParticipantsButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderRadius: 12, paddingVertical: 10, marginTop: 14 },
+  manageParticipantsText: { fontSize: 12, fontWeight: '800' },
+  reportEventButton: { alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingVertical: 10, marginTop: 10 },
+  reportEventText: { fontSize: 12, fontWeight: '700' },
   attendeeItem: { alignItems: 'center', width: 52 },
   attendeeAvatar: { width: 44, height: 44, borderRadius: 22 },
   attendeeName: { fontSize: 10, marginTop: 4 },
@@ -502,6 +578,17 @@ const styles = StyleSheet.create({
     marginTop: 2,
     paddingVertical: 10,
   },
+  editEventButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 2,
+    paddingVertical: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  editEventText: { fontSize: 13, fontWeight: '800' },
   cancelEventText: { fontSize: 13, fontWeight: '700', color: '#E5484D' },
   ctaWrap: {
     position: 'absolute',

@@ -21,6 +21,7 @@ type UserContextValue = {
   loading: boolean;
   authenticated: boolean;
   user: PublicUser | null;
+  effectiveVerified: boolean;
   signUp: (name: string, username: string, email: string, password: string) => Promise<AuthResult>;
   logIn: (email: string, password: string) => Promise<AuthResult & { verified?: boolean }>;
   signOut: () => Promise<void>;
@@ -41,6 +42,7 @@ export function UserProvider({ children }: PropsWithChildren) {
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
   const [user, setUser] = useState<PublicUser | null>(null);
+  const effectiveVerified = !!user && (__DEV__ || user.verified);
 
   // authenticated = has a session. Identity verification (user.verified) is
   // a separate, optional gate now — triggered from the profile menu or when
@@ -94,6 +96,7 @@ export function UserProvider({ children }: PropsWithChildren) {
       loading,
       authenticated,
       user,
+      effectiveVerified,
       async signUp(name, username, email, password) {
         const result = await registerUser(name, username, email, password);
         if (result.ok) {
@@ -142,7 +145,7 @@ export function UserProvider({ children }: PropsWithChildren) {
         setUser((current) => (current ? { ...current, notifyFriendsOnJoin: value } : current));
       },
     }),
-    [loading, authenticated, user]
+    [loading, authenticated, user, effectiveVerified]
   );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;

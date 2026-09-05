@@ -19,7 +19,7 @@ import { getUserEventStats } from '@/lib/events';
 export default function Profile() {
   const insets = useSafeAreaInsets();
   const { colors: theme } = useAppTheme();
-  const { user } = useUser();
+  const { user, effectiveVerified } = useUser();
   const [friendCount, setFriendCount] = useState(0);
   const [eventStats, setEventStats] = useState({ attended: 0, hosted: 0 });
   const [refreshing, setRefreshing] = useState(false);
@@ -70,7 +70,7 @@ export default function Profile() {
           <View style={styles.profileTitleBlock}>
             <View style={styles.nameRow}>
               <Text style={[styles.profileName, { color: theme.textPrimary }]}>{name}</Text>
-              {VERIFICATION_REQUIRED && user?.verified && (
+              {VERIFICATION_REQUIRED && effectiveVerified && (
                 <View style={styles.verifiedBadge}>
                   <Text style={styles.verifiedText}>✓</Text>
                 </View>
@@ -98,6 +98,19 @@ export default function Profile() {
             <Text style={[styles.statNumber, { color: theme.textPrimary }]}>{eventStats.attended}</Text>
             <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Evenimente</Text>
           </View>
+
+          <Pressable
+            onPress={() => router.push('/my-events')}
+            style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          >
+            <View style={styles.myEventsCopy}>
+              <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>Evenimentele mele</Text>
+              <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
+                Vezi evenimentele la care participi și pe cele organizate de tine.
+              </Text>
+            </View>
+            <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
+          </Pressable>
           <View style={styles.stat}>
             <Text style={[styles.statNumber, { color: theme.textPrimary }]}>{eventStats.hosted}</Text>
             <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Găzduite</Text>
@@ -107,7 +120,7 @@ export default function Profile() {
         {VERIFICATION_REQUIRED && (
           <Pressable
             onPress={() => {
-              if (!user?.verified) {
+              if (!effectiveVerified) {
                 router.push({ pathname: '/verification', params: { returnTo: '/profile' } });
               }
             }}
@@ -118,15 +131,15 @@ export default function Profile() {
             </View>
             <View style={styles.verifyCopy}>
               <Text style={[styles.verifyTitle, { color: theme.textPrimary }]}>
-                {user?.verified ? 'Identitate verificată' : 'Verificare identitate'}
+                {effectiveVerified ? 'Identitate verificată' : 'Verificare identitate'}
               </Text>
               <Text style={[styles.verifyDetail, { color: theme.textSecondary }]}>
-                {user?.verified
+                {effectiveVerified
                   ? 'Contul tău a trecut de verificarea 18+.'
                   : 'Necesară pentru a te alătura unui Spritz.'}
               </Text>
             </View>
-            {!user?.verified && <Text style={[styles.verifyArrow, { color: theme.accent }]}>›</Text>}
+            {!effectiveVerified && <Text style={[styles.verifyArrow, { color: theme.accent }]}>›</Text>}
           </Pressable>
         )}
       </ScrollView>
@@ -153,6 +166,11 @@ const styles = StyleSheet.create({
   stat: { flex: 1, paddingVertical: 14, alignItems: 'center' },
   statNumber: { fontSize: 19, fontWeight: '800' },
   statLabel: { fontSize: 10, marginTop: 3, fontWeight: '700' },
+  myEventsButton: { marginTop: 4, padding: 14, flexDirection: 'row', alignItems: 'center', borderRadius: 17, borderWidth: 1 },
+  myEventsCopy: { flex: 1 },
+  myEventsTitle: { fontSize: 14, fontWeight: '800' },
+  myEventsDetail: { fontSize: 11, lineHeight: 15, marginTop: 3 },
+  myEventsArrow: { fontSize: 28, fontWeight: '300' },
   verifyCard: { marginTop: 22, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 17, borderWidth: 1 },
   verifyIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   verifyIconText: { fontSize: 19, fontWeight: '900' },

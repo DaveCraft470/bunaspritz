@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +12,7 @@ import { colors, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useEvents } from '@/contexts/EventsContext';
+import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { FadeInUp } from '@/components/common/FadeInUp';
 import { MapboxMap, type MapboxMapHandle } from './MapboxMap';
 import { LogoWordmark } from './LogoWordmark';
@@ -26,7 +28,7 @@ function isEventToday(startsAt: string | null) {
   return new Date(startsAt).toDateString() === new Date().toDateString();
 }
 
-export function MapPlaceholder() {
+export function MapPlaceholder({ onOpenCalendar }: { onOpenCalendar?: () => void }) {
   const insets = useSafeAreaInsets();
   const { scheme, colors: theme } = useAppTheme();
   const fade = useRef(new Animated.Value(1)).current;
@@ -186,7 +188,19 @@ export function MapPlaceholder() {
       </FadeInUp>
 
       <FadeInUp delay={80} style={[styles.themeToggle, { top: insets.top + spacing.md + 44 }]}>
-        <MenuButton />
+        <View style={styles.headerActions}>
+          {onOpenCalendar && (
+            <AnimatedPressable
+              onPress={onOpenCalendar}
+              hitSlop={10}
+              accessibilityLabel="Arată calendarul public"
+              style={styles.calendarButton}
+            >
+              <Ionicons name="calendar-outline" size={21} color={colors.green700} />
+            </AnimatedPressable>
+          )}
+          <MenuButton />
+        </View>
       </FadeInUp>
 
       <FadeInUp delay={140} style={[styles.bottomLeft, { bottom: insets.bottom + 96 }]}>
@@ -227,6 +241,21 @@ const styles = StyleSheet.create({
   themeToggle: {
     position: 'absolute',
     right: spacing.lg,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  calendarButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FBFEFC',
+    borderWidth: 1,
+    borderColor: '#EAF7EF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   bottomLeft: {
     position: 'absolute',
