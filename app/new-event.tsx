@@ -1,0 +1,562 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Image, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
+
+import { MAPBOX_INITIAL_VIEW, buildApproxStaticMapUrl } from '@/constants/mapbox';
+import { useEvents } from '@/contexts/EventsContext';
+import { useHaptics } from '@/contexts/HapticsContext';
+import { useUser } from '@/contexts/UserContext';
+import { createEvent, removeRentalProof, uploadRentalProof } from '@/lib/events';
+import { alertPermissionDenied } from '@/lib/permissions';
+import { colors, glassButton, shadows, spacing } from '@/constants/theme';
+import { useAppTheme } from '@/contexts/ThemeContext';
+import { AnimatedPressable } from '@/components/common/AnimatedPressable';
+import { GlassSurface } from '@/components/common/GlassSurface';
+import { LocationPickerModal } from '@/components/event/LocationPickerModal';
+import { extensionAndTypeForImage } from '@/lib/media';
+import { addMonths, isDateBetween, startOfDay } from '@/lib/calendar';
+import { WheelPicker } from '@/components/common/WheelPicker';
+
+const TITLE_MAX_LENGTH = 60;
+const DETAIL_MAX_LENGTH = 200;
+
+const EMOJI_CHOICES = ['🎉', '🍻', '🎷', '🎸', '🌮', '🎲', '🥾', '🧺', '⛰️', '🍹'];
+const COLOR_CHOICES = ['#FF9F5A', '#5FD98A', '#5AA9E6', '#FFD25A', '#FF6B81', '#B388FF', '#4ED9C9'];
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const MINUTES = [0, 15, 30, 45];
+const MONTHS = ['IANUARIE', 'FEBRUARIE', 'MARTIE', 'APRILIE', 'MAI', 'IUNIE', 'IULIE', 'AUGUST', 'SEPTEMBRIE', 'OCTOMBRIE', 'NOIEMBRIE', 'DECEMBRIE'];
+
+export default function NewEvent() {
+  const { colors: theme, scheme } = useAppTheme();
+  const { addEvent } = useEvents();
+  const { user, effectiveVerified } = useUser();
+  const { light, medium } = useHaptics();
+  const [publishing, setPublishing] = useState(false);
+  // A ref alongside the state: two taps landing before React commits the
+  // first setPublishing(true) could both pass a state-only guard and both
+  // insert an event. The ref updates synchronously, closing that window.
+  const publishingRef = useRef(false);
+
+  const [title, setTitle] = useState('');
+  const [detail, setDetail] = useState('');
+  const [genre, setGenre] = useState('');
+  const [emoji, setEmoji] = useState(EMOJI_CHOICES[0]);
+  const [color, setColor] = useState(COLOR_CHOICES[Math.floor(Math.random() * COLOR_CHOICES.length)]);
+  const [coords, setCoords] = useState<{ lng: number; lat: number } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const [hour, setHour] = useState(Math.min(new Date().getHours() + 1, 23));
+  const [minute, setMinute] = useState(0);
+  const today = startOfDay(new Date());
+  const latestDate = addMonths(today, 1);
+  const [selectedDate, setSelectedDate] = useState(today);
+
+  const [entryFee, setEntryFee] = useState('');
+  const [drinksPrice, setDrinksPrice] = useState('');
+  const [maxParticipants, setMaxParticipants] = useState('');
+
+  // null = not specified — a real third state, not just "no". Tapping the
+  // active chip again resets to null instead of forcing a binary answer.
+  const [locationIsRented, setLocationIsRented] = useState<boolean | null>(null);
+  const [rentalProofAsset, setRentalProofAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+
+  // settings.tsx already redirects to /verification before ever linking
+  // here, but guard against reaching this screen another way (deep link,
+  // back-forward) — hosting requires the same identity verification as
+  // joining does, enforced again server-side by the events INSERT policy.
+  useEffect(() => {
+    if (!effectiveVerified) {
+      router.replace({ pathname: '/verification', params: { returnTo: '/new-event' } });
+    }
+  }, [effectiveVerified]);
+
+  // Just a starting point, not the only option anymore — the host can move
+  // the pin anywhere via LocationPickerModal.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const last = await Location.getLastKnownPositionAsync();
+        if (last) setCoords({ lng: last.coords.longitude, lat: last.coords.latitude });
+      } catch {
+        // Falls back to the Brașov center default below.
+      }
+    })();
+  }, []);
+
+  function buildStartsAt() {
+    const startsAt = new Date(selectedDate);
+    startsAt.setHours(hour, minute, 0, 0);
+    return startsAt;
+  }
+
+  function isSelectedDateValid() {
+    return isDateBetween(selectedDate, today, latestDate);
+  }
+
+  const dateDays = useMemo(
+    () =>
+      Array.from({ length: 31 }, (_, day) => {
+        const value = day + 1;
+        const candidate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), value);
+        return {
+          label: String(value).padStart(2, '0'),
+          value,
+          disabled: candidate.getDate() !== value || !isDateBetween(candidate, today, latestDate),
+        };
+      }),
+    [selectedDate, today, latestDate]
+  );
+  const dateMonths = useMemo(
+    () => {
+      const firstMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const lastMonth = new Date(latestDate.getFullYear(), latestDate.getMonth(), 1);
+      const monthCount = (lastMonth.getFullYear() - firstMonth.getFullYear()) * 12 + lastMonth.getMonth() - firstMonth.getMonth() + 1;
+      return Array.from({ length: monthCount }, (_, index) => {
+        const date = new Date(firstMonth.getFullYear(), firstMonth.getMonth() + index, 1);
+        const value = date.getFullYear() * 12 + date.getMonth();
+        const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+        return {
+          label: MONTHS[date.getMonth()],
+          value,
+          disabled: !Array.from({ length: daysInMonth }, (_, day) => isDateBetween(new Date(date.getFullYear(), date.getMonth(), day + 1), today, latestDate)).some(Boolean),
+        };
+      });
+    },
+    [selectedDate, today, latestDate]
+  );
+
+  function selectDatePart(part: 'day' | 'month', value: number) {
+    const year = part === 'month' ? Math.floor(value / 12) : selectedDate.getFullYear();
+    const month = part === 'month' ? value % 12 : selectedDate.getMonth();
+    const day = part === 'day' ? value : selectedDate.getDate();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const candidate = new Date(year, month, Math.min(day, daysInMonth));
+    if (isDateBetween(candidate, today, latestDate)) setSelectedDate(candidate);
+  }
+
+  async function handlePickRentalProof() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      alertPermissionDenied(permission.canAskAgain, 'Activează accesul la poze din Setările telefonului ca să atașezi o dovadă.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
+    if (result.canceled || !result.assets[0]) return;
+
+    light();
+    setRentalProofAsset(result.assets[0]);
+  }
+
+  async function handlePublish() {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) {
+      Alert.alert('Mai e nevoie de un nume', 'Dă-i evenimentului un titlu înainte să-l publici.');
+      return;
+    }
+    if (!user || publishingRef.current) return;
+
+    if (!isSelectedDateValid()) {
+      Alert.alert('Data invalidă', 'Alege o dată între azi și peste o lună.');
+      return;
+    }
+
+    // The default hour/minute (now + 1h, capped at 23:00) can land in the
+    // past when the event is created late at night.
+    if (buildStartsAt().getTime() < Date.now()) {
+      Alert.alert('Ora aleasă a trecut deja', 'Alege o oră care nu a trecut încă.');
+      return;
+    }
+
+    const finalCoords = coords ?? { lng: MAPBOX_INITIAL_VIEW.center[0], lat: MAPBOX_INITIAL_VIEW.center[1] };
+    const parsedEntryFee = entryFee.trim() ? Number(entryFee.replace(',', '.')) : null;
+    const parsedDrinksPrice = drinksPrice.trim() ? Number(drinksPrice.replace(',', '.')) : null;
+    const parsedMaxParticipants = maxParticipants.trim() ? Number(maxParticipants) : null;
+
+    // The DB rejects a negative entry_fee_ron/drinks_price_ron (see
+    // events_entry_fee_non_negative / events_drinks_price_non_negative), but
+    // used to only surface that as the generic "couldn't publish" error
+    // after a round-trip — catch it here with a specific message instead.
+    if (parsedEntryFee !== null && !Number.isNaN(parsedEntryFee) && parsedEntryFee < 0) {
+      Alert.alert('Preț invalid', 'Prețul intrării nu poate fi negativ.');
+      return;
+    }
+    if (parsedDrinksPrice !== null && !Number.isNaN(parsedDrinksPrice) && parsedDrinksPrice < 0) {
+      Alert.alert('Preț invalid', 'Prețul băuturilor nu poate fi negativ.');
+      return;
+    }
+
+    publishingRef.current = true;
+    setPublishing(true);
+
+    try {
+      let rentalProofPath: string | null = null;
+      if (locationIsRented && rentalProofAsset) {
+        const { extension, contentType } = extensionAndTypeForImage(rentalProofAsset);
+        rentalProofPath = await uploadRentalProof(user.id, rentalProofAsset.uri, extension, contentType);
+      }
+
+      const created = await createEvent(user.id, {
+        title: trimmedTitle,
+        detail: detail.trim() || 'Detalii în curând',
+        emoji,
+        color,
+        lng: finalCoords.lng,
+        lat: finalCoords.lat,
+        genre: genre.trim() || 'Surpriză',
+        startsAt: buildStartsAt().toISOString(),
+        entryFeeRon: parsedEntryFee !== null && !Number.isNaN(parsedEntryFee) ? parsedEntryFee : null,
+        drinksPriceRon: parsedDrinksPrice !== null && !Number.isNaN(parsedDrinksPrice) ? parsedDrinksPrice : null,
+        maxParticipants:
+          parsedMaxParticipants !== null && !Number.isNaN(parsedMaxParticipants) && parsedMaxParticipants > 0
+            ? Math.floor(parsedMaxParticipants)
+            : null,
+        locationIsRented,
+        rentalProofPath,
+      });
+
+      if (!created) {
+        // The upload succeeded even though the event insert didn't —
+        // clean it up rather than leaving an orphaned file, same as
+        // sendMediaMessage does for message media.
+        if (rentalProofPath) removeRentalProof(rentalProofPath).catch(() => {});
+        Alert.alert('A apărut o eroare', 'Nu am putut publica evenimentul. Încearcă din nou.');
+        return;
+      }
+
+      medium();
+      addEvent(created);
+      router.replace({ pathname: '/event/[id]', params: { id: created.id } });
+    } finally {
+      publishingRef.current = false;
+      setPublishing(false);
+    }
+  }
+
+  const mapPreviewUrl = coords ? buildApproxStaticMapUrl(coords.lng, coords.lat, scheme, 640, 160) : null;
+
+  return (
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
+      <StatusBar style={theme.statusBar} />
+
+      <View style={styles.topBar}>
+        <AnimatedPressable
+          onPress={() => {
+            light();
+            router.back();
+          }}
+          hitSlop={10}
+          accessibilityLabel="Înapoi"
+          style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
+        >
+          <GlassSurface />
+          <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
+        </AnimatedPressable>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>Eveniment nou</Text>
+        <View style={styles.backButton} />
+      </View>
+
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={Platform.OS === 'ios' ? 20 : 0}
+        keyboardOpeningTime={0}
+      >
+        <Text style={[styles.label, { color: theme.textSecondary }]}>TITLU</Text>
+        <TextInput
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Ex: Grătar la iarbă verde"
+          placeholderTextColor={theme.textSecondary}
+          style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
+          maxLength={TITLE_MAX_LENGTH}
+        />
+        <Text style={[styles.counter, { color: theme.textSecondary }]}>
+          {title.length}/{TITLE_MAX_LENGTH}
+        </Text>
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>DESCRIERE</Text>
+        <TextInput
+          value={detail}
+          onChangeText={setDetail}
+          placeholder="Spune-le prietenilor ce să aștepte"
+          placeholderTextColor={theme.textSecondary}
+          style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
+          maxLength={DETAIL_MAX_LENGTH}
+        />
+        <Text style={[styles.counter, { color: theme.textSecondary }]}>
+          {detail.length}/{DETAIL_MAX_LENGTH}
+        </Text>
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>LOCAȚIE</Text>
+        <AnimatedPressable
+          onPress={() => {
+            light();
+            setPickerOpen(true);
+          }}
+          style={[styles.locationCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        >
+          {mapPreviewUrl ? (
+            <Image source={{ uri: mapPreviewUrl }} style={styles.locationPreview} resizeMode="cover" />
+          ) : (
+            <View style={[styles.locationPreview, styles.locationPreviewEmpty, { backgroundColor: theme.surfaceMuted }]} />
+          )}
+          <View style={styles.locationCardFooter}>
+            <Ionicons name="location" size={16} color={colors.green500} />
+            <Text style={[styles.locationCardText, { color: theme.textPrimary }]}>
+              {coords ? 'Schimbă locația' : 'Alege locația pe hartă'}
+            </Text>
+          </View>
+        </AnimatedPressable>
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>DATĂ</Text>
+        <View style={[styles.wheelGroup, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <WheelPicker label="ZI" options={dateDays} selectedValue={selectedDate.getDate()} onValueChange={(value) => selectDatePart('day', value)} />
+          <WheelPicker label="LUNĂ" options={dateMonths} selectedValue={selectedDate.getFullYear() * 12 + selectedDate.getMonth()} onValueChange={(value) => selectDatePart('month', value)} />
+          <Text style={[styles.selectedDateText, { color: theme.textSecondary }]}>
+            {selectedDate.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </Text>
+        </View>
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>ORĂ</Text>
+        <View style={[styles.wheelGroup, styles.timeWheelGroup, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <WheelPicker label="ORE" options={HOURS.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={hour} onValueChange={setHour} />
+          <Text style={[styles.timeSeparator, { color: theme.textPrimary }]}>:</Text>
+          <WheelPicker label="MINUTE" options={MINUTES.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={minute} onValueChange={setMinute} />
+        </View>
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>MUZICĂ / GEN</Text>
+        <TextInput
+          value={genre}
+          onChangeText={setGenre}
+          placeholder="Ex: Manele & trap"
+          placeholderTextColor={theme.textSecondary}
+          style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
+        />
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>PREȚ INTRARE (RON)</Text>
+        <TextInput
+          value={entryFee}
+          onChangeText={setEntryFee}
+          placeholder="Lasă gol dacă e gratis"
+          placeholderTextColor={theme.textSecondary}
+          keyboardType="decimal-pad"
+          style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
+        />
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>PREȚ BĂUTURI (RON)</Text>
+        <TextInput
+          value={drinksPrice}
+          onChangeText={setDrinksPrice}
+          placeholder="Ex: 15"
+          placeholderTextColor={theme.textSecondary}
+          keyboardType="decimal-pad"
+          style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
+        />
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>MAX PARTICIPANȚI</Text>
+        <TextInput
+          value={maxParticipants}
+          onChangeText={setMaxParticipants}
+          placeholder="Lasă gol pentru nelimitat"
+          placeholderTextColor={theme.textSecondary}
+          keyboardType="number-pad"
+          style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
+        />
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>LOCAȚIA E ÎNCHIRIATĂ?</Text>
+        <View style={styles.rentedRow}>
+          {[
+            { label: 'Da', value: true },
+            { label: 'Nu', value: false },
+          ].map((option) => (
+            <AnimatedPressable
+              key={option.label}
+              onPress={() => {
+                light();
+                setLocationIsRented((current) => (current === option.value ? null : option.value));
+                if (option.value !== true) setRentalProofAsset(null);
+              }}
+              style={[
+                styles.rentedChip,
+                { backgroundColor: theme.surface, borderColor: locationIsRented === option.value ? colors.green500 : theme.border },
+                locationIsRented === option.value && styles.chipActive,
+              ]}
+            >
+              <Text style={[styles.chipText, { color: locationIsRented === option.value ? colors.green500 : theme.textPrimary }]}>
+                {option.label}
+              </Text>
+            </AnimatedPressable>
+          ))}
+        </View>
+
+        {locationIsRented === true && (
+          <>
+            <AnimatedPressable
+              onPress={handlePickRentalProof}
+              style={[styles.rentalProofCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            >
+              {rentalProofAsset ? (
+                <Image source={{ uri: rentalProofAsset.uri }} style={styles.rentalProofPreview} resizeMode="cover" />
+              ) : (
+                <Ionicons name="camera-outline" size={20} color={theme.accent} />
+              )}
+              <Text style={[styles.rentalProofText, { color: theme.textPrimary }]}>
+                {rentalProofAsset ? 'Schimbă dovada' : 'Atașează dovada (opțional)'}
+              </Text>
+            </AnimatedPressable>
+            <Text style={[styles.rentalProofHint, { color: theme.textSecondary }]}>
+              Rămâne privată — doar tu o vezi, nu apare public pe eveniment.
+            </Text>
+          </>
+        )}
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>ICONIȚĂ</Text>
+        <View style={styles.emojiRow}>
+          {EMOJI_CHOICES.map((choice) => (
+            <AnimatedPressable
+              key={choice}
+              onPress={() => {
+                light();
+                setEmoji(choice);
+              }}
+              style={[
+                styles.emojiChip,
+                { backgroundColor: theme.surface, borderColor: choice === emoji ? colors.green500 : theme.border },
+                choice === emoji && styles.emojiChipActive,
+              ]}
+            >
+              <Text style={styles.emojiChipText}>{choice}</Text>
+            </AnimatedPressable>
+          ))}
+        </View>
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>CULOARE</Text>
+        <View style={styles.emojiRow}>
+          {COLOR_CHOICES.map((choice) => (
+            <AnimatedPressable
+              key={choice}
+              onPress={() => {
+                light();
+                setColor(choice);
+              }}
+              style={[
+                styles.colorChip,
+                { backgroundColor: choice },
+                choice === color && styles.colorChipActive,
+              ]}
+            />
+          ))}
+        </View>
+
+        <AnimatedPressable
+          onPress={handlePublish}
+          style={[styles.publishButton, shadows.glowGreen, publishing && styles.publishButtonDisabled]}
+        >
+          <Text style={styles.publishText}>{publishing ? 'Se publică...' : 'Publică evenimentul'}</Text>
+        </AnimatedPressable>
+      </KeyboardAwareScrollView>
+
+      <LocationPickerModal
+        visible={pickerOpen}
+        initialCoords={coords}
+        onClose={() => setPickerOpen(false)}
+        onConfirm={(picked) => {
+          setCoords(picked);
+          setPickerOpen(false);
+        }}
+      />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1 },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: { fontSize: 18, fontWeight: '800' },
+  content: { paddingHorizontal: spacing.lg, paddingBottom: 60, gap: 6 },
+  label: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginTop: 14, marginBottom: 6 },
+  counter: { fontSize: 10, textAlign: 'right' },
+  input: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+  },
+  locationCard: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
+  locationPreview: { width: '100%', height: 110 },
+  locationPreviewEmpty: {},
+  locationCardFooter: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10 },
+  locationCardText: { fontSize: 13, fontWeight: '700' },
+  wheelGroup: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 16, padding: 10 },
+  timeWheelGroup: { justifyContent: 'center' },
+  timeSeparator: { fontSize: 24, fontWeight: '900', marginTop: 12 },
+  selectedDateText: { textAlign: 'center', fontSize: 12, fontWeight: '700', marginTop: 8, textTransform: 'capitalize' },
+  rentedRow: { flexDirection: 'row', gap: 10 },
+  rentedChip: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 13, borderWidth: 2 },
+  rentalProofCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 10,
+  },
+  rentalProofPreview: { width: 34, height: 34, borderRadius: 8 },
+  rentalProofText: { fontSize: 13, fontWeight: '700' },
+  rentalProofHint: { fontSize: 11, fontStyle: 'italic', marginTop: 6 },
+  chipText: { fontSize: 13, fontWeight: '700' },
+  chipActive: { transform: [{ scale: 1.03 }] },
+  emojiRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  emojiChip: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emojiChipActive: { transform: [{ scale: 1.05 }] },
+  emojiChipText: { fontSize: 22 },
+  colorChip: { width: 40, height: 40, borderRadius: 20, borderWidth: 3, borderColor: 'transparent' },
+  colorChipActive: { borderColor: colors.white, transform: [{ scale: 1.1 }] },
+  publishButton: {
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: colors.green500,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 26,
+  },
+  publishButtonDisabled: { opacity: 0.7 },
+  publishText: { color: colors.white, fontSize: 17, fontWeight: '900' },
+});
