@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Image,
   Keyboard,
@@ -29,6 +28,7 @@ import { Avatar } from '@/components/common/Avatar';
 import { Profile, getMutualFriends } from '@/lib/social';
 import { extensionAndTypeForImage } from '@/lib/media';
 import { alertPermissionDenied } from '@/lib/permissions';
+import { showAlert } from '@/lib/alert';
 import {
   DbMessage,
   MediaType,
@@ -390,7 +390,7 @@ export default function Messages() {
   useEffect(() => {
     if (!voicePlayerStatus.error) return;
     setPlayingMessageId(null);
-    Alert.alert('Nu am putut reda mesajul vocal', voicePlayerStatus.error);
+    showAlert('Nu am putut reda mesajul vocal', voicePlayerStatus.error);
   }, [voicePlayerStatus.error]);
 
   // Scrolling history of recent mic levels while actively recording, for the
@@ -458,7 +458,7 @@ export default function Messages() {
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
     } catch {
-      Alert.alert('A apărut o eroare', 'Nu am putut porni înregistrarea. Încearcă din nou.');
+      showAlert('A apărut o eroare', 'Nu am putut porni înregistrarea. Încearcă din nou.');
     }
   }
 
@@ -485,10 +485,10 @@ export default function Messages() {
           setPlayingMessageId(null);
         }
       } else {
-        Alert.alert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
+        showAlert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
       }
     } catch {
-      Alert.alert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
+      showAlert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
     } finally {
       setSendingMedia(false);
     }
@@ -572,10 +572,10 @@ export default function Messages() {
         setFriendMessages((current) => [...current, sent]);
         setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
       } else {
-        Alert.alert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
+        showAlert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
       }
     } catch {
-      Alert.alert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
+      showAlert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
     } finally {
       setSendingMedia(false);
     }
@@ -735,7 +735,7 @@ export default function Messages() {
       // typed text on a failed send (instead of just letting the user retry)
       // is the same silent-failure shape already fixed for follow()/photos.
       setDraft(text);
-      Alert.alert('A apărut o eroare', 'Nu am putut trimite mesajul. Încearcă din nou.');
+      showAlert('A apărut o eroare', 'Nu am putut trimite mesajul. Încearcă din nou.');
     }
   }
 
