@@ -11,6 +11,24 @@ export const MAPBOX_STYLE_URL_DARK = 'mapbox://styles/bunaspritz/cmteckrhm002o01
 
 export const MAPBOX_GL_JS_VERSION = '3.27.0';
 
+// Spare map, used when Mapbox itself won't load — server down, the access
+// token's usage/credits run out, or the CDN is unreachable. OpenFreeMap needs
+// no token (that's the point: nothing to run out of) and MapLibre GL JS is a
+// fork of the last open-source Mapbox GL JS release, so it's API-compatible
+// with everything this app does (Map/Marker/flyTo/etc) — just not with
+// `mapbox://styles/...` URLs, which is why the fallback uses this plain
+// https:// style instead of MAPBOX_STYLE_URL_LIGHT/DARK. Only one style is
+// published for free use, so the fallback looks light-themed even in dark
+// mode — pass a different URL here if that ever needs its own dark variant.
+export const MAPLIBRE_GL_JS_VERSION = '5.24.0';
+export const OPENFREEMAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
+
+// How long to wait for Mapbox's 'load' event before giving up on it and
+// falling back to MapLibre/OpenFreeMap — covers both "never responds" (dead
+// server) and "loads a broken/empty style" (bad or exhausted token) cases
+// that don't otherwise fire an 'error' event.
+export const MAP_LOAD_TIMEOUT_MS = 10000;
+
 export const MAPBOX_INITIAL_VIEW = {
   center: [25.6105235817314, 45.64881722195011] as [number, number],
   zoom: 12.5,

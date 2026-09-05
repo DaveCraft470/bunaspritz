@@ -3,15 +3,19 @@ import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 
 import {
+  MAP_LOAD_TIMEOUT_MS,
   MAPBOX_ACCESS_TOKEN,
   MAPBOX_INITIAL_VIEW,
   MAPBOX_STYLE_URL_DARK,
   MAPBOX_STYLE_URL_LIGHT,
+  OPENFREEMAP_STYLE_URL,
 } from '@/constants/mapbox';
 import type { SpritzEvent } from '@/constants/events';
 import { useAppTheme } from '@/contexts/ThemeContext';
-import { loadMapboxGl } from '@/lib/mapboxGlWeb';
+import { isMapboxKnownDead, loadMapboxGl, loadMapLibreGl, markMapboxDead } from '@/lib/mapboxGlWeb';
 import { FakeMapBackdrop } from './FakeMapBackdrop';
+
+type Provider = 'mapbox' | 'maplibre';
 
 type PinData = Pick<SpritzEvent, 'id' | 'emoji' | 'color' | 'lng' | 'lat'>;
 
@@ -43,6 +47,16 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
 ) {
   const { scheme } = useAppTheme();
   const styleUrl = scheme === 'dark' ? MAPBOX_STYLE_URL_DARK : MAPBOX_STYLE_URL_LIGHT;
+  // Once Mapbox has proven dead this page load (see markMapboxDead), skip
+  // straight to the spare map on every later mount instead of re-probing a
+  // service that just failed and making the user sit through another
+  // MAP_LOAD_TIMEOUT_MS.
+  const [provider, setProvider] = useState<Provider>(() => (isMapboxKnownDead() ? 'maplibre' : 'mapbox'));
+  // OpenFreeMap has no dark variant of its own (see OPENFREEMAP_STYLE_URL) —
+  // this collapses to a constant once in fallback mode, which matters for
+  // the effect below: it's what keeps a light/dark theme toggle from
+  // rebuilding (and re-flashing) the fallback map for no visual gain.
+  const effectiveStyleUrl = provider === 'mapbox' ? styleUrl : OPENFREEMAP_STYLE_URL;
   // View's ref forwards to the underlying <div> under react-native-web —
   // that's the real DOM node mapboxgl.Map needs as its container.
   const containerRef = useRef<View>(null);
@@ -65,7 +79,9 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
   const [ready, setReady] = useState(false);
 
   function addEventPin(map: any, ev: PinData) {
-    const mapboxgl = (window as any).mapboxgl;
+    // Whichever library actually loaded — see the build effect below, only
+    // one of these two globals will exist at a time.
+    const gl = (window as any).mapboxgl || (window as any).maplibregl;
     const el = document.createElement('div');
     el.className = 'spritz-event-pin';
     el.style.background = ev.color;
@@ -77,41 +93,71 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
         params: { id: ev.id, originX: String(Math.round(p.x)), originY: String(Math.round(p.y)) },
       });
     });
-    const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' }).setLngLat([ev.lng, ev.lat]).addTo(map);
+    const marker = new gl.Marker({ element: el, anchor: 'bottom' }).setLngLat([ev.lng, ev.lat]).addTo(map);
     eventMarkersRef.current.set(ev.id, marker);
   }
 
   function ensureUserMarker(map: any, lng: number, lat: number) {
-    const mapboxgl = (window as any).mapboxgl;
+    const gl = (window as any).mapboxgl || (window as any).maplibregl;
     if (!userMarkerRef.current) {
       const el = document.createElement('div');
       el.className = 'spritz-user-pin';
-      userMarkerRef.current = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
+      userMarkerRef.current = new gl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
     } else {
       userMarkerRef.current.setLngLat([lng, lat]);
     }
   }
 
   // (Re)builds the map whenever the style changes or an explicit reload asks
-  // for it — mirrors the native version's html useMemo keyed on the same deps.
+  // for it — mirrors the native version's html useMemo keyed on the same
+  // deps. Deliberately keyed on `effectiveStyleUrl`, not `styleUrl` — see its
+  // definition above for why that matters once `provider` is 'maplibre'.
   useEffect(() => {
     let cancelled = false;
+    // One-shot per build attempt: Mapbox's 'error' event fires once per
+    // failed tile request, so without this a single broken load could try
+    // to fall back (or report terminal failure) many times over.
+    let settled = false;
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
     setReady(false);
 
     for (const marker of eventMarkersRef.current.values()) marker.remove();
     eventMarkersRef.current.clear();
     userMarkerRef.current = null;
 
-    loadMapboxGl()
-      .then((mapboxgl) => {
+    // Reached only for a failure severe enough to matter: the library
+    // itself won't load, the map never fires 'load' within the timeout, or
+    // it errors before ever reaching 'ready'. On the primary provider that
+    // means falling back to the spare map; on the spare map itself (nothing
+    // left to fall back to) it's terminal — same as the old unconditional
+    // onError() this replaces.
+    function handleFailure(reason: string) {
+      if (cancelled || settled) return;
+      settled = true;
+      if (provider === 'mapbox') {
+        if (__DEV__) console.log('[MapboxMap] Mapbox failed (' + reason + '), falling back to MapLibre/OpenFreeMap');
+        markMapboxDead();
+        setProvider('maplibre');
+      } else {
+        if (__DEV__) console.log('[MapboxMap] MapLibre fallback also failed (' + reason + ')');
+        onError?.();
+      }
+    }
+
+    const load = provider === 'mapbox' ? loadMapboxGl : loadMapLibreGl;
+
+    load()
+      .then((gl) => {
         if (cancelled) return;
         const node = containerRef.current as unknown as HTMLElement | null;
         if (!node) return;
 
-        mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
-        const map = new mapboxgl.Map({
+        // OpenFreeMap needs no token — that's the point of it as a spare.
+        if (provider === 'mapbox') gl.accessToken = MAPBOX_ACCESS_TOKEN;
+
+        const map = new gl.Map({
           container: node,
-          style: styleUrl,
+          style: effectiveStyleUrl,
           center: MAPBOX_INITIAL_VIEW.center,
           zoom: MAPBOX_INITIAL_VIEW.zoom,
           bearing: MAPBOX_INITIAL_VIEW.bearing,
@@ -129,29 +175,48 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
         resizeObserver.observe(node);
         resizeObserverRef.current = resizeObserver;
 
+        let loaded = false;
+        // Covers "server accepts the connection and just hangs" and "loads
+        // a broken/empty style" — neither fires 'load' or 'error' on its own.
+        timeoutTimer = setTimeout(() => {
+          if (!loaded) handleFailure('load timeout');
+        }, MAP_LOAD_TIMEOUT_MS);
+
         map.on('load', () => {
           if (cancelled) return;
+          loaded = true;
+          clearTimeout(timeoutTimer);
           knownEventCountRef.current = eventsRef.current.length;
           for (const pin of toPinData(eventsRef.current)) addEventPin(map, pin);
           setReady(true);
           onReady?.();
         });
         map.on('dragstart', () => onUserPanned?.());
-        map.on('error', () => onError?.());
+        map.on('error', (e: any) => {
+          if (cancelled) return;
+          if (!loaded) {
+            handleFailure(e?.error?.message || 'map error before load');
+          } else if (__DEV__) {
+            // A tile 404 or transient network blip after the map is already
+            // up isn't worth tearing down a working map over.
+            console.log('[MapboxMap] post-load error (ignored):', e?.error);
+          }
+        });
       })
-      .catch(() => {
-        if (!cancelled) onError?.();
+      .catch((err) => {
+        handleFailure(err?.message || 'failed to load map library');
       });
 
     return () => {
       cancelled = true;
+      clearTimeout(timeoutTimer);
       resizeObserverRef.current?.disconnect();
       resizeObserverRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [styleUrl, reloadNonce]);
+  }, [effectiveStyleUrl, reloadNonce, provider]);
 
   // A new event appended after the map already loaded gets its pin injected
   // directly instead of waiting for (or forcing) a reload — same as native.

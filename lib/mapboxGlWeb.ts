@@ -5,11 +5,12 @@
 // at all (react-native-webview throws "does not support this platform"), so
 // MapboxMap.web.tsx and LocationPickerModal.web.tsx mount Mapbox GL JS
 // straight into a real DOM node instead.
-import { MAPBOX_GL_JS_VERSION } from '@/constants/mapbox';
+import { MAPBOX_GL_JS_VERSION, MAPLIBRE_GL_JS_VERSION } from '@/constants/mapbox';
 
 declare global {
   interface Window {
     mapboxgl?: any;
+    maplibregl?: any;
   }
 }
 
@@ -96,4 +97,51 @@ export function loadMapboxGl(): Promise<any> {
   });
 
   return loadPromise;
+}
+
+let maplibreLoadPromise: Promise<any> | null = null;
+
+// The spare-map library — see OPENFREEMAP_STYLE_URL in constants/mapbox.ts
+// for why. Same shape as loadMapboxGl above; kept as a separate script/CSS
+// pair (and a separate global, `maplibregl`) since a page can end up with
+// both loaded — one map already showing Mapbox while the other falls back.
+export function loadMapLibreGl(): Promise<any> {
+  if (typeof window === 'undefined') return Promise.reject(new Error('maplibre-gl requires a browser environment'));
+  if (window.maplibregl) return Promise.resolve(window.maplibregl);
+  if (maplibreLoadPromise) return maplibreLoadPromise;
+
+  ensurePinStyles();
+
+  maplibreLoadPromise = new Promise((resolve, reject) => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `https://unpkg.com/maplibre-gl@${MAPLIBRE_GL_JS_VERSION}/dist/maplibre-gl.css`;
+    document.head.appendChild(link);
+
+    const script = document.createElement('script');
+    script.src = `https://unpkg.com/maplibre-gl@${MAPLIBRE_GL_JS_VERSION}/dist/maplibre-gl.js`;
+    script.async = true;
+    script.onload = () => {
+      if (window.maplibregl) resolve(window.maplibregl);
+      else reject(new Error('maplibre-gl.js loaded but did not define window.maplibregl'));
+    };
+    script.onerror = () => reject(new Error('Failed to load maplibre-gl.js'));
+    document.head.appendChild(script);
+  });
+
+  return maplibreLoadPromise;
+}
+
+// Sticky across remounts (theme toggle, pull-to-refresh, tab switching) —
+// once Mapbox has proven unreachable/broken this page load, every later
+// MapboxMap mount should go straight to the spare map instead of re-probing
+// a dead service and making the user sit through another 10s timeout first.
+let mapboxDead = false;
+
+export function isMapboxKnownDead() {
+  return mapboxDead;
+}
+
+export function markMapboxDead() {
+  mapboxDead = true;
 }
