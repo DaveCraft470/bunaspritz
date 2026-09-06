@@ -70,7 +70,7 @@ export default function Profile() {
           <View style={styles.profileTitleBlock}>
             <View style={styles.nameRow}>
               <Text style={[styles.profileName, { color: theme.textPrimary }]}>{name}</Text>
-              {VERIFICATION_REQUIRED && effectiveVerified && (
+              {effectiveVerified && (
                 <View style={styles.verifiedBadge}>
                   <Text style={styles.verifiedText}>✓</Text>
                 </View>
@@ -117,31 +117,31 @@ export default function Profile() {
           <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
         </Pressable>
 
-        {VERIFICATION_REQUIRED && (
-          <Pressable
-            onPress={() => {
-              if (!effectiveVerified) {
-                router.push({ pathname: '/verification', params: { returnTo: '/profile' } });
-              }
-            }}
-            style={[styles.verifyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-          >
-            <View style={[styles.verifyIcon, { backgroundColor: theme.surfaceMuted }]}>
-              <Text style={[styles.verifyIconText, { color: theme.accent }]}>✓</Text>
-            </View>
-            <View style={styles.verifyCopy}>
-              <Text style={[styles.verifyTitle, { color: theme.textPrimary }]}>
-                {effectiveVerified ? 'Identitate verificată' : 'Verificare identitate'}
-              </Text>
-              <Text style={[styles.verifyDetail, { color: theme.textSecondary }]}>
-                {effectiveVerified
-                  ? 'Contul tău a trecut de verificarea 18+.'
-                  : 'Necesară pentru a te alătura unui Spritz.'}
-              </Text>
-            </View>
-            {!effectiveVerified && <Text style={[styles.verifyArrow, { color: theme.accent }]}>›</Text>}
-          </Pressable>
-        )}
+        <Pressable
+          onPress={() => {
+            if (!effectiveVerified) {
+              router.push({ pathname: '/verification', params: { returnTo: '/profile' } });
+            }
+          }}
+          style={[styles.verifyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        >
+          <View style={[styles.verifyIcon, { backgroundColor: theme.surfaceMuted }]}>
+            <Text style={[styles.verifyIconText, { color: theme.accent }]}>✓</Text>
+          </View>
+          <View style={styles.verifyCopy}>
+            <Text style={[styles.verifyTitle, { color: theme.textPrimary }]}>
+              {effectiveVerified ? 'Identitate verificată' : 'Verificare identitate'}
+            </Text>
+            <Text style={[styles.verifyDetail, { color: theme.textSecondary }]}>
+              {effectiveVerified
+                ? 'Contul tău a trecut de verificarea 18+.'
+                : VERIFICATION_REQUIRED
+                  ? 'Necesară pentru a te alătura unui Spritz.'
+                  : 'Verifică-ți identitatea și vârsta (18+).'}
+            </Text>
+          </View>
+          {!effectiveVerified && <Text style={[styles.verifyArrow, { color: theme.accent }]}>›</Text>}
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
