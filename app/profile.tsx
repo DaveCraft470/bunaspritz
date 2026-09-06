@@ -10,7 +10,7 @@ import { useAppTheme } from '@/contexts/ThemeContext';
 import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
 import { InstagramLink } from '@/components/common/InstagramLink';
-import { getMutualFriends } from '@/lib/social';
+import { getFriends } from '@/lib/friendRequests';
 import { getUserEventStats } from '@/lib/events';
 
 // Profile design by raulnitu8 — ported from App.tsx's ProfileScreen onto its
@@ -30,7 +30,7 @@ export default function Profile() {
   // refetch" pullable instead of only ever loading once on mount.
   const load = useCallback(async () => {
     if (!user) return;
-    const [friends, stats] = await Promise.all([getMutualFriends(user.id), getUserEventStats(user.id)]);
+    const [friends, stats] = await Promise.all([getFriends(user.id), getUserEventStats(user.id)]);
     setFriendCount(friends.length);
     setEventStats(stats);
   }, [user]);
@@ -166,7 +166,9 @@ const styles = StyleSheet.create({
   stat: { flex: 1, paddingVertical: 14, alignItems: 'center' },
   statNumber: { fontSize: 19, fontWeight: '800' },
   statLabel: { fontSize: 10, marginTop: 3, fontWeight: '700' },
-  myEventsButton: { marginTop: 4, padding: 14, flexDirection: 'row', alignItems: 'center', borderRadius: 17, borderWidth: 1 },
+  myEventsButton: { width: '100%', marginTop: 0, marginBottom: 6, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 17, borderWidth: 1 },
+  myEventsIcon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  myEventsEmoji: { fontSize: 19 },
   myEventsCopy: { flex: 1 },
   myEventsTitle: { fontSize: 14, fontWeight: '800' },
   myEventsDetail: { fontSize: 11, lineHeight: 15, marginTop: 3 },

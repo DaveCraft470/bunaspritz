@@ -19,16 +19,22 @@ import { ReviewModal } from '@/components/social/ReviewModal';
 import { ReportModal } from '@/components/social/ReportModal';
 import { addReport, hasActiveReport, USER_REPORT_REASONS } from '@/lib/reports';
 import {
-  FollowStatus,
   FriendPrefs,
   Profile,
-  follow,
-  getFollowStatus,
   getFriendPrefs,
   getProfile,
   setFriendPrefs,
-  unfollow,
 } from '@/lib/social';
+import {
+  acceptFriendRequest,
+  cancelFriendRequest,
+  getFriendRequestStatus,
+  getIncomingFriendRequests,
+  rejectFriendRequest,
+  sendFriendRequest,
+  getLocalProfile,
+  type RelationshipStatus,
+} from '@/lib/friendRequests';
 import {
   Review,
   ReviewSummary,
@@ -48,7 +54,8 @@ export default function PublicProfile() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState(false);
-  const [status, setStatus] = useState<FollowStatus>({ iFollow: false, followsMe: false, mutual: false });
+  const [relationship, setRelationship] = useState<RelationshipStatus>('none');
+  const [requestId, setRequestId] = useState<string | null>(null);
   const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false });
   const [menuOpen, setMenuOpen] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -57,7 +64,7 @@ export default function PublicProfile() {
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
-  const [followUpdating, setFollowUpdating] = useState(false);
+  const [relationshipUpdating, setRelationshipUpdating] = useState(false);
 
   function loadProfile() {
     if (!user || !id) return;
@@ -65,15 +72,18 @@ export default function PublicProfile() {
     setProfileError(false);
     getProfile(id)
       .then((result) => {
-        setProfile(result);
+        const resolvedProfile = result ?? getLocalProfile(id);
+        setProfile(resolvedProfile);
         setProfileLoading(false);
-        if (!result) setProfileError(true);
+        if (!resolvedProfile) setProfileError(true);
       })
       .catch(() => {
         setProfileLoading(false);
         setProfileError(true);
       });
-    getFollowStatus(user.id, id).then(setStatus);
+    getFriendRequestStatus(user.id, id).then(setRelationship);
+    const incoming = getIncomingFriendRequests(user.id).find((request) => request.senderId === id);
+    setRequestId(incoming?.id ?? null);
     getFriendPrefs(user.id, id).then(setPrefs);
     getReviews(id).then(setReviews);
     getReviewSummary(id).then(setReviewSummary);
@@ -89,13 +99,14 @@ export default function PublicProfile() {
       const result = await getProfile(id);
       setProfile(result);
       setProfileError(!result);
-      const [followStatus, friendPrefs, reviewsList, summary] = await Promise.all([
-        getFollowStatus(user.id, id),
+      const [relationshipStatus, friendPrefs, reviewsList, summary] = await Promise.all([
+        getFriendRequestStatus(user.id, id),
         getFriendPrefs(user.id, id),
         getReviews(id),
         getReviewSummary(id),
       ]);
-      setStatus(followStatus);
+      setRelationship(relationshipStatus);
+      setRequestId(getIncomingFriendRequests(user.id).find((request) => request.senderId === id)?.id ?? null);
       setPrefs(friendPrefs);
       setReviews(reviewsList);
       setReviewSummary(summary);
@@ -118,24 +129,29 @@ export default function PublicProfile() {
     return ok;
   }
 
-  async function toggleFollow() {
-    if (!user || !id || followUpdating) return;
+  async function handleRelationshipAction(action: 'send' | 'cancel' | 'accept' | 'reject') {
+    if (!user || !id || relationshipUpdating) return;
     light();
-    setFollowUpdating(true);
-    const previous = status;
-    let ok: boolean;
-    if (status.iFollow) {
-      setStatus((s) => ({ ...s, iFollow: false, mutual: false }));
-      ok = await unfollow(user.id, id);
+    setRelationshipUpdating(true);
+    const currentRequestId = requestId;
+    const result =
+      action === 'send'
+        ? await sendFriendRequest(user.id, id)
+        : !currentRequestId
+          ? { ok: false as const, error: 'Cererea nu mai este disponibilă.' }
+          : action === 'cancel'
+            ? cancelFriendRequest(user.id, currentRequestId)
+            : action === 'accept'
+              ? acceptFriendRequest(user.id, currentRequestId)
+              : rejectFriendRequest(user.id, currentRequestId);
+
+    if (result.ok) {
+      setRelationship(action === 'send' ? 'outgoing_pending' : action === 'accept' ? 'friends' : 'none');
+      if (action !== 'send') setRequestId(null);
     } else {
-      setStatus((s) => ({ ...s, iFollow: true, mutual: s.followsMe }));
-      ok = await follow(user.id, id);
+      showAlert('A apărut o eroare', result.error);
     }
-    if (!ok) {
-      setStatus(previous);
-      showAlert('A apărut o eroare', 'Nu am putut actualiza urmărirea. Încearcă din nou.');
-    }
-    setFollowUpdating(false);
+    setRelationshipUpdating(false);
   }
 
   async function updatePref(patch: Partial<FriendPrefs>) {
@@ -184,8 +200,6 @@ export default function PublicProfile() {
       </SafeAreaView>
     );
   }
-
-  const followLabel = status.iFollow ? 'Urmăresc' : status.followsMe ? 'Urmărește înapoi' : 'Urmărește';
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -241,37 +255,65 @@ export default function PublicProfile() {
           <InstagramLink handle={profile.instagram_handle} style={styles.instagramLink} />
         </View>
 
-        <View style={styles.actionsRow}>
-          <AnimatedPressable
-            onPress={toggleFollow}
-            disabled={followUpdating}
-            style={[
-              styles.actionButton,
-              status.iFollow
-                ? { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1 }
-                : { backgroundColor: colors.green500 },
-            ]}
-          >
-            <Text style={[styles.actionText, { color: status.iFollow ? theme.textPrimary : colors.white }]}>
-            {followUpdating ? 'Se actualizează...' : followLabel}
-            </Text>
-          </AnimatedPressable>
+        {user?.id !== id && <View style={styles.actionsRow}>
+          {relationship === 'incoming_pending' ? (
+            <>
+              <AnimatedPressable
+                onPress={() => handleRelationshipAction('accept')}
+                disabled={relationshipUpdating}
+                style={[styles.actionButton, { backgroundColor: colors.green500, opacity: relationshipUpdating ? 0.6 : 1 }]}
+              >
+                <Text style={[styles.actionText, { color: colors.white }]}>{relationshipUpdating ? 'Se actualizează...' : 'Acceptă'}</Text>
+              </AnimatedPressable>
+              <AnimatedPressable
+                onPress={() => handleRelationshipAction('reject')}
+                disabled={relationshipUpdating}
+                style={[styles.actionButton, { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1 }]}
+              >
+                <Text style={[styles.actionText, { color: theme.textPrimary }]}>Respinge</Text>
+              </AnimatedPressable>
+            </>
+          ) : (
+            <AnimatedPressable
+              onPress={() => handleRelationshipAction(relationship === 'outgoing_pending' ? 'cancel' : 'send')}
+              disabled={relationshipUpdating || relationship === 'friends'}
+              style={[
+                styles.actionButton,
+                relationship === 'friends' || relationship === 'outgoing_pending'
+                  ? { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1 }
+                  : { backgroundColor: colors.green500 },
+                { opacity: relationshipUpdating ? 0.6 : 1 },
+              ]}
+            >
+              <Text
+                style={[styles.actionText, { color: relationship === 'none' ? colors.white : theme.textPrimary }]}
+              >
+                {relationshipUpdating
+                  ? 'Se actualizează...'
+                  : relationship === 'friends'
+                    ? 'Prieteni ✓'
+                    : relationship === 'outgoing_pending'
+                      ? 'Anulează cererea'
+                      : 'Adaugă la prieteni'}
+              </Text>
+            </AnimatedPressable>
+          )}
 
           <AnimatedPressable
-            onPress={() => status.mutual && router.push({ pathname: '/messages', params: { friendId: id } })}
-            disabled={!status.mutual}
+            onPress={() => relationship === 'friends' && router.push({ pathname: '/messages', params: { friendId: id } })}
+            disabled={relationship !== 'friends'}
             style={[
               styles.actionButton,
-              { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1, opacity: status.mutual ? 1 : 0.5 },
+              { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1, opacity: relationship === 'friends' ? 1 : 0.5 },
             ]}
           >
             <Text style={[styles.actionText, { color: theme.textPrimary }]}>Mesaj</Text>
           </AnimatedPressable>
-        </View>
+        </View>}
 
-        {!status.mutual && (
+        {user?.id !== id && relationship !== 'friends' && (
           <Text style={[styles.hint, { color: theme.textSecondary }]}>
-            Puteți să vă trimiteți mesaje doar dacă vă urmăriți reciproc.
+            Puteți să vă trimiteți mesaje după ce deveniți prieteni.
           </Text>
         )}
 

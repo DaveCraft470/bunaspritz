@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -29,6 +29,12 @@ export function ReviewModal({
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!events.some((event) => event.eventId === eventId)) {
+      setEventId(events[0]?.eventId ?? '');
+    }
+  }, [events, eventId]);
 
   const activeEventId = eventId || events[0]?.eventId || '';
 

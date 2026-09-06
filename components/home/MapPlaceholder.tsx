@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Animated, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -28,7 +28,15 @@ function isEventToday(startsAt: string | null) {
   return new Date(startsAt).toDateString() === new Date().toDateString();
 }
 
-export function MapPlaceholder({ onOpenCalendar }: { onOpenCalendar?: () => void }) {
+export function MapPlaceholder({
+  onOpenCalendar,
+  storyEventIds,
+  onOpenStories,
+}: {
+  onOpenCalendar?: () => void;
+  storyEventIds?: Set<string>;
+  onOpenStories?: (eventId: string) => void;
+}) {
   const insets = useSafeAreaInsets();
   const { scheme, colors: theme } = useAppTheme();
   const fade = useRef(new Animated.Value(1)).current;
@@ -160,6 +168,8 @@ export function MapPlaceholder({ onOpenCalendar }: { onOpenCalendar?: () => void
       <MapboxMap
         ref={mapRef}
         events={events}
+        storyEventIds={storyEventIds}
+        onOpenStories={onOpenStories}
         onReady={handleMapReady}
         onLocated={medium}
         onUserPanned={() => {
