@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -17,7 +17,9 @@ import { GlassSurface } from '@/components/common/GlassSurface';
 import { FriendPrefsModal } from '@/components/social/FriendPrefsModal';
 import { ReviewModal } from '@/components/social/ReviewModal';
 import { ReportModal } from '@/components/social/ReportModal';
-import { addReport, hasActiveReport, USER_REPORT_REASONS } from '@/lib/reports';
+import { SafetyMenu } from '@/components/social/SafetyMenu';
+import { USER_REPORT_REASONS } from '@/lib/reports';
+import { blockUser, unblockUser, useBlocks } from '@/lib/blocks';
 import {
   FriendPrefs,
   Profile,
@@ -64,7 +66,10 @@ export default function PublicProfile() {
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [safetyMenuOpen, setSafetyMenuOpen] = useState(false);
   const [relationshipUpdating, setRelationshipUpdating] = useState(false);
+  const blocksState = useBlocks();
+  const userIsBlocked = !!(user && id) && blocksState.some((block) => block.blockerId === user.id && block.blockedId === id);
 
   function loadProfile() {
     if (!user || !id) return;
@@ -166,6 +171,33 @@ export default function PublicProfile() {
     }
   }
 
+  function confirmBlockToggle() {
+    if (!user || !id || !profile) return;
+    light();
+    if (userIsBlocked) {
+      unblockUser(user.id, id);
+      showAlert('Deblocat', `Ai deblocat @${profile.username}.`);
+      return;
+    }
+    const title = `Blochezi @${profile.username}?`;
+    const message =
+      'Nu vă veți mai putea trimite mesaje sau cereri de prietenie. Poți debloca oricând din acest profil.';
+    const doBlock = () => {
+      blockUser(user.id, id, `@${profile.username}`);
+      showAlert('Utilizator blocat', `${profile.name} a fost blocat.`);
+    };
+    if (Platform.OS === 'web') {
+      // react-native-web's Alert.alert is a no-op, so use the browser's own
+      // confirm dialog for the destructive block confirmation on web.
+      if (window.confirm(`${title}\n\n${message}`)) doBlock();
+      return;
+    }
+    Alert.alert(title, message, [
+      { text: 'Anulează', style: 'cancel' },
+      { text: 'Blochează', style: 'destructive', onPress: doBlock },
+    ]);
+  }
+
   if (!profile) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -221,18 +253,22 @@ export default function PublicProfile() {
         <Text style={[styles.title, { color: theme.textPrimary }]} numberOfLines={1}>
           @{profile.username}
         </Text>
-        <AnimatedPressable
-          onPress={() => {
-            light();
-            setMenuOpen(true);
-          }}
-          hitSlop={10}
-          accessibilityLabel="Mai multe opțiuni"
-          style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
-        >
-          <GlassSurface />
-          <Ionicons name="ellipsis-horizontal" size={20} color={glassButton.icon} />
-        </AnimatedPressable>
+        {user && id && user.id !== id ? (
+          <AnimatedPressable
+            onPress={() => {
+              light();
+              setSafetyMenuOpen(true);
+            }}
+            hitSlop={10}
+            accessibilityLabel="Opțiuni de siguranță"
+            style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
+          >
+            <GlassSurface />
+            <Ionicons name="ellipsis-horizontal" size={20} color={glassButton.icon} />
+          </AnimatedPressable>
+        ) : (
+          <View style={styles.backButton} />
+        )}
       </View>
 
       <ScrollView
@@ -255,7 +291,16 @@ export default function PublicProfile() {
           <InstagramLink handle={profile.instagram_handle} style={styles.instagramLink} />
         </View>
 
-        {user?.id !== id && <View style={styles.actionsRow}>
+        {user?.id !== id && userIsBlocked && (
+          <View style={[styles.blockedBanner, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
+            <Ionicons name="lock-closed-outline" size={15} color={theme.textSecondary} />
+            <Text style={[styles.blockedBannerText, { color: theme.textSecondary }]}>
+              Ai blocat acest utilizator. Deblochează-l din meniul de siguranță pentru a relua interacțiunea.
+            </Text>
+          </View>
+        )}
+
+        {user?.id !== id && !userIsBlocked && <View style={styles.actionsRow}>
           {relationship === 'incoming_pending' ? (
             <>
               <AnimatedPressable
@@ -311,16 +356,10 @@ export default function PublicProfile() {
           </AnimatedPressable>
         </View>}
 
-        {user?.id !== id && relationship !== 'friends' && (
+        {user?.id !== id && !userIsBlocked && relationship !== 'friends' && (
           <Text style={[styles.hint, { color: theme.textSecondary }]}>
             Puteți să vă trimiteți mesaje după ce deveniți prieteni.
           </Text>
-        )}
-
-        {user && user.id !== id && (
-          <AnimatedPressable onPress={() => setReportModalOpen(true)} style={[styles.reportButton, { borderColor: theme.border }]}>
-            <Text style={[styles.reportButtonText, { color: theme.textSecondary }]}>Raportează utilizatorul</Text>
-          </AnimatedPressable>
         )}
 
         <View style={styles.reviewsSection}>
@@ -389,33 +428,48 @@ export default function PublicProfile() {
         onSubmit={handleSubmitReview}
         onClose={() => setReviewModalOpen(false)}
       />
-      <ReportModal
-        visible={reportModalOpen}
-        targetType="user"
-        targetLabel={`@${profile.username}`}
-        reasons={USER_REPORT_REASONS}
-        onSubmit={(reason, description) => {
-          if (!user || !id) return;
-          if (hasActiveReport(user.id, 'user', id)) {
-            showAlert('Raport duplicat', 'Ai raportat deja acest utilizator.');
-            return;
-          }
-          addReport({
-            reporterId: user.id,
-            reporterLabel: `@${user.username}`,
-            targetType: 'user',
-            targetId: id,
-            targetLabel: `@${profile.username}`,
-            reason,
-            description,
-          });
-          showAlert('Raport trimis', 'Raportul a fost adăugat local pentru verificare.');
-        }}
-        onClose={() => setReportModalOpen(false)}
+      {user && id && (
+        <ReportModal
+          visible={reportModalOpen}
+          targetType="user"
+          targetId={id}
+          targetLabel={`@${profile.username}`}
+          reasons={USER_REPORT_REASONS}
+          reporterId={user.id}
+          reporterLabel={`@${user.username}`}
+          onClose={() => setReportModalOpen(false)}
+        />
+      )}
+      <SafetyMenu
+        visible={safetyMenuOpen}
+        title={`@${profile.username}`}
+        onClose={() => setSafetyMenuOpen(false)}
+        actions={[
+          {
+            key: 'block',
+            label: userIsBlocked ? 'Deblochează' : 'Blochează',
+            icon: userIsBlocked ? 'lock-open-outline' : 'lock-closed-outline',
+            destructive: !userIsBlocked,
+            onPress: confirmBlockToggle,
+          },
+          {
+            key: 'report',
+            label: 'Raportează utilizatorul',
+            icon: 'flag-outline',
+            onPress: () => setReportModalOpen(true),
+          },
+          {
+            key: 'prefs',
+            label: 'Preferințe de notificare',
+            icon: 'notifications-outline',
+            onPress: () => setMenuOpen(true),
+          },
+        ]}
       />
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
@@ -459,8 +513,18 @@ const styles = StyleSheet.create({
   actionButton: { flex: 1, minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   actionText: { fontSize: 14, fontWeight: '800' },
   hint: { fontSize: 11, fontStyle: 'italic', marginTop: 14, textAlign: 'center', maxWidth: 300 },
-  reportButton: { alignSelf: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9, marginTop: 18 },
-  reportButtonText: { fontSize: 11, fontWeight: '700' },
+  blockedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+    maxWidth: 360,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  blockedBannerText: { flex: 1, fontSize: 12, fontWeight: '600', lineHeight: 17 },
   reviewsSection: { width: '100%', maxWidth: 360, marginTop: 26 },
   reviewsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   reviewsSummary: { flexDirection: 'row', alignItems: 'center', gap: 5 },
