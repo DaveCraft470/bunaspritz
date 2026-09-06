@@ -5,25 +5,37 @@ import { registerForPushNotifications, unregisterPushToken } from '@/lib/pushTok
 import { freshChannel } from '@/lib/realtime';
 import {
   PublicUser,
+  confirmPasswordReset as confirmPasswordResetStorage,
   devSkipAuth,
   getCurrentUser,
   logInUser,
   registerUser,
+  requestPasswordReset as requestPasswordResetStorage,
+  resendSignupCode as resendSignupCodeStorage,
   setNotifyFriendsOnJoin as setNotifyFriendsOnJoinStorage,
   signOut as signOutStorage,
   updateCurrentUser,
   uploadAvatar as uploadAvatarStorage,
+  verifySignupCode as verifySignupCodeStorage,
 } from '@/contexts/auth';
 
 type AuthResult = { ok: true } | { ok: false; error: string };
+type SignUpResult = { ok: true; needsVerification: boolean } | { ok: false; error: string };
+type LoginResult =
+  | { ok: true; verified: boolean }
+  | { ok: false; error: string; needsVerification?: boolean };
 
 type UserContextValue = {
   loading: boolean;
   authenticated: boolean;
   user: PublicUser | null;
   effectiveVerified: boolean;
-  signUp: (name: string, username: string, email: string, password: string) => Promise<AuthResult>;
-  logIn: (email: string, password: string) => Promise<AuthResult & { verified?: boolean }>;
+  signUp: (name: string, username: string, email: string, password: string) => Promise<SignUpResult>;
+  logIn: (email: string, password: string) => Promise<LoginResult>;
+  verifySignupCode: (email: string, code: string) => Promise<AuthResult>;
+  resendSignupCode: (email: string) => Promise<AuthResult>;
+  requestPasswordReset: (email: string) => Promise<AuthResult>;
+  confirmPasswordReset: (email: string, code: string, newPassword: string) => Promise<AuthResult>;
   signOut: () => Promise<void>;
   devSkip: () => Promise<void>;
   updateProfile: (fields: {
@@ -109,6 +121,30 @@ export function UserProvider({ children }: PropsWithChildren) {
       async logIn(email, password) {
         const result = await logInUser(email, password);
         if (result.ok) {
+          setUser(await getCurrentUser());
+          setAuthenticated(true);
+        }
+        return result;
+      },
+      async verifySignupCode(email, code) {
+        const result = await verifySignupCodeStorage(email, code);
+        if (result.ok) {
+          setUser(await getCurrentUser());
+          setAuthenticated(true);
+        }
+        return result;
+      },
+      async resendSignupCode(email) {
+        return resendSignupCodeStorage(email);
+      },
+      async requestPasswordReset(email) {
+        return requestPasswordResetStorage(email);
+      },
+      async confirmPasswordReset(email, code, newPassword) {
+        const result = await confirmPasswordResetStorage(email, code, newPassword);
+        if (result.ok) {
+          // verifyOtp's 'recovery' flow leaves the caller signed in with a
+          // fresh session — no separate login step needed after this.
           setUser(await getCurrentUser());
           setAuthenticated(true);
         }
