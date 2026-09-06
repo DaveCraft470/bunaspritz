@@ -16,7 +16,19 @@ import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { useStories } from '@/contexts/StoriesContext';
 import { useEvents } from '@/contexts/EventsContext';
-import { EventAttendee, deleteEvent, fetchAttendees, getEventAttendeeCount, hasJoined, joinEvent, leaveEvent } from '@/lib/events';
+import {
+  cancelJoinRequest,
+  deleteEvent,
+  fetchAttendees,
+  getEventAttendeeCount,
+  getJoinRequestStatus,
+  hasJoined,
+  joinEvent,
+  leaveEvent,
+  requestToJoinEvent,
+  type EventAttendee,
+  type JoinRequestStatus,
+} from '@/lib/events';
 import { getProfile, type Profile } from '@/lib/social';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
@@ -73,6 +85,7 @@ export default function EventDetail() {
   const [hostProfile, setHostProfile] = useState<Profile | null>(null);
   const [joined, setJoined] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [joinRequestStatus, setJoinRequestStatus] = useState<JoinRequestStatus>('none');
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteFriends, setInviteFriends] = useState<Awaited<ReturnType<typeof getFriends>>>([]);
@@ -83,6 +96,9 @@ export default function EventDetail() {
     fetchAttendees(event.id).then(setAttendees);
     getEventAttendeeCount(event.id).then(setAttendeeCount);
     hasJoined(event.id, user.id).then(setJoined);
+    if (event.approvalMode === 'manual' && event.hostId !== user.id) {
+      getJoinRequestStatus(event.id, user.id).then(setJoinRequestStatus);
+    }
     if (event.hostId) getProfile(event.hostId).then(setHostProfile);
     getFriends(user.id).then(setInviteFriends);
   }, [event, user]);
@@ -174,6 +190,21 @@ export default function EventDetail() {
     ]);
   }
 
+  const requiresApproval = !!event && event.approvalMode === 'manual' && !isHost;
+
+  async function handleCancelRequest() {
+    if (!event || !user) return;
+    light();
+    setJoining(true);
+    const ok = await cancelJoinRequest(event.id, user.id);
+    setJoining(false);
+    if (!ok) {
+      showAlert('A apărut o eroare', 'Nu am putut anula cererea. Încearcă din nou.');
+      return;
+    }
+    setJoinRequestStatus('none');
+  }
+
   async function handleJoin() {
     if (!event || !user) return;
 
@@ -182,10 +213,28 @@ export default function EventDetail() {
       return;
     }
 
+    if (requiresApproval && joinRequestStatus === 'pending') {
+      handleCancelRequest();
+      return;
+    }
+
     if (isFull) return;
 
     if (VERIFICATION_REQUIRED && !effectiveVerified) {
       router.push({ pathname: '/verification', params: { returnTo: `/event/${event.id}` } });
+      return;
+    }
+
+    if (requiresApproval) {
+      setJoining(true);
+      const ok = await requestToJoinEvent(event.id, user.id);
+      setJoining(false);
+      if (!ok) {
+        showAlert('A apărut o eroare', 'Nu am putut trimite cererea. Încearcă din nou.');
+        return;
+      }
+      light();
+      setJoinRequestStatus('pending');
       return;
     }
 
@@ -328,8 +377,17 @@ export default function EventDetail() {
             event.entryFeeRon !== null ||
             event.drinksPriceRon !== null ||
             event.maxParticipants !== null ||
-            event.locationIsRented === true) && (
+            event.locationIsRented === true ||
+            event.visibility === 'private') && (
             <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              {event.visibility === 'private' && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="lock-closed-outline" size={16} color={colors.green500} />
+                  <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
+                    Eveniment privat{event.approvalMode === 'manual' ? ' · aprobare manuală' : ''}
+                  </Text>
+                </View>
+              )}
               {formatEventStart(event.startsAt) && (
                 <View style={styles.infoRow}>
                   <Ionicons name="calendar-outline" size={16} color={colors.green500} />
@@ -564,8 +622,8 @@ export default function EventDetail() {
         <View style={[styles.ctaWrap, { paddingBottom: insets.bottom + 20 }]}>
           <AnimatedPressable
             onPress={handleJoin}
-            disabled={(isFull && !joined) || (joined && isHost) || joining}
-            style={[styles.ctaButton, shadows.glowGreen, isFull && !joined && styles.ctaButtonDisabled]}
+            disabled={(isFull && !joined && joinRequestStatus !== 'pending') || (joined && isHost) || joining}
+            style={[styles.ctaButton, shadows.glowGreen, isFull && !joined && joinRequestStatus !== 'pending' && styles.ctaButtonDisabled]}
           >
             <Text style={styles.ctaText}>
               {joining
@@ -574,9 +632,13 @@ export default function EventDetail() {
                   ? isHost
                     ? 'Găzduiești ✓'
                     : 'Ești în listă ✓ · Renunță'
-                  : isFull
-                    ? 'Eveniment plin 🙁'
-                    : 'Hai la Spritz! 🍻'}
+                  : requiresApproval && joinRequestStatus === 'pending'
+                    ? 'Cerere trimisă ✓ · Anulează'
+                    : isFull
+                      ? 'Eveniment plin 🙁'
+                      : requiresApproval
+                        ? 'Cere să participi 🙋'
+                        : 'Hai la Spritz! 🍻'}
             </Text>
           </AnimatedPressable>
         </View>

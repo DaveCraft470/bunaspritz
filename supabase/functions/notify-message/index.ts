@@ -37,7 +37,8 @@ Deno.serve(async (req) => {
   await sendExpoPush(
     (tokens ?? []).map((t) => t.token),
     `Mesaj nou de la ${sender?.name ?? 'un prieten'}`,
-    body
+    body,
+    { route: '/messages' }
   );
 
   return new Response('ok', { status: 200 });

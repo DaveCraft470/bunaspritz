@@ -95,6 +95,7 @@ function PublicCalendar({ onShowMap }: { onShowMap: () => void }) {
   const { colors: theme } = useAppTheme();
   const { events } = useEvents();
   const { light } = useHaptics();
+  const { effectiveVerified } = useUser();
   const daysRef = useRef<ScrollView>(null);
   const datedEvents = useMemo(() => events.filter((event) => event.startsAt != null), [events]);
   const DAY_ITEM_WIDTH = 62;
@@ -144,17 +145,32 @@ function PublicCalendar({ onShowMap }: { onShowMap: () => void }) {
       <StatusBar style={theme.statusBar} />
       <View style={styles.calendarTopBar}>
         <Text style={[styles.calendarTitle, { color: theme.textPrimary }]}>Calendar public</Text>
-        <AnimatedPressable
-          onPress={() => {
-            light();
-            onShowMap();
-          }}
-          hitSlop={10}
-          accessibilityLabel="Arată harta"
-          style={[styles.modeButton, shadows.soft, { borderColor: glassButton.border }]}
-        >
-          <Ionicons name="map-outline" size={20} color={glassButton.icon} />
-        </AnimatedPressable>
+        <View style={styles.calendarTopBarActions}>
+          {effectiveVerified && (
+            <AnimatedPressable
+              onPress={() => {
+                light();
+                router.push('/new-event');
+              }}
+              hitSlop={10}
+              accessibilityLabel="Adaugă eveniment"
+              style={[styles.modeButton, shadows.soft, { borderColor: glassButton.border }]}
+            >
+              <Ionicons name="add" size={22} color={glassButton.icon} />
+            </AnimatedPressable>
+          )}
+          <AnimatedPressable
+            onPress={() => {
+              light();
+              onShowMap();
+            }}
+            hitSlop={10}
+            accessibilityLabel="Arată harta"
+            style={[styles.modeButton, shadows.soft, { borderColor: glassButton.border }]}
+          >
+            <Ionicons name="map-outline" size={20} color={glassButton.icon} />
+          </AnimatedPressable>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.calendarContent} showsVerticalScrollIndicator={false}>
@@ -209,7 +225,8 @@ function PublicCalendar({ onShowMap }: { onShowMap: () => void }) {
 
 export default function Home() {
   const { showingMap, setShowingMap } = useHomeView();
-  const { user } = useUser();
+  const { user, effectiveVerified } = useUser();
+  const { light } = useHaptics();
   const { mapStories, getEventStories } = useStories();
   const storyEventIds = useMemo(
     () => new Set(mapStories.map((story) => story.eventId).filter((eventId): eventId is string => !!eventId)),
@@ -273,6 +290,18 @@ export default function Home() {
           <Ionicons name="compass-outline" size={18} color={colors.green700} />
           <Text style={styles.exploreButtonText}>Explorează</Text>
         </AnimatedPressable>
+        {effectiveVerified && (
+          <AnimatedPressable
+            onPress={() => {
+              light();
+              router.push('/new-event');
+            }}
+            style={styles.addEventFab}
+            accessibilityLabel="Adaugă eveniment"
+          >
+            <Ionicons name="add" size={26} color={colors.white} />
+          </AnimatedPressable>
+        )}
         {(eventsLoading || joinedLoading || joinedError || recommendations.length > 0) && (
           <View style={styles.recommendationsPanel}>
             {eventsLoading || joinedLoading ? (
@@ -323,6 +352,7 @@ const styles = StyleSheet.create({
   },
   calendarSafeArea: { flex: 1 },
   calendarTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },
+  calendarTopBarActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   calendarTitle: { fontSize: 22, fontWeight: '800' },
   modeButton: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   calendarContent: { paddingHorizontal: spacing.lg, paddingBottom: 120 },
@@ -364,4 +394,20 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   exploreButtonText: { color: colors.green700, fontSize: 12, fontWeight: '800' },
+  addEventFab: {
+    position: 'absolute',
+    top: 112,
+    left: spacing.lg,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.green500,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
 });

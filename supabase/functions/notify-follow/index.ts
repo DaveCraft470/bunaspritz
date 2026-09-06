@@ -36,7 +36,8 @@ Deno.serve(async (req) => {
   await sendExpoPush(
     (tokens ?? []).map((t) => t.token),
     'Prieten nou!',
-    `${follower?.name ?? 'Cineva'} te-a adăugat ca prieten.`
+    `${follower?.name ?? 'Cineva'} te-a adăugat ca prieten.`,
+    { route: `/user/${callerId}` }
   );
 
   return new Response('ok', { status: 200 });
