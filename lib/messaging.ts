@@ -10,6 +10,17 @@ const MEDIA_BUCKET = 'message-media';
 // this will hit that retry path once the image fails to load.
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
+// Caps any single message attachment (photo or voice note) so nobody can
+// push a huge file through the shared media bucket.
+export const MAX_MEDIA_BYTES = 20 * 1024 * 1024;
+
+export class MediaTooLargeError extends Error {
+  constructor() {
+    super('Media attachment exceeds the maximum allowed size');
+    this.name = 'MediaTooLargeError';
+  }
+}
+
 export type MediaType = 'image' | 'audio';
 
 export type DbMessage = {
@@ -124,6 +135,7 @@ export async function sendMediaMessage(
   // uris the same way, so it works everywhere without a platform branch.
   const bytes = await (await fetch(localUri)).arrayBuffer();
   if (bytes.byteLength === 0) return null;
+  if (bytes.byteLength > MAX_MEDIA_BYTES) throw new MediaTooLargeError();
 
   const path = `${myId}/${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
   const { error: uploadError } = await supabase.storage

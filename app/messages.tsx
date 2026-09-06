@@ -33,6 +33,7 @@ import { alertPermissionDenied } from '@/lib/permissions';
 import { showAlert } from '@/lib/alert';
 import {
   DbMessage,
+  MediaTooLargeError,
   MediaType,
   getLastMessage,
   getSignedMediaUrl,
@@ -51,6 +52,11 @@ import {
 const MESSAGE_MAX_LENGTH = 1000;
 
 const VOICE_PREVIEW_ID = '__voice-preview__';
+
+// Longest a single voice message is allowed to run before it's auto-stopped
+// into the preview step — without this someone could hold the mic open
+// indefinitely and produce a multi-hour attachment.
+const MAX_RECORDING_MS = 5 * 60 * 1000;
 
 // How many bars the live recording waveform scrolls through.
 const RECORDING_WAVE_BARS = 24;
@@ -458,6 +464,9 @@ export default function Messages() {
   // composer view) — downsampled at stop time into the fixed-length waveform
   // stored with the message, for a real per-message shape instead of a flat bar.
   const fullWaveformRef = useRef<number[]>([]);
+  // Auto-stops a recording once it hits MAX_RECORDING_MS — cleared on every
+  // manual stop so it never fires against a recording that already ended.
+  const recordingLimitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (voicePlayerStatus.didJustFinish) setPlayingMessageId(null);
@@ -521,11 +530,28 @@ export default function Messages() {
     setPlayingMessageId(messageId);
   }
 
+  function clearRecordingLimitTimer() {
+    if (recordingLimitTimerRef.current) {
+      clearTimeout(recordingLimitTimerRef.current);
+      recordingLimitTimerRef.current = null;
+    }
+  }
+
   async function startRecording() {
     if (!activeFriend || sendingMedia) return;
     unlockWebAudioPlayback();
 
-    const permission = await AudioModule.requestRecordingPermissionsAsync();
+    // Checking with getRecordingPermissionsAsync first and only calling
+    // requestRecordingPermissionsAsync when actually needed matters on web:
+    // that request opens a mic stream just to probe permission, then closes
+    // it immediately, right before prepareToRecordAsync() below opens a new
+    // one for real. Doing that open-close-reopen back to back on every
+    // recording (not just the first) is a known trigger for some Windows
+    // audio drivers to hand back a "live" stream that's actually silent.
+    let permission = await AudioModule.getRecordingPermissionsAsync();
+    if (!permission.granted) {
+      permission = await AudioModule.requestRecordingPermissionsAsync();
+    }
     if (!permission.granted) {
       // canAskAgain is false once the user has denied it before — Android
       // then answers this instantly without ever showing the system dialog
@@ -538,6 +564,15 @@ export default function Messages() {
       light();
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
+      clearRecordingLimitTimer();
+      recordingLimitTimerRef.current = setTimeout(() => {
+        recordingLimitTimerRef.current = null;
+        // Stop first, alert after — showAlert's web fallback is a blocking
+        // window.alert(), and the mic would otherwise keep recording for as
+        // long as that dialog sits unacknowledged.
+        stopRecordingToPreview();
+        showAlert('Limită atinsă', 'Mesajele vocale sunt limitate la 5 minute.');
+      }, MAX_RECORDING_MS);
     } catch {
       showAlert('A apărut o eroare', 'Nu am putut porni înregistrarea. Încearcă din nou.');
     }
@@ -577,8 +612,12 @@ export default function Messages() {
       } else {
         showAlert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
       }
-    } catch {
-      showAlert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
+    } catch (err) {
+      if (err instanceof MediaTooLargeError) {
+        showAlert('Fișier prea mare', 'Mesajul vocal depășește dimensiunea maximă admisă.');
+      } else {
+        showAlert('A apărut o eroare', 'Nu am putut trimite mesajul vocal. Încearcă din nou.');
+      }
     } finally {
       setSendingMedia(false);
     }
@@ -588,6 +627,7 @@ export default function Messages() {
   // skipping the preview step.
   async function stopRecordingAndSend() {
     light();
+    clearRecordingLimitTimer();
     const durationMs = Math.round(recorderState.durationMillis);
     const waveform = downsampleWaveform(fullWaveformRef.current, SENT_WAVEFORM_BARS);
     await audioRecorder.stop();
@@ -600,6 +640,7 @@ export default function Messages() {
   // for a preview listen instead of sending immediately.
   async function stopRecordingToPreview() {
     light();
+    clearRecordingLimitTimer();
     const durationMs = Math.round(recorderState.durationMillis);
     const waveform = downsampleWaveform(fullWaveformRef.current, SENT_WAVEFORM_BARS);
     await audioRecorder.stop();
@@ -666,8 +707,12 @@ export default function Messages() {
       } else {
         showAlert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
       }
-    } catch {
-      showAlert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
+    } catch (err) {
+      if (err instanceof MediaTooLargeError) {
+        showAlert('Fișier prea mare', 'Fotografia depășește dimensiunea maximă admisă.');
+      } else {
+        showAlert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
+      }
     } finally {
       setSendingMedia(false);
     }
