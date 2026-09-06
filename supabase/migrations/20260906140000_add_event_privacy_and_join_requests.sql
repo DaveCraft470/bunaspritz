@@ -39,11 +39,17 @@ create policy "requester withdraws their own pending request"
   on public.event_join_requests for delete
   using (user_id = auth.uid() and status = 'pending');
 
--- No update policy for either side on purpose: the host's accept/reject
--- path goes through respond_join_request below, which (as a security
--- definer function) also performs the resulting event_attendees insert
--- atomically with the status change — something a plain RLS update policy
--- could never do on its own.
+-- The host's accept/reject path goes through respond_join_request below
+-- (security definer, so it bypasses RLS for that) rather than this policy —
+-- this one exists only so a rejected requester isn't stuck forever: the
+-- unique (event_id, user_id) constraint means they can't just insert a new
+-- row, and requestToJoinEvent (lib/events.ts) falls back to this update when
+-- the insert hits that conflict. Can only move rejected -> pending, and only
+-- your own row — never lets you approve yourself or touch anyone else's.
+create policy "requester can ask again after a rejection"
+  on public.event_join_requests for update
+  using (user_id = auth.uid() and status = 'rejected')
+  with check (user_id = auth.uid() and status = 'pending');
 
 -- A private event is only discoverable by its host, its attendees, and
 -- anyone with an open (any-status) join request — everyone else's `select`

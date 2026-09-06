@@ -293,7 +293,23 @@ export async function getJoinRequestStatus(eventId: string, userId: string): Pro
 
 export async function requestToJoinEvent(eventId: string, userId: string): Promise<boolean> {
   const { error } = await supabase.from('event_join_requests').insert({ event_id: eventId, user_id: userId });
-  if (error) return false;
+
+  if (error) {
+    // The unique (event_id, user_id) constraint means a second insert after
+    // a rejection always conflicts — fall back to resetting that same row
+    // back to pending instead, which the "requester can ask again after a
+    // rejection" RLS policy allows only when it was actually rejected (a
+    // still-pending or already-accepted row is left untouched: 0 rows
+    // updated, no error, and requestToJoinEvent correctly reports failure).
+    const { data, error: retryError } = await supabase
+      .from('event_join_requests')
+      .update({ status: 'pending', responded_at: null })
+      .eq('event_id', eventId)
+      .eq('user_id', userId)
+      .eq('status', 'rejected')
+      .select('id');
+    if (retryError || !data?.length) return false;
+  }
 
   // Best-effort — a failed push shouldn't undo an already-recorded request.
   supabase.functions.invoke('notify-join-request', { body: { eventId } }).catch(() => {});
