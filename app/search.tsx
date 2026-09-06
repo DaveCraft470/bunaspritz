@@ -13,7 +13,23 @@ import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
-import { follow, getFollowStatuses, Profile, searchProfiles } from '@/lib/social';
+import {
+  follow,
+  getBlockedIds,
+  getFollowStatuses,
+  getFollowingIds,
+  getRandomProfiles,
+  getSuggestedFriends,
+  Profile,
+  searchProfiles,
+  SuggestedProfile,
+} from '@/lib/social';
+import { getOutgoingFriendRequests } from '@/lib/friendRequests';
+
+const REASON_LABEL: Record<SuggestedProfile['reason'], string> = {
+  mutual: 'Prieteni în comun',
+  event: 'A fost la același Spritz',
+};
 
 export default function Search() {
   const { colors: theme } = useAppTheme();
@@ -24,7 +40,49 @@ export default function Search() {
   const [loading, setLoading] = useState(false);
   const [following, setFollowing] = useState<Set<string>>(new Set());
 
+  const [suggestions, setSuggestions] = useState<(Profile & { reason?: SuggestedProfile['reason'] })[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(true);
+
   const trimmedQuery = query.trim();
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    (async () => {
+      setSuggestionsLoading(true);
+      // Pending outgoing requests only live in the in-memory store in
+      // lib/friendRequests.ts (not the DB), so the RPC can't filter them —
+      // do it client-side instead.
+      const alreadyRequested = new Set(getOutgoingFriendRequests(user.id).map((request) => request.receiverId));
+
+      const graphSuggestions = (await getSuggestedFriends(10)).filter((person) => !alreadyRequested.has(person.id));
+      if (cancelled) return;
+
+      if (graphSuggestions.length > 0) {
+        setSuggestions(graphSuggestions);
+        setSuggestionsLoading(false);
+        return;
+      }
+
+      // No friends-of-friends or shared-event overlap yet — fall back to a
+      // shuffled page of other people with an account. blockedIds only
+      // covers people *I* blocked (friend_prefs RLS hides the reverse), so
+      // someone who blocked me could still show up here; adding them just
+      // fails with the generic error alert, which is an acceptable edge case.
+      const [followingIds, blockedIds] = await Promise.all([getFollowingIds(user.id), getBlockedIds(user.id)]);
+      if (cancelled) return;
+      const excludeIds = [...followingIds, ...blockedIds, ...alreadyRequested];
+      const random = await getRandomProfiles(user.id, excludeIds, 10);
+      if (cancelled) return;
+      setSuggestions(random);
+      setSuggestionsLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!user || !trimmedQuery) {
@@ -70,7 +128,7 @@ export default function Search() {
     }
   }
 
-  function renderPerson(person: Profile) {
+  function renderPerson(person: Profile & { reason?: SuggestedProfile['reason'] }) {
     const isFollowing = following.has(person.id);
     return (
       <AnimatedPressable
@@ -84,7 +142,7 @@ export default function Search() {
             {person.name}
           </Text>
           <Text style={[styles.personSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>
-            @{person.username}
+            {person.reason ? REASON_LABEL[person.reason] : `@${person.username}`}
           </Text>
         </View>
         <AnimatedPressable
@@ -126,6 +184,18 @@ export default function Search() {
         <View style={styles.backButton} />
       </View>
 
+      <AnimatedPressable
+        onPress={() => {
+          light();
+          router.push('/friends');
+        }}
+        style={[styles.manageButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+      >
+        <Ionicons name="people" size={16} color={colors.green500} />
+        <Text style={[styles.manageButtonText, { color: theme.textPrimary }]}>Prietenii mei — gestionează</Text>
+        <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+      </AnimatedPressable>
+
       <View style={[styles.searchBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
         <Ionicons name="search-outline" size={18} color={theme.textSecondary} />
         <TextInput
@@ -140,9 +210,18 @@ export default function Search() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {!trimmedQuery ? (
-          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-            Caută un nume sau username ca să găsești oameni pe Spritz.
-          </Text>
+          <>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Sugestii pentru tine</Text>
+            {suggestionsLoading ? (
+              <ActivityIndicator color={colors.green500} style={styles.loading} />
+            ) : suggestions.length ? (
+              suggestions.map(renderPerson)
+            ) : (
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                Nu avem încă sugestii pentru tine.
+              </Text>
+            )}
+          </>
         ) : loading ? (
           <ActivityIndicator color={colors.green500} style={styles.loading} />
         ) : results.length ? (
@@ -177,6 +256,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: { fontSize: 18, fontWeight: '800' },
+  manageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  manageButtonText: { flex: 1, fontSize: 13, fontWeight: '700' },
+  sectionTitle: { fontSize: 13, fontWeight: '800', marginBottom: 10 },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',

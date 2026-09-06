@@ -16,7 +16,7 @@ import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { FriendPrefsModal } from '@/components/social/FriendPrefsModal';
-import { FriendPrefs, Profile, getFriendPrefs, setFriendPrefs, unfollow } from '@/lib/social';
+import { FriendPrefs, Profile, blockUser, getBlockedProfiles, getFriendPrefs, setFriendPrefs, unblockUser, unfollow } from '@/lib/social';
 import {
   acceptFriendRequest,
   cancelFriendRequest,
@@ -49,18 +49,25 @@ export default function Friends() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [menuFor, setMenuFor] = useState<Profile | null>(null);
-  const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false });
+  const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false, blocked: false });
   const [refreshing, setRefreshing] = useState(false);
+  const [blocked, setBlocked] = useState<Profile[]>([]);
 
   function load() {
     if (!user) return;
     setLoading(true);
     setLoadError(false);
-    Promise.all([getFriends(user.id), Promise.resolve(getIncomingFriendRequests(user.id)), Promise.resolve(getOutgoingFriendRequests(user.id))])
-      .then(async ([friendList, incomingList, outgoingList]) => {
+    Promise.all([
+      getFriends(user.id),
+      Promise.resolve(getIncomingFriendRequests(user.id)),
+      Promise.resolve(getOutgoingFriendRequests(user.id)),
+      getBlockedProfiles(user.id),
+    ])
+      .then(async ([friendList, incomingList, outgoingList, blockedList]) => {
         setFriends(friendList);
         setIncoming(incomingList);
         setOutgoing(outgoingList);
+        setBlocked(blockedList);
         setRequestProfiles(await getRequestProfiles([...incomingList, ...outgoingList]));
         setLoading(false);
       })
@@ -77,14 +84,16 @@ export default function Friends() {
     if (!user) return;
     setRefreshing(true);
     try {
-      const [friendList, incomingList, outgoingList] = await Promise.all([
+      const [friendList, incomingList, outgoingList, blockedList] = await Promise.all([
         getFriends(user.id),
         Promise.resolve(getIncomingFriendRequests(user.id)),
         Promise.resolve(getOutgoingFriendRequests(user.id)),
+        getBlockedProfiles(user.id),
       ]);
       setFriends(friendList);
       setIncoming(incomingList);
       setOutgoing(outgoingList);
+      setBlocked(blockedList);
       setRequestProfiles(await getRequestProfiles([...incomingList, ...outgoingList]));
       setLoadError(false);
     } catch {
@@ -111,6 +120,51 @@ export default function Friends() {
       setPrefs(previous);
       showAlert('A apărut o eroare', 'Nu am putut salva preferința. Încearcă din nou.');
     }
+  }
+
+  function confirmBlockFriend(friend: Profile) {
+    light();
+    Alert.alert('Blochezi acest cont?', `${friend.name} nu te va mai putea urmări sau contacta.`, [
+      { text: 'Anulează', style: 'cancel' },
+      {
+        text: 'Blochează',
+        style: 'destructive',
+        onPress: async () => {
+          if (!user) return;
+          const ok = await blockUser(friend.id);
+          if (!ok) {
+            showAlert('A apărut o eroare', 'Nu am putut bloca acest cont. Încearcă din nou.');
+            return;
+          }
+          // getFriends() also reads the in-memory friend-request store — if
+          // an accepted request is left there, the next load() would put
+          // this person right back in the friends list even though the DB
+          // side (follows/friend_prefs) is already severed.
+          removeFriend(user.id, friend.id);
+          setFriends((current) => current.filter((f) => f.id !== friend.id));
+          setBlocked((current) => [...current, friend]);
+          setMenuFor(null);
+        },
+      },
+    ]);
+  }
+
+  function confirmUnblock(profile: Profile) {
+    light();
+    Alert.alert('Deblochezi acest cont?', `${profile.name} va putea din nou să te urmărească.`, [
+      { text: 'Anulează', style: 'cancel' },
+      {
+        text: 'Deblochează',
+        onPress: async () => {
+          const ok = await unblockUser(profile.id);
+          if (!ok) {
+            showAlert('A apărut o eroare', 'Nu am putut debloca acest cont. Încearcă din nou.');
+            return;
+          }
+          setBlocked((current) => current.filter((p) => p.id !== profile.id));
+        },
+      },
+    ]);
   }
 
   function confirmRemoveFriend(friend: Profile) {
@@ -258,6 +312,27 @@ export default function Friends() {
           />
           );
         })}
+
+        {!loading && !loadError && blocked.length > 0 && (
+          <>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Conturi blocate</Text>
+            {blocked.map((profile) => (
+              <View key={profile.id} style={[styles.requestRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Avatar uri={profile.avatar_url} name={profile.name} size={44} fontSize={18} style={styles.avatar} />
+                <View style={styles.rowText}>
+                  <Text style={[styles.name, { color: theme.textPrimary }]} numberOfLines={1}>{profile.name}</Text>
+                  <Text style={[styles.username, { color: theme.textSecondary }]} numberOfLines={1}>@{profile.username}</Text>
+                </View>
+                <AnimatedPressable
+                  onPress={() => confirmUnblock(profile)}
+                  style={[styles.requestButton, { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1 }]}
+                >
+                  <Text style={[styles.requestButtonText, { color: theme.textPrimary }]}>Deblochează</Text>
+                </AnimatedPressable>
+              </View>
+            ))}
+          </>
+        )}
       </ScrollView>
 
       <FriendPrefsModal
@@ -266,6 +341,7 @@ export default function Friends() {
         prefs={prefs}
         onChange={updatePref}
         onRemove={() => menuFor && confirmRemoveFriend(menuFor)}
+        onBlock={() => menuFor && confirmBlockFriend(menuFor)}
         onClose={() => setMenuFor(null)}
       />
       <StoryViewer
