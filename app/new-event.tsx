@@ -78,6 +78,8 @@ export default function NewEvent() {
   const [rentalProofAsset, setRentalProofAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [drinks, setDrinks] = useState<EventDrink[]>([]);
   const [songs, setSongs] = useState<SongCatalogItem[]>([]);
+  const [visibility, setVisibility] = useState<'public' | 'private'>('public');
+  const [approvalMode, setApprovalMode] = useState<'instant' | 'manual'>('instant');
 
   useEffect(() => {
     const draft = getEventPreviewDraft();
@@ -95,6 +97,8 @@ export default function NewEvent() {
       setRentalProofAsset(draft.rentalProofAsset ?? null);
       setDrinks(draft.drinks ?? []);
       setSongs(draft.songs ?? []);
+      setVisibility(draft.visibility);
+      setApprovalMode(draft.approvalMode);
       if (draft.startsAt) {
         const date = new Date(draft.startsAt);
         setSelectedDate(startOfDay(date));
@@ -278,6 +282,8 @@ export default function NewEvent() {
             : null,
         locationIsRented,
         rentalProofPath,
+        visibility,
+        approvalMode,
       });
 
       if (!created) {
@@ -314,6 +320,8 @@ export default function NewEvent() {
       locationIsRented, rentalProofAttached: !!rentalProofAsset, rentalProofAsset,
       drinks,
       songs,
+      visibility,
+      approvalMode,
     });
     light();
     router.push('/event-preview');
@@ -468,6 +476,66 @@ export default function NewEvent() {
           keyboardType="number-pad"
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
         />
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>CINE VEDE EVENIMENTUL</Text>
+        <View style={styles.rentedRow}>
+          {[
+            { label: 'Public', value: 'public' as const },
+            { label: 'Privat', value: 'private' as const },
+          ].map((option) => (
+            <AnimatedPressable
+              key={option.value}
+              onPress={() => {
+                light();
+                setVisibility(option.value);
+              }}
+              style={[
+                styles.rentedChip,
+                { backgroundColor: theme.surface, borderColor: visibility === option.value ? colors.green500 : theme.border },
+                visibility === option.value && styles.chipActive,
+              ]}
+            >
+              <Text style={[styles.chipText, { color: visibility === option.value ? colors.green500 : theme.textPrimary }]}>
+                {option.label}
+              </Text>
+            </AnimatedPressable>
+          ))}
+        </View>
+        <Text style={[styles.rentalProofHint, { color: theme.textSecondary }]}>
+          {visibility === 'private'
+            ? 'Doar organizatorul, participanții și cei cu o cerere trimisă îl pot vedea.'
+            : 'Vizibil oricui deschide harta sau calendarul.'}
+        </Text>
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>CUM SE ALĂTURĂ PARTICIPANȚII</Text>
+        <View style={styles.rentedRow}>
+          {[
+            { label: 'Instant', value: 'instant' as const },
+            { label: 'Aprobare manuală', value: 'manual' as const },
+          ].map((option) => (
+            <AnimatedPressable
+              key={option.value}
+              onPress={() => {
+                light();
+                setApprovalMode(option.value);
+              }}
+              style={[
+                styles.rentedChip,
+                { backgroundColor: theme.surface, borderColor: approvalMode === option.value ? colors.green500 : theme.border },
+                approvalMode === option.value && styles.chipActive,
+              ]}
+            >
+              <Text style={[styles.chipText, { color: approvalMode === option.value ? colors.green500 : theme.textPrimary }]}>
+                {option.label}
+              </Text>
+            </AnimatedPressable>
+          ))}
+        </View>
+        <Text style={[styles.rentalProofHint, { color: theme.textSecondary }]}>
+          {approvalMode === 'manual'
+            ? 'Cererile de participare apar în notificările tale — le accepți sau refuzi tu.'
+            : 'Oricine apasă „Hai la Spritz!” intră direct în listă.'}
+        </Text>
 
         <Text style={[styles.label, { color: theme.textSecondary }]}>LOCAȚIA E ÎNCHIRIATĂ?</Text>
         <View style={styles.rentedRow}>

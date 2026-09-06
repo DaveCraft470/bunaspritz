@@ -70,6 +70,8 @@ export default function EditEvent() {
   const [drinks, setDrinks] = useState<EventDrink[]>([]);
   const [songs, setSongs] = useState<SongCatalogItem[]>([]);
   const [draftHydrated, setDraftHydrated] = useState(false);
+  const [visibility, setVisibility] = useState<'public' | 'private'>('public');
+  const [approvalMode, setApprovalMode] = useState<'instant' | 'manual'>('instant');
 
   useEffect(() => {
     if (!event) return;
@@ -90,6 +92,8 @@ export default function EditEvent() {
     setMaxParticipants(event.maxParticipants === null ? '' : String(event.maxParticipants));
     setDrinks(getEventDrinks(event.id));
     setSongs(getEventSongs(event.id));
+    setVisibility(event.visibility);
+    setApprovalMode(event.approvalMode);
   }, [event]);
 
   useEffect(() => {
@@ -112,6 +116,8 @@ export default function EditEvent() {
       setMaxParticipants(draft.maxParticipants === null ? '' : String(draft.maxParticipants));
       setDrinks(draft.drinks ?? []);
       setSongs(draft.songs ?? []);
+      setVisibility(draft.visibility);
+      setApprovalMode(draft.approvalMode);
     }
     setDraftHydrated(true);
   }, [event]);
@@ -281,6 +287,8 @@ export default function EditEvent() {
           : null,
         locationIsRented,
         rentalProofPath: proofPath,
+        visibility,
+        approvalMode,
       });
       if (!updated) throw new Error('event-update-failed');
       if (oldProofPath && oldProofPath !== proofPath) await removeRentalProof(oldProofPath);
@@ -316,6 +324,8 @@ export default function EditEvent() {
       locationIsRented, rentalProofAttached: !!rentalProofAsset || !!currentEvent.rentalProofPath,
       drinks,
       songs,
+      visibility,
+      approvalMode,
     });
     light();
     router.push('/event-preview');
@@ -383,6 +393,10 @@ export default function EditEvent() {
           <MusicPlaylistEditor value={songs} onChange={setSongs} />
           <FieldLabel text="MAX PARTICIPANȚI" theme={theme} />
           <TextInput value={maxParticipants} onChangeText={setMaxParticipants} keyboardType="number-pad" placeholder="Lasă gol pentru nelimitat" placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
+          <FieldLabel text="CINE VEDE EVENIMENTUL" theme={theme} />
+          <View style={styles.rentedRow}>{[{ label: 'Public', value: 'public' as const }, { label: 'Privat', value: 'private' as const }].map((option) => <AnimatedPressable key={option.value} onPress={() => setVisibility(option.value)} style={[styles.rentedChip, { backgroundColor: theme.surface, borderColor: visibility === option.value ? colors.green500 : theme.border }]}><Text style={[styles.chipText, { color: visibility === option.value ? colors.green500 : theme.textPrimary }]}>{option.label}</Text></AnimatedPressable>)}</View>
+          <FieldLabel text="CUM SE ALĂTURĂ PARTICIPANȚII" theme={theme} />
+          <View style={styles.rentedRow}>{[{ label: 'Instant', value: 'instant' as const }, { label: 'Aprobare manuală', value: 'manual' as const }].map((option) => <AnimatedPressable key={option.value} onPress={() => setApprovalMode(option.value)} style={[styles.rentedChip, { backgroundColor: theme.surface, borderColor: approvalMode === option.value ? colors.green500 : theme.border }]}><Text style={[styles.chipText, { color: approvalMode === option.value ? colors.green500 : theme.textPrimary }]}>{option.label}</Text></AnimatedPressable>)}</View>
           <FieldLabel text="LOCAȚIA E ÎNCHIRIATĂ?" theme={theme} />
           <View style={styles.rentedRow}>{[{ label: 'Da', value: true }, { label: 'Nu', value: false }].map((option) => <AnimatedPressable key={option.label} onPress={() => { setLocationIsRented((current) => current === option.value ? null : option.value); if (option.value !== true) { setRentalProofAsset(null); setProofRemoved(true); } }} style={[styles.rentedChip, { backgroundColor: theme.surface, borderColor: locationIsRented === option.value ? colors.green500 : theme.border }]}><Text style={[styles.chipText, { color: locationIsRented === option.value ? colors.green500 : theme.textPrimary }]}>{option.label}</Text></AnimatedPressable>)}</View>
           {locationIsRented === true && <AnimatedPressable onPress={pickProof} style={[styles.proofCard, { backgroundColor: theme.surface, borderColor: theme.border }]}><Ionicons name="camera-outline" size={20} color={theme.accent} /><Text style={[styles.proofText, { color: theme.textPrimary }]}>{rentalProofAsset ? 'Schimbă dovada' : proofRemoved || !currentEvent.rentalProofPath ? 'Atașează dovada (opțional)' : 'Dovada existentă · schimbă'}</Text></AnimatedPressable>}

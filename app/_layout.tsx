@@ -16,6 +16,7 @@ import {
 import { FredokaOne_400Regular } from '@expo-google-fonts/fredoka-one';
 
 import { FloatingBottomNav } from '@/components/layout/FloatingBottomNav';
+import { setupPushNotificationHandling } from '@/lib/pushTokens';
 import { ThemeProvider, useAppTheme } from '@/contexts/ThemeContext';
 import { NavVisibilityProvider } from '@/contexts/NavVisibilityContext';
 import { HomeViewProvider } from '@/contexts/HomeViewContext';
@@ -116,6 +117,11 @@ export default function RootLayout() {
   // Once true, swaps the branded AnimatedSplash out for the real app — see
   // the render below for why this needs the fonts already loaded.
   const [splashDone, setSplashDone] = useState(false);
+
+  // Once, for the app's whole lifetime — not per-user — since it just wires
+  // up how any push is displayed/tapped, unlike registerForPushNotifications
+  // (in UserContext) which is per-signed-in-user token registration.
+  useEffect(() => setupPushNotificationHandling(), []);
 
   useEffect(() => {
     if (loaded || error) {

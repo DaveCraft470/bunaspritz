@@ -68,7 +68,8 @@ Deno.serve(async (req) => {
   await sendExpoPush(
     (tokens ?? []).map((t) => t.token),
     'Prieten la Spritz!',
-    `${joiner.name} a intrat la ${event?.title ?? 'un Spritz'}!`
+    `${joiner.name} a intrat la ${event?.title ?? 'un Spritz'}!`,
+    { route: `/event/${eventId}` }
   );
 
   return new Response('ok', { status: 200 });

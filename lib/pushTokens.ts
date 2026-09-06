@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { isRunningInExpoGo } from 'expo';
+import { router } from 'expo-router';
 
 import { supabase } from '@/lib/supabase';
 
@@ -45,6 +46,44 @@ export async function registerForPushNotifications(userId: string): Promise<void
     // No-op: push is best-effort, and getExpoPushTokenAsync throws in
     // environments without real push capability (e.g. some emulators).
   }
+}
+
+// Without an explicit handler, expo-notifications' default behavior is to
+// suppress the OS banner entirely while the app is in the foreground — every
+// push (join, message, follow, join-request...) was arriving silently
+// whenever the app happened to be open, which reads as "push doesn't work"
+// even though the send side was fine. Also wires up tap-to-navigate: every
+// edge function (see supabase/functions/_shared/push.ts) sends a
+// `data.route` in-app path, so a tap just needs to hand that to the router.
+// Call once, near the app root — returns a cleanup for the listener.
+export function setupPushNotificationHandling(): () => void {
+  if (pushUnsupportedHere()) return () => {};
+
+  let responseSubscription: { remove: () => void } | null = null;
+  let cancelled = false;
+
+  import('expo-notifications').then((Notifications) => {
+    if (cancelled) return;
+
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
+
+    responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const route = response.notification.request.content.data?.route;
+      if (typeof route === 'string') router.push(route);
+    });
+  });
+
+  return () => {
+    cancelled = true;
+    responseSubscription?.remove();
+  };
 }
 
 // Removes only *this device's* token row, not every token the user has —

@@ -18,12 +18,15 @@ export async function getCallerId(req: Request, admin: SupabaseClient): Promise<
   return data.user.id;
 }
 
-export async function sendExpoPush(tokens: string[], title: string, body: string) {
+// `data.route` (an in-app path like `/event/<id>`) is read by the tap
+// listener set up in app/_layout.tsx — it's the whole mechanism by which
+// tapping a push actually navigates anywhere instead of just opening the app.
+export async function sendExpoPush(tokens: string[], title: string, body: string, data?: Record<string, string>) {
   if (!tokens.length) return;
 
   await fetch('https://exp.host/--/api/v2/push/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(tokens.map((to) => ({ to, title, body, sound: 'default' }))),
+    body: JSON.stringify(tokens.map((to) => ({ to, title, body, sound: 'default', data }))),
   });
 }

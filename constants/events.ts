@@ -16,6 +16,8 @@ export type SpritzEvent = {
   maxParticipants: number | null;
   locationIsRented: boolean | null;
   rentalProofPath: string | null;
+  visibility: 'public' | 'private';
+  approvalMode: 'instant' | 'manual';
   // 'scraper' = pulled in automatically from an external events site (see
   // supabase/functions/scrape-zilesinopti) rather than created by a host —
   // hostId is always null for these. sourceUrl points at the original listing.

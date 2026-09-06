@@ -22,6 +22,8 @@ export type EventPreviewDraft = {
   rentalProofAsset?: ImagePicker.ImagePickerAsset | null;
   drinks: EventDrink[];
   songs: SongCatalogItem[];
+  visibility: 'public' | 'private';
+  approvalMode: 'instant' | 'manual';
 };
 
 let draft: EventPreviewDraft | null = null;
@@ -57,5 +59,7 @@ export function previewDraftFromEvent(event: SpritzEvent): EventPreviewDraft {
     rentalProofAttached: !!event.rentalProofPath,
     drinks: [],
     songs: [],
+    visibility: event.visibility,
+    approvalMode: event.approvalMode,
   };
 }

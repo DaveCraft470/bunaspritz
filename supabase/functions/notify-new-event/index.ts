@@ -10,8 +10,12 @@ Deno.serve(async (req) => {
 
   const { eventId } = await req.json();
 
-  const { data: event } = await admin.from('events').select('id, title, host_id').eq('id', eventId).single();
+  const { data: event } = await admin.from('events').select('id, title, host_id, visibility').eq('id', eventId).single();
   if (!event || event.host_id !== callerId) return new Response('forbidden', { status: 403 });
+
+  // A private event isn't meant to reach anyone beyond who the host lets in
+  // directly — broadcasting it to "frequent attendees" would defeat that.
+  if (event.visibility === 'private') return new Response('private event, no broadcast', { status: 200 });
 
   const { data: host } = await admin.from('profiles').select('name').eq('id', callerId).single();
 
@@ -65,7 +69,8 @@ Deno.serve(async (req) => {
   await sendExpoPush(
     (tokens ?? []).map((t) => t.token),
     `${host?.name ?? 'Un host'} a creat un Spritz nou!`,
-    event.title
+    event.title,
+    { route: `/event/${event.id}` }
   );
 
   return new Response('ok', { status: 200 });
