@@ -434,4 +434,21 @@ export const en: Translations = {
   organizerCalendar: {
     weekdayInitials: ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as string[],
   },
+  organizerParticipants: {
+    noAccess: "You don't have access to this event's participants.",
+    removeParticipantTitle: 'Remove participant',
+    removeParticipantMessage: (username: string) => `Are you sure you want to remove @${username} from the event?`,
+    cancel: 'Cancel',
+    remove: 'Remove',
+    localOnlyTitle: 'Ready locally',
+    localOnlyMessage: 'The removal is only local for now. Reliable persistence needs a Supabase RPC that verifies the host.',
+    title: 'Participants',
+    loadingCount: 'Loading...',
+    participantsSuffix: 'participants',
+    localNote: 'Kicking is ready locally; permanent saving needs a backend.',
+    couldNotLoadParticipants: "Couldn't load participants.",
+    retry: 'Retry',
+    noOneJoinedYet: "No one has joined yet.",
+    viewProfile: 'View profile',
+  },
 };
