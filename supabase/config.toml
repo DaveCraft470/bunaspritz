@@ -392,6 +392,12 @@ allow_dynamic_registration = false
 # HMAC signature (see supabase/functions/didit-webhook/index.ts) instead.
 verify_jwt = false
 
+[functions.scrape-zilesinopti]
+# Called by pg_cron (see the schedule_scrape_zilesinopti migration), not by a
+# signed-in user — it authenticates via the x-cron-secret header instead (see
+# supabase/functions/scrape-zilesinopti/index.ts).
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

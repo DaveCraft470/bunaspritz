@@ -84,6 +84,7 @@ function EventCard({ event }: { event: SpritzEvent }) {
             {event.title}
           </Text>
           {user?.id === event.hostId && <Text style={styles.ownerBadge}>Evenimentul tău</Text>}
+          {event.source === 'scraper' && <Text style={styles.scrapedBadge}>🌐 Online</Text>}
         </View>
         <Text style={[styles.eventMeta, { color: theme.textSecondary }]} numberOfLines={1}>
           {formatEventDate(event)}{event.genre ? ` · ${event.genre}` : ''}
@@ -248,6 +249,7 @@ const styles = StyleSheet.create({
   eventTitle: { flex: 1, fontSize: 15, fontWeight: '800' },
   eventMeta: { fontSize: 11, marginTop: 4 },
   ownerBadge: { color: colors.green700, fontSize: 10, fontWeight: '800' },
+  scrapedBadge: { color: '#8B5CF6', fontSize: 10, fontWeight: '800' }, // matches the scraped-event pin color (SCRAPER_COLOR in the edge function)
   state: { alignItems: 'center', paddingVertical: spacing.xxxl },
   stateTitle: { fontSize: 16, fontWeight: '800' },
   stateText: { fontSize: 13, textAlign: 'center', marginTop: spacing.sm },

@@ -1,5 +1,3 @@
-import { File } from 'expo-file-system';
-
 import { supabase } from '@/lib/supabase';
 import { SpritzEvent } from '@/constants/events';
 
@@ -7,7 +5,7 @@ const RENTAL_PROOF_BUCKET = 'rental-proofs';
 
 type EventRow = {
   id: string;
-  host_id: string;
+  host_id: string | null;
   title: string;
   detail: string;
   emoji: string;
@@ -21,10 +19,12 @@ type EventRow = {
   max_participants: number | null;
   location_is_rented: boolean | null;
   rental_proof_path: string | null;
+  source: 'host' | 'scraper';
+  source_url: string | null;
 };
 
 const EVENT_COLUMNS =
-  'id, host_id, title, detail, emoji, color, lng, lat, genre, starts_at, entry_fee_ron, drinks_price_ron, max_participants, location_is_rented, rental_proof_path';
+  'id, host_id, title, detail, emoji, color, lng, lat, genre, starts_at, entry_fee_ron, drinks_price_ron, max_participants, location_is_rented, rental_proof_path, source, source_url';
 
 function mapEvent(row: EventRow): SpritzEvent {
   return {
@@ -43,6 +43,8 @@ function mapEvent(row: EventRow): SpritzEvent {
     maxParticipants: row.max_participants,
     locationIsRented: row.location_is_rented,
     rentalProofPath: row.rental_proof_path,
+    source: row.source,
+    sourceUrl: row.source_url,
   };
 }
 
@@ -56,8 +58,11 @@ export async function uploadRentalProof(
   extension: string,
   contentType: string
 ): Promise<string | null> {
-  const file = new File(localUri);
-  const bytes = await file.arrayBuffer();
+  // expo-file-system's File class is a no-op stub on the web build (it only
+  // warns "not supported on web") — fetch() reads both file:// (native) and
+  // blob:/data: (web) uris the same way, so it works everywhere without a
+  // platform branch (see lib/messaging.ts's sendMediaMessage for the same fix).
+  const bytes = await (await fetch(localUri)).arrayBuffer();
   if (bytes.byteLength === 0) return null;
 
   const path = `${hostId}/${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
@@ -91,7 +96,7 @@ export async function fetchEvents(): Promise<SpritzEvent[]> {
 
 export async function createEvent(
   hostId: string,
-  fields: Omit<SpritzEvent, 'id' | 'hostId'>
+  fields: Omit<SpritzEvent, 'id' | 'hostId' | 'source' | 'sourceUrl'>
 ): Promise<SpritzEvent | null> {
   const { data, error } = await supabase
     .from('events')
@@ -129,7 +134,7 @@ export async function createEvent(
 export async function updateEvent(
   eventId: string,
   hostId: string,
-  fields: Omit<SpritzEvent, 'id' | 'hostId'>
+  fields: Omit<SpritzEvent, 'id' | 'hostId' | 'source' | 'sourceUrl'>
 ): Promise<SpritzEvent | null> {
   const { data, error } = await supabase
     .from('events')
