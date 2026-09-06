@@ -23,10 +23,11 @@ import { Avatar } from '@/components/common/Avatar';
 import { CelebrationOverlay } from '@/components/event/CelebrationOverlay';
 import { PartyMeter } from '@/components/event/PartyMeter';
 import { ReportModal } from '@/components/social/ReportModal';
+import { SafetyMenu } from '@/components/social/SafetyMenu';
 import { EventInviteModal } from '@/components/social/EventInviteModal';
 import { StoriesRow, type StoryGroup } from '@/components/stories/StoriesRow';
 import { StoryViewer } from '@/components/stories/StoryViewer';
-import { addReport, EVENT_REPORT_REASONS, hasActiveReport } from '@/lib/reports';
+import { EVENT_REPORT_REASONS } from '@/lib/reports';
 import { getFriends } from '@/lib/friendRequests';
 import { sendEventInvitation } from '@/lib/eventInvitations';
 import { formatDrinkVolume, getEventDrinks } from '@/lib/drinks';
@@ -74,6 +75,7 @@ export default function EventDetail() {
   const [joined, setJoined] = useState(false);
   const [joining, setJoining] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [safetyMenuOpen, setSafetyMenuOpen] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteFriends, setInviteFriends] = useState<Awaited<ReturnType<typeof getFriends>>>([]);
   const [viewerStories, setViewerStories] = useState<StoryGroup | null>(null);
@@ -283,7 +285,21 @@ export default function EventDetail() {
           <Text numberOfLines={1} style={[styles.topBarTitle, { color: theme.textPrimary }]}>
             {event.title}
           </Text>
-          <View style={styles.backButton} />
+          {!isHost ? (
+            <AnimatedPressable
+              onPress={() => {
+                light();
+                setSafetyMenuOpen(true);
+              }}
+              hitSlop={10}
+              accessibilityLabel="Opțiuni de siguranță"
+              style={[styles.backButton, shadows.soft, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            >
+              <Ionicons name="ellipsis-horizontal" size={20} color={theme.textPrimary} />
+            </AnimatedPressable>
+          ) : (
+            <View style={styles.backButton} />
+          )}
         </View>
 
         <ScrollView
@@ -459,14 +475,6 @@ export default function EventDetail() {
                 <Text style={[styles.manageParticipantsText, { color: theme.accent }]}>Gestionează participanții</Text>
               </AnimatedPressable>
             )}
-            {!isHost && (
-              <AnimatedPressable
-                onPress={() => setReportModalOpen(true)}
-                style={[styles.reportEventButton, { borderColor: theme.border }]}
-              >
-                <Text style={[styles.reportEventText, { color: theme.textSecondary }]}>Raportează evenimentul</Text>
-              </AnimatedPressable>
-            )}
           </View>
 
           {eventStories.length > 0 && (
@@ -600,27 +608,29 @@ export default function EventDetail() {
         <ReportModal
           visible={reportModalOpen}
           targetType="event"
+          targetId={event.id}
           targetLabel={event.title}
           reasons={EVENT_REPORT_REASONS}
-          onSubmit={(reason, description) => {
-            if (hasActiveReport(user.id, 'event', event.id)) {
-              Alert.alert('Raport duplicat', 'Ai raportat deja acest eveniment.');
-              return;
-            }
-            addReport({
-              reporterId: user.id,
-              reporterLabel: `@${user.username}`,
-              targetType: 'event',
-              targetId: event.id,
-              targetLabel: event.title,
-              reason,
-              description,
-            });
-            Alert.alert('Raport trimis', 'Raportul a fost adăugat local pentru verificare.');
-          }}
+          reporterId={user.id}
+          reporterLabel={`@${user.username}`}
           onClose={() => setReportModalOpen(false)}
         />
       ) : null}
+      {event && (
+        <SafetyMenu
+          visible={safetyMenuOpen}
+          title={event.title}
+          onClose={() => setSafetyMenuOpen(false)}
+          actions={[
+            {
+              key: 'report',
+              label: 'Raportează evenimentul',
+              icon: 'flag-outline',
+              onPress: () => setReportModalOpen(true),
+            },
+          ]}
+        />
+      )}
     </View>
   );
 }
@@ -711,8 +721,6 @@ const styles = StyleSheet.create({
   attendeeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 2 },
   manageParticipantsButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderRadius: 12, paddingVertical: 10, marginTop: 14 },
   manageParticipantsText: { fontSize: 12, fontWeight: '800' },
-  reportEventButton: { alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingVertical: 10, marginTop: 10 },
-  reportEventText: { fontSize: 12, fontWeight: '700' },
   inviteFriendsButton: { flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 15, borderWidth: 1, padding: 13 },
   inviteFriendsText: { flex: 1, fontSize: 13, fontWeight: '800' },
   drinkRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },

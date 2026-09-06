@@ -27,6 +27,7 @@ import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
 import { FriendsHubTabs } from '@/components/friends/FriendsHubTabs';
 import { Profile } from '@/lib/social';
+import { isBlocked, useBlocks } from '@/lib/blocks';
 import { getFriends } from '@/lib/friendRequests';
 import { extensionAndTypeForImage } from '@/lib/media';
 import { alertPermissionDenied } from '@/lib/permissions';
@@ -442,6 +443,11 @@ export default function Messages() {
 
   const activeFriend = activeChat?.kind === 'friend' ? friends.find((f) => f.id === activeChat.id) : undefined;
   const selectedGroup = activeChat?.kind === 'group' ? chats.find((c) => c.id === activeChat.id) : undefined;
+  const blocksState = useBlocks();
+  const friendBlocked = !!(user && activeFriend) && isBlocked(user.id, activeFriend.id);
+  const visibleFriends = user ? friends.filter((friend) => !isBlocked(user.id, friend.id)) : friends;
+  // Referenced only to subscribe to block-store changes above.
+  void blocksState;
 
   // One shared player for every voice bubble in the thread — swapping its
   // source on tap instead of mounting a player per bubble.
@@ -476,7 +482,7 @@ export default function Messages() {
   // waveform in the composer — reset to flat whenever recording isn't live.
   useEffect(() => {
     if (!recorderState.isRecording) {
-      setWaveLevels(Array(RECORDING_WAVE_BARS).fill(0));
+      setWaveLevels((current) => (current.some((v) => v !== 0) ? Array(RECORDING_WAVE_BARS).fill(0) : current));
       return;
     }
     const level = normalizedMeteringLevel(recorderState.metering);
@@ -813,7 +819,7 @@ export default function Messages() {
     if (!activeChat) return;
     const timer = setTimeout(() => messagesScrollRef.current?.scrollToEnd({ animated: true }), 50);
     return () => clearTimeout(timer);
-  }, [activeChat, displayedMessages]);
+  }, [activeChat, displayedMessages.length]);
 
   async function sendMessage() {
     const text = draft.trim();
@@ -907,16 +913,16 @@ export default function Messages() {
                 </View>
               )}
 
-              {!friendsLoading && !friendsError && friends.length === 0 && (
+              {!friendsLoading && !friendsError && visibleFriends.length === 0 && (
                 <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
                   Nu ai încă prieteni disponibili pentru mesaje.
                 </Text>
               )}
 
-              {!friendsLoading && !friendsError && friends.length > 0 && (
+              {!friendsLoading && !friendsError && visibleFriends.length > 0 && (
                 <View style={styles.friendsSection}>
                   <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>PRIETENI</Text>
-                  {friends.map((friend) => {
+                  {visibleFriends.map((friend) => {
                     const last = friendLast[friend.id];
                     const mine = !!last && !!user && last.sender_id === user.id;
                     return (
@@ -1045,6 +1051,20 @@ export default function Messages() {
 
             {/* marginBottom tracks the keyboard directly (see the effect above)
                 instead of KeyboardAvoidingView, which overshot on Android. */}
+            {friendBlocked ? (
+              <Animated.View
+                style={[
+                  styles.composer,
+                  styles.blockedComposer,
+                  { marginBottom: composerOffset, backgroundColor: theme.surfaceMuted, borderColor: theme.border },
+                ]}
+              >
+                <Ionicons name="lock-closed" size={15} color={theme.textSecondary} />
+                <Text style={[styles.blockedComposerText, { color: theme.textSecondary }]} numberOfLines={2}>
+                  Ai blocat acest utilizator. Poți continua conversația după ce îl deblochezi din profilul lui.
+                </Text>
+              </Animated.View>
+            ) : (
             <Animated.View
               style={[
                 styles.composer,
@@ -1148,6 +1168,7 @@ export default function Messages() {
                 <Text style={styles.sendText}>↑</Text>
               </Pressable>
             </Animated.View>
+            )}
           </>
         )}
       </View>
@@ -1243,6 +1264,8 @@ const styles = StyleSheet.create({
   time: { fontSize: 9, textAlign: 'right' },
   timeMine: { color: '#D6FFE2' },
   composer: { marginHorizontal: 16, paddingVertical: 7, paddingHorizontal: 7, borderRadius: 22, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  blockedComposer: { paddingHorizontal: 14, paddingVertical: 12 },
+  blockedComposerText: { flex: 1, fontSize: 12, fontWeight: '600', lineHeight: 16 },
   add: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   addText: { fontSize: 25, fontWeight: '300', marginTop: -2 },
   input: { flex: 1, fontSize: 15, paddingVertical: 8 },

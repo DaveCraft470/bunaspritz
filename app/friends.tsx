@@ -16,6 +16,10 @@ import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { FriendPrefsModal } from '@/components/social/FriendPrefsModal';
+import { ReportModal } from '@/components/social/ReportModal';
+import { SafetyMenu } from '@/components/social/SafetyMenu';
+import { blockUser, unblockUser, useBlocks } from '@/lib/blocks';
+import { USER_REPORT_REASONS } from '@/lib/reports';
 import { FriendPrefs, Profile, getFriendPrefs, setFriendPrefs, unfollow } from '@/lib/social';
 import {
   acceptFriendRequest,
@@ -49,8 +53,13 @@ export default function Friends() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [menuFor, setMenuFor] = useState<Profile | null>(null);
+  const [safetyMenuFor, setSafetyMenuFor] = useState<Profile | null>(null);
+  const [reportTarget, setReportTarget] = useState<Profile | null>(null);
   const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false });
   const [refreshing, setRefreshing] = useState(false);
+  const blocksState = useBlocks();
+  const blockedIds = new Set(blocksState.filter((block) => block.blockerId === user?.id).map((block) => block.blockedId));
+  const visibleFriends = friends.filter((friend) => !blockedIds.has(friend.id));
 
   function load() {
     if (!user) return;
@@ -133,6 +142,32 @@ export default function Friends() {
         },
       },
     ]);
+  }
+
+  function confirmToggleBlock(friend: Profile) {
+    if (!user) return;
+    light();
+    const alreadyBlocked = blockedIds.has(friend.id);
+    if (alreadyBlocked) {
+      unblockUser(user.id, friend.id);
+      showAlert('Deblocat', `Ai deblocat pe ${friend.name}.`);
+      return;
+    }
+    Alert.alert(
+      `Blochezi pe ${friend.name}?`,
+      'Nu vă veți mai putea trimite mesaje sau cereri de prietenie. Poți debloca oricând din profilul lui.',
+      [
+        { text: 'Anulează', style: 'cancel' },
+        {
+          text: 'Blochează',
+          style: 'destructive',
+          onPress: () => {
+            blockUser(user.id, friend.id, friend.name);
+            showAlert('Utilizator blocat', `${friend.name} a fost blocat.`);
+          },
+        },
+      ],
+    );
   }
 
   return (
@@ -226,9 +261,9 @@ export default function Friends() {
           </>
         )}
 
-        {!loading && !loadError && friends.length > 0 && <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Prieteni</Text>}
+        {!loading && !loadError && visibleFriends.length > 0 && <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Prieteni</Text>}
 
-        {!loading && !loadError && friends.length === 0 && incoming.length === 0 && outgoing.length === 0 && (
+        {!loading && !loadError && visibleFriends.length === 0 && incoming.length === 0 && outgoing.length === 0 && (
           <View style={styles.emptyState}>
             <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>Încă nu ai prieteni</Text>
             <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Adaugă persoane pentru a începe conversațiile.</Text>
@@ -241,7 +276,7 @@ export default function Friends() {
           </View>
         )}
 
-        {friends.map((friend) => {
+        {visibleFriends.map((friend) => {
           const friendStories = friendsStories.filter((story) => story.userId === friend.id);
           const friendStoryGroup = friendStories.length
             ? { userId: friend.id, label: friend.name, stories: friendStories }
@@ -254,7 +289,7 @@ export default function Friends() {
             onAvatarPress={() => friendStoryGroup && setViewerStories(friendStoryGroup)}
             onProfilePress={() => router.push(`/user/${friend.id}`)}
             onMessagePress={() => router.push({ pathname: '/messages', params: { friendId: friend.id } })}
-            onMorePress={() => openMenu(friend)}
+            onMorePress={() => setSafetyMenuFor(friend)}
           />
           );
         })}
@@ -268,6 +303,55 @@ export default function Friends() {
         onRemove={() => menuFor && confirmRemoveFriend(menuFor)}
         onClose={() => setMenuFor(null)}
       />
+      <SafetyMenu
+        visible={!!safetyMenuFor}
+        title={safetyMenuFor ? `@${safetyMenuFor.username}` : undefined}
+        onClose={() => setSafetyMenuFor(null)}
+        actions={
+          safetyMenuFor
+            ? [
+                {
+                  key: 'prefs',
+                  label: 'Preferințe notificări',
+                  icon: 'notifications-outline',
+                  onPress: () => openMenu(safetyMenuFor),
+                },
+                {
+                  key: 'block',
+                  label: blockedIds.has(safetyMenuFor.id) ? 'Deblochează' : 'Blochează',
+                  icon: blockedIds.has(safetyMenuFor.id) ? 'lock-open-outline' : 'lock-closed-outline',
+                  destructive: !blockedIds.has(safetyMenuFor.id),
+                  onPress: () => confirmToggleBlock(safetyMenuFor),
+                },
+                {
+                  key: 'report',
+                  label: 'Raportează',
+                  icon: 'flag-outline',
+                  onPress: () => setReportTarget(safetyMenuFor),
+                },
+                {
+                  key: 'remove',
+                  label: 'Elimină prieten',
+                  icon: 'person-remove-outline',
+                  destructive: true,
+                  onPress: () => confirmRemoveFriend(safetyMenuFor),
+                },
+              ]
+            : []
+        }
+      />
+      {user && reportTarget && (
+        <ReportModal
+          visible={!!reportTarget}
+          targetType="user"
+          targetId={reportTarget.id}
+          targetLabel={`@${reportTarget.username}`}
+          reasons={USER_REPORT_REASONS}
+          reporterId={user.id}
+          reporterLabel={`@${user.username}`}
+          onClose={() => setReportTarget(null)}
+        />
+      )}
       <StoryViewer
         visible={!!viewerStories}
         stories={viewerStories?.stories ?? []}
