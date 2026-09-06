@@ -25,14 +25,16 @@ export default function AdminEvents() {
   const [localModeration, setLocalModeration] = useState<Record<string, 'hidden' | 'review'>>({});
   const [hostNames, setHostNames] = useState<Record<string, string>>({});
   useEffect(() => {
-    const hostIds = [...new Set(events.map((event) => event.hostId))];
+    const hostIds = [...new Set(events.map((event) => event.hostId).filter((id): id is string => id !== null))];
     getProfiles(hostIds).then((profiles) => {
       setHostNames(Object.fromEntries(profiles.map((profile) => [profile.id, `@${profile.username}`])));
     });
   }, [events]);
   const visibleEvents = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return events.filter((event) => !normalized || event.title.toLowerCase().includes(normalized) || event.hostId.toLowerCase().includes(normalized));
+    return events.filter(
+      (event) => !normalized || event.title.toLowerCase().includes(normalized) || (event.hostId ?? '').toLowerCase().includes(normalized)
+    );
   }, [events, query]);
 
   if (!isAdminAccessEnabled(user)) return <AccessDenied />;
@@ -76,7 +78,9 @@ export default function AdminEvents() {
                 <View style={styles.cardText}>
                   <Text style={[styles.eventTitle, { color: theme.textPrimary }]} numberOfLines={1}>{item.title}</Text>
                   <Text style={[styles.detail, { color: theme.textSecondary }]}>{formatDate(item.startsAt)}</Text>
-                  <Text style={[styles.detail, { color: theme.textSecondary }]}>Organizator: {hostNames[item.hostId] ?? item.hostId}</Text>
+                  <Text style={[styles.detail, { color: theme.textSecondary }]}>
+                    Organizator: {item.source === 'scraper' ? 'zilesinopti.ro (auto)' : (item.hostId && hostNames[item.hostId]) ?? item.hostId}
+                  </Text>
                 </View>
                 {moderation && <Text style={[styles.badge, { color: theme.accent }]}>{moderation === 'hidden' ? 'Ascuns' : 'Review'}</Text>}
               </View>

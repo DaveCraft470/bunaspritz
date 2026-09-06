@@ -83,7 +83,7 @@ export default function EventDetail() {
     fetchAttendees(event.id).then(setAttendees);
     getEventAttendeeCount(event.id).then(setAttendeeCount);
     hasJoined(event.id, user.id).then(setJoined);
-    getProfile(event.hostId).then(setHostProfile);
+    if (event.hostId) getProfile(event.hostId).then(setHostProfile);
     getFriends(user.id).then(setInviteFriends);
   }, [event, user]);
 
@@ -311,6 +311,16 @@ export default function EventDetail() {
               </View>
               {hostProfile.verified && <Ionicons name="checkmark-circle" size={19} color={theme.accent} />}
               <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+            </AnimatedPressable>
+          )}
+          {event.source === 'scraper' && (
+            <AnimatedPressable
+              onPress={() => {
+                light();
+                if (event.sourceUrl) Linking.openURL(event.sourceUrl).catch(() => {});
+              }}
+            >
+              <Text style={[styles.hostLine, { color: theme.textSecondary }]}>🌐 Descoperit pe zilesinopti.ro</Text>
             </AnimatedPressable>
           )}
 

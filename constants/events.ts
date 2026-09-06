@@ -2,7 +2,7 @@ export type Song = { title: string; artist: string; image: string | null };
 
 export type SpritzEvent = {
   id: string;
-  hostId: string;
+  hostId: string | null;
   title: string;
   detail: string;
   emoji: string;
@@ -16,6 +16,11 @@ export type SpritzEvent = {
   maxParticipants: number | null;
   locationIsRented: boolean | null;
   rentalProofPath: string | null;
+  // 'scraper' = pulled in automatically from an external events site (see
+  // supabase/functions/scrape-zilesinopti) rather than created by a host —
+  // hostId is always null for these. sourceUrl points at the original listing.
+  source: 'host' | 'scraper';
+  sourceUrl: string | null;
 };
 
 // Same three real tracks show up at every event — "genul de muzică ascultată"
