@@ -149,6 +149,28 @@ export default function Settings() {
       <AnimatedPressable
         onPress={() => {
           light();
+          if (!effectiveVerified) {
+            router.push({ pathname: '/verification', params: { returnTo: '/settings' } });
+          }
+        }}
+        style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+      >
+        <View style={styles.rowText}>
+          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Verificare identitate</Text>
+          <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
+            {effectiveVerified ? 'Contul tău a trecut de verificarea 18+.' : 'Verifică-ți identitatea și vârsta (18+).'}
+          </Text>
+        </View>
+        {effectiveVerified ? (
+          <Ionicons name="checkmark-circle" size={18} color={colors.green500} />
+        ) : (
+          <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+        )}
+      </AnimatedPressable>
+
+      <AnimatedPressable
+        onPress={() => {
+          light();
           if (VERIFICATION_REQUIRED && !effectiveVerified) {
             router.push({ pathname: '/verification', params: { returnTo: '/new-event' } });
             return;
