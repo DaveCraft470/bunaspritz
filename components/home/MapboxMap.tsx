@@ -14,8 +14,19 @@ import {
   OPENFREEMAP_STYLE_URL,
 } from '@/constants/mapbox';
 import type { SpritzEvent } from '@/constants/events';
+import { EASTER_EGG_PINS } from '@/constants/easterEggs';
+import { showAlert } from '@/lib/alert';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { FakeMapBackdrop } from './FakeMapBackdrop';
+
+// Not "Azi" for these — every easter egg pin happens decades from now, so the
+// same-day special-case in event/[id].tsx's date formatting never applies.
+function formatEasterEggDate(happensAt: string) {
+  const date = new Date(happensAt);
+  const datePart = date.toLocaleDateString('ro-RO', { day: 'numeric', month: 'long', year: 'numeric' });
+  const timePart = date.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' });
+  return `${datePart} · ${timePart}`;
+}
 
 const LOAD_TIMEOUT_MS = MAP_LOAD_TIMEOUT_MS;
 
@@ -45,6 +56,13 @@ function toPinData(events: SpritzEvent[], storyEventIds?: Set<string>): PinWithS
 // window.maplibregl`, since MapLibre GL JS is API-compatible with the
 // Mapbox GL JS APIs this app touches.
 function buildHtml(provider: Provider, styleUrl: string, initialEvents: PinData[]) {
+  const easterEggPins = EASTER_EGG_PINS.map((egg) => ({
+    id: egg.id,
+    emoji: egg.emoji,
+    color: egg.color,
+    lng: egg.lng,
+    lat: egg.lat,
+  }));
   const libCssUrl =
     provider === 'mapbox'
       ? `https://api.mapbox.com/mapbox-gl-js/v${MAPBOX_GL_JS_VERSION}/mapbox-gl.css`
@@ -162,10 +180,24 @@ function buildHtml(provider: Provider, styleUrl: string, initialEvents: PinData[
       // Exposed so a newly-created event can get a pin without reloading the
       // whole map — see MapboxMap's effect watching the events prop grow.
       window.__addEventPin = addEventPin;
+      function addEasterEggPin(egg) {
+        var el = document.createElement('div');
+        el.className = 'event-pin';
+        el.style.background = egg.color;
+        el.innerHTML = '<span>' + egg.emoji + '</span>';
+        el.addEventListener('click', function () {
+          send('easteregg:' + egg.id);
+        });
+        new gl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([egg.lng, egg.lat])
+          .addTo(map);
+      }
       map.on('load', function () {
         send('loaded');
         var events = ${JSON.stringify(initialEvents)};
         events.forEach(addEventPin);
+        var easterEggs = ${JSON.stringify(easterEggPins)};
+        easterEggs.forEach(addEasterEggPin);
       });
       map.on('idle', function () { send('debug:idle'); });
       // 'dragstart' only fires for an actual touch/mouse drag, not for our
@@ -368,6 +400,10 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
       const [, id, originX, originY] = data.split(':');
       if (storyEventIds?.has(id)) onOpenStories?.(id);
       else router.push({ pathname: '/event/[id]', params: { id, originX, originY } });
+    } else if (data.startsWith('easteregg:')) {
+      const id = data.slice('easteregg:'.length);
+      const egg = EASTER_EGG_PINS.find((e) => e.id === id);
+      if (egg) showAlert(egg.title, formatEasterEggDate(egg.happensAt));
     } else if (data === 'located') {
       onLocated?.();
     } else if (data === 'userpanned') {
