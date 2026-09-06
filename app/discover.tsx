@@ -19,7 +19,9 @@ import { SpritzEvent } from '@/constants/events';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useEvents } from '@/contexts/EventsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
+import type { Translations } from '@/lib/i18n/ro';
 import {
   DEFAULT_DISCOVERY_FILTERS,
   DiscoveryDateFilter,
@@ -30,34 +32,40 @@ import {
   getDiscoveryGenres,
 } from '@/lib/discovery';
 
-const DATE_FILTERS: Array<{ label: string; value: DiscoveryDateFilter }> = [
-  { label: 'Toate datele', value: 'all' },
-  { label: 'Azi', value: 'today' },
-  { label: 'Mâine', value: 'tomorrow' },
-  { label: 'Weekend', value: 'weekend' },
-  { label: '7 zile', value: 'next7' },
-  { label: 'Luna aceasta', value: 'month' },
-];
+function getDateFilters(t: Translations): Array<{ label: string; value: DiscoveryDateFilter }> {
+  return [
+    { label: t.discover.allDates, value: 'all' },
+    { label: t.discover.today, value: 'today' },
+    { label: t.discover.tomorrow, value: 'tomorrow' },
+    { label: t.discover.weekend, value: 'weekend' },
+    { label: t.discover.next7Days, value: 'next7' },
+    { label: t.discover.thisMonth, value: 'month' },
+  ];
+}
 
-const PRICE_FILTERS: Array<{ label: string; value: DiscoveryPriceFilter }> = [
-  { label: 'Toate prețurile', value: 'all' },
-  { label: 'Gratuit', value: 'free' },
-  { label: '0–50 lei', value: 'under50' },
-  { label: '50–100 lei', value: '50to100' },
-  { label: '100+ lei', value: 'over100' },
-];
+function getPriceFilters(t: Translations): Array<{ label: string; value: DiscoveryPriceFilter }> {
+  return [
+    { label: t.discover.allPrices, value: 'all' },
+    { label: t.discover.free, value: 'free' },
+    { label: t.discover.under50, value: 'under50' },
+    { label: t.discover.from50to100, value: '50to100' },
+    { label: t.discover.over100, value: 'over100' },
+  ];
+}
 
-const SORT_OPTIONS: Array<{ label: string; value: DiscoverySort }> = [
-  { label: 'Relevante', value: 'relevant' },
-  { label: 'Cele mai apropiate ca dată', value: 'soonest' },
-  { label: 'Cele mai ieftine', value: 'cheapest' },
-  { label: 'Cele mai scumpe', value: 'mostExpensive' },
-];
+function getSortOptions(t: Translations): Array<{ label: string; value: DiscoverySort }> {
+  return [
+    { label: t.discover.relevant, value: 'relevant' },
+    { label: t.discover.soonest, value: 'soonest' },
+    { label: t.discover.cheapest, value: 'cheapest' },
+    { label: t.discover.mostExpensive, value: 'mostExpensive' },
+  ];
+}
 
-function formatEventDate(event: SpritzEvent) {
+function formatEventDate(event: SpritzEvent, locale: string) {
   const date = new Date(event.startsAt!);
-  return `${date.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' })} · ${date.toLocaleTimeString(
-    'ro-RO',
+  return `${date.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' })} · ${date.toLocaleTimeString(
+    locale,
     { hour: '2-digit', minute: '2-digit' },
   )}`;
 }
@@ -65,6 +73,7 @@ function formatEventDate(event: SpritzEvent) {
 function EventCard({ event }: { event: SpritzEvent }) {
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
+  const { t, locale } = useLanguage();
   const { user } = useUser();
 
   return (
@@ -83,14 +92,14 @@ function EventCard({ event }: { event: SpritzEvent }) {
           <Text style={[styles.eventTitle, { color: theme.textPrimary }]} numberOfLines={1}>
             {event.title}
           </Text>
-          {user?.id === event.hostId && <Text style={styles.ownerBadge}>Evenimentul tău</Text>}
-          {event.source === 'scraper' && <Text style={styles.scrapedBadge}>🌐 Online</Text>}
+          {user?.id === event.hostId && <Text style={styles.ownerBadge}>{t.discover.yourEvent}</Text>}
+          {event.source === 'scraper' && <Text style={styles.scrapedBadge}>{t.discover.online}</Text>}
         </View>
         <Text style={[styles.eventMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-          {formatEventDate(event)}{event.genre ? ` · ${event.genre}` : ''}
+          {formatEventDate(event, locale)}{event.genre ? ` · ${event.genre}` : ''}
         </Text>
         <Text style={[styles.eventMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-          {event.entryFeeRon === null || event.entryFeeRon === 0 ? 'Gratuit' : `${event.entryFeeRon} RON`}
+          {event.entryFeeRon === null || event.entryFeeRon === 0 ? t.discover.free : `${event.entryFeeRon} RON`}
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
@@ -131,12 +140,16 @@ function ChipRow<T extends string>({
 
 export default function Discover() {
   const { colors: theme } = useAppTheme();
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const { events, loading, error, refresh } = useEvents();
   const [filters, setFilters] = useState<DiscoveryFilters>(DEFAULT_DISCOVERY_FILTERS);
   const [refreshing, setRefreshing] = useState(false);
   const genres = useMemo(() => getDiscoveryGenres(events), [events]);
-  const genreOptions = useMemo(() => [{ label: 'Toate genurile', value: 'all' }, ...genres.map((genre) => ({ label: genre, value: genre }))], [genres]);
+  const genreOptions = useMemo(() => [{ label: t.discover.allGenres, value: 'all' }, ...genres.map((genre) => ({ label: genre, value: genre }))], [genres, t]);
+  const dateFilters = useMemo(() => getDateFilters(t), [t]);
+  const priceFilters = useMemo(() => getPriceFilters(t), [t]);
+  const sortOptions = useMemo(() => getSortOptions(t), [t]);
   const results = useMemo(() => getDiscoverableEvents(events, filters), [events, filters]);
   const activeFilterCount = Number(filters.genre !== 'all') + Number(filters.date !== 'all') + Number(filters.price !== 'all');
 
@@ -162,7 +175,7 @@ export default function Discover() {
           <AnimatedPressable onPress={() => router.back()} style={styles.backButton} hitSlop={8}>
             <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
           </AnimatedPressable>
-          <Text style={[styles.title, { color: theme.textPrimary }]}>Explorează</Text>
+          <Text style={[styles.title, { color: theme.textPrimary }]}>{t.discover.title}</Text>
           <View style={styles.backButton} />
         </View>
 
@@ -171,52 +184,52 @@ export default function Discover() {
           <TextInput
             value={filters.query}
             onChangeText={(query) => updateFilters({ query })}
-            placeholder="Caută evenimente..."
+            placeholder={t.discover.searchPlaceholder}
             placeholderTextColor={theme.textSecondary}
             style={[styles.searchInput, { color: theme.textPrimary }]}
             returnKeyType="search"
           />
         </View>
 
-        <Text style={[styles.sectionLabel, { color: theme.textPrimary }]}>Gen</Text>
+        <Text style={[styles.sectionLabel, { color: theme.textPrimary }]}>{t.discover.genre}</Text>
         <ChipRow options={genreOptions} value={filters.genre} onChange={(genre) => updateFilters({ genre })} />
-        <Text style={[styles.sectionLabel, { color: theme.textPrimary }]}>Data</Text>
-        <ChipRow options={DATE_FILTERS} value={filters.date} onChange={(date) => updateFilters({ date })} />
-        <Text style={[styles.sectionLabel, { color: theme.textPrimary }]}>Preț</Text>
-        <ChipRow options={PRICE_FILTERS} value={filters.price} onChange={(price) => updateFilters({ price })} />
+        <Text style={[styles.sectionLabel, { color: theme.textPrimary }]}>{t.discover.date}</Text>
+        <ChipRow options={dateFilters} value={filters.date} onChange={(date) => updateFilters({ date })} />
+        <Text style={[styles.sectionLabel, { color: theme.textPrimary }]}>{t.discover.price}</Text>
+        <ChipRow options={priceFilters} value={filters.price} onChange={(price) => updateFilters({ price })} />
         <View style={styles.sortHeader}>
-          <Text style={[styles.sectionLabel, { color: theme.textPrimary }]}>Sortează</Text>
+          <Text style={[styles.sectionLabel, { color: theme.textPrimary }]}>{t.discover.sort}</Text>
           {activeFilterCount > 0 && (
             <AnimatedPressable onPress={() => setFilters({ ...DEFAULT_DISCOVERY_FILTERS, query: filters.query })}>
-              <Text style={styles.resetText}>Resetare filtre ({activeFilterCount})</Text>
+              <Text style={styles.resetText}>{t.discover.resetFilters(activeFilterCount)}</Text>
             </AnimatedPressable>
           )}
         </View>
-        <ChipRow options={SORT_OPTIONS} value={filters.sort} onChange={(sort) => updateFilters({ sort })} />
+        <ChipRow options={sortOptions} value={filters.sort} onChange={(sort) => updateFilters({ sort })} />
 
         {loading ? (
           <View style={styles.state}>
             <ActivityIndicator color={colors.green500} />
-            <Text style={[styles.stateText, { color: theme.textSecondary }]}>Se încarcă evenimentele...</Text>
+            <Text style={[styles.stateText, { color: theme.textSecondary }]}>{t.discover.loadingEvents}</Text>
           </View>
         ) : error ? (
           <View style={styles.state}>
-            <Text style={[styles.stateText, { color: theme.textSecondary }]}>Nu am putut încărca evenimentele.</Text>
+            <Text style={[styles.stateText, { color: theme.textSecondary }]}>{t.discover.couldNotLoadEvents}</Text>
             <AnimatedPressable onPress={refresh} style={[styles.retryButton, { borderColor: theme.border }]}>
-              <Text style={[styles.retryText, { color: theme.textPrimary }]}>Reîncearcă</Text>
+              <Text style={[styles.retryText, { color: theme.textPrimary }]}>{t.discover.retry}</Text>
             </AnimatedPressable>
           </View>
         ) : results.length ? (
           <View style={styles.results}>
-            <Text style={[styles.resultsCount, { color: theme.textSecondary }]}>{results.length} evenimente</Text>
+            <Text style={[styles.resultsCount, { color: theme.textSecondary }]}>{t.discover.eventsCount(results.length)}</Text>
             {results.map((event) => <EventCard key={event.id} event={event} />)}
           </View>
         ) : (
           <View style={styles.state}>
-            <Text style={[styles.stateTitle, { color: theme.textPrimary }]}>Nu am găsit evenimente.</Text>
-            {filters.query && <Text style={[styles.stateText, { color: theme.textSecondary }]}>Încearcă un alt termen de căutare.</Text>}
+            <Text style={[styles.stateTitle, { color: theme.textPrimary }]}>{t.discover.noEventsFound}</Text>
+            {filters.query && <Text style={[styles.stateText, { color: theme.textSecondary }]}>{t.discover.tryAnotherSearchTerm}</Text>}
             <AnimatedPressable onPress={() => setFilters(DEFAULT_DISCOVERY_FILTERS)} style={[styles.retryButton, { borderColor: theme.border }]}>
-              <Text style={[styles.retryText, { color: theme.textPrimary }]}>Resetează filtrele</Text>
+              <Text style={[styles.retryText, { color: theme.textPrimary }]}>{t.discover.resetFiltersButton}</Text>
             </AnimatedPressable>
           </View>
         )}

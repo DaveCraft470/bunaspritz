@@ -9,6 +9,7 @@ import { showAlert } from '@/lib/alert';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
@@ -18,6 +19,7 @@ import { follow, getFollowStatuses, Profile, searchProfiles } from '@/lib/social
 export default function Search() {
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
+  const { t } = useLanguage();
   const { user } = useUser();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Profile[]>([]);
@@ -66,7 +68,7 @@ export default function Search() {
         next.delete(person.id);
         return next;
       });
-      showAlert('A apărut o eroare', 'Nu am putut urmări acest cont. Încearcă din nou.');
+      showAlert(t.search.genericErrorTitle, t.search.errorFollowing);
     }
   }
 
@@ -98,7 +100,7 @@ export default function Search() {
           ]}
         >
           <Text style={[styles.addButtonText, { color: isFollowing ? theme.textSecondary : colors.white }]}>
-            {isFollowing ? 'Adăugat ✓' : 'Adaugă'}
+            {isFollowing ? t.search.added : t.search.add}
           </Text>
         </AnimatedPressable>
       </AnimatedPressable>
@@ -116,13 +118,13 @@ export default function Search() {
             router.back();
           }}
           hitSlop={10}
-          accessibilityLabel="Înapoi"
+          accessibilityLabel={t.common.back}
           style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
         >
           <GlassSurface />
           <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
         </AnimatedPressable>
-        <Text style={[styles.title, { color: theme.textPrimary }]}>Caută prieteni</Text>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>{t.search.title}</Text>
         <View style={styles.backButton} />
       </View>
 
@@ -131,7 +133,7 @@ export default function Search() {
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="Caută după nume sau username..."
+          placeholder={t.search.searchPlaceholder}
           placeholderTextColor={theme.textSecondary}
           style={[styles.searchInput, { color: theme.textPrimary }]}
           autoCapitalize="none"
@@ -141,7 +143,7 @@ export default function Search() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {!trimmedQuery ? (
           <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-            Caută un nume sau username ca să găsești oameni pe Spritz.
+            {t.search.prompt}
           </Text>
         ) : loading ? (
           <ActivityIndicator color={colors.green500} style={styles.loading} />
@@ -149,7 +151,7 @@ export default function Search() {
           results.map(renderPerson)
         ) : (
           <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-            Nimeni pe numele ăsta — încearcă altă căutare.
+            {t.search.noResults}
           </Text>
         )}
       </ScrollView>
