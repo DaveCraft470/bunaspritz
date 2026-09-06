@@ -307,20 +307,3 @@ export async function setNotifyFriendsOnJoin(value: boolean): Promise<void> {
   if (!data.user) return;
   await supabase.from('profiles').update({ notify_friends_on_join: value }).eq('id', data.user.id);
 }
-
-// Bypass for the login screen, for the current pre-release phase only —
-// remove this (and its button in app/auth.tsx) before a real production
-// release. A real, RLS-respecting Supabase session, but backed by a fresh
-// anonymous account generated on-device each tap — never a fixed credential,
-// since a fixed one would sit readable in the public app bundle/repo and
-// grant anyone a live authenticated session. Anonymous (not a throwaway
-// email+password signUp) specifically so this keeps working now that signup
-// requires email confirmation — there's no inbox to confirm from here.
-export async function devSkipAuth(): Promise<void> {
-  const rand = Math.random().toString(36).slice(2) + Date.now().toString(36);
-
-  const signIn = await supabase.auth.signInAnonymously({
-    options: { data: { name: 'Dev User', username: `dev_${rand.slice(0, 10)}` } },
-  });
-  if (signIn.error || !signIn.data.user) return;
-}

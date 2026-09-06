@@ -6,7 +6,6 @@ import { freshChannel } from '@/lib/realtime';
 import {
   PublicUser,
   confirmPasswordReset as confirmPasswordResetStorage,
-  devSkipAuth,
   getCurrentUser,
   logInUser,
   registerUser,
@@ -37,7 +36,6 @@ type UserContextValue = {
   requestPasswordReset: (email: string) => Promise<AuthResult>;
   confirmPasswordReset: (email: string, code: string, newPassword: string) => Promise<AuthResult>;
   signOut: () => Promise<void>;
-  devSkip: () => Promise<void>;
   updateProfile: (fields: {
     name?: string;
     username?: string;
@@ -158,11 +156,6 @@ export function UserProvider({ children }: PropsWithChildren) {
         await signOutStorage();
         setAuthenticated(false);
         setUser(null);
-      },
-      async devSkip() {
-        await devSkipAuth();
-        setUser(await getCurrentUser());
-        setAuthenticated(true);
       },
       async updateProfile(fields) {
         const result = await updateCurrentUser(fields);

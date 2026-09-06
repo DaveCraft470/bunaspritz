@@ -35,7 +35,6 @@ export default function Auth() {
   const {
     signUp,
     logIn,
-    devSkip,
     verifySignupCode,
     resendSignupCode,
     requestPasswordReset,
@@ -162,11 +161,6 @@ export default function Auth() {
       return;
     }
 
-    router.replace('/');
-  };
-
-  const handleDevSkip = async () => {
-    await devSkip();
     router.replace('/');
   };
 
@@ -983,15 +977,6 @@ export default function Auth() {
           confidențialitate.
         </Text>
 
-        {/* `__DEV__` would be false in the sideloaded preview APK — the
-            actual place this needs testing right now — so this stays
-            unconditional for the current pre-release phase. Remove before
-            a real production release. */}
-        <Pressable onPress={handleDevSkip} style={styles.devSkip}>
-          <Text style={[styles.devSkipText, { color: theme.textSecondary }]}>
-            Sări peste (doar dev)
-          </Text>
-        </Pressable>
       </KeyboardAwareScrollView>
     </View>
   );
@@ -1184,17 +1169,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: 15,
     marginTop: 20,
-  },
-
-  devSkip: {
-    alignSelf: 'center',
-    marginTop: 14,
-    padding: 8,
-  },
-
-  devSkipText: {
-    fontSize: 11,
-    fontWeight: '700',
-    textDecorationLine: 'underline',
   },
 });
