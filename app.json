@@ -24,7 +24,8 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA"
       ]
     },
     "web": {
@@ -69,6 +70,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Spritz folosește pozele tale ca să poți trimite fotografii în mesaje.",
+          "cameraPermission": "Spritz folosește camera ca să poți confirma participarea la un eveniment cu o poză.",
           "microphonePermission": false
         }
       ],

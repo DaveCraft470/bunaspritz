@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Dimensions, Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { showAlert } from '@/lib/alert';
+import { alertPermissionDenied } from '@/lib/permissions';
 import { buildApproxStaticMapUrl, buildDirectionsUrl, buildExactStaticMapUrl } from '@/constants/mapbox';
 import { getSpritzEvent, SPRITZ_SONGS } from '@/constants/events';
 import { colors, shadows } from '@/constants/theme';
@@ -16,7 +19,21 @@ import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { useStories } from '@/contexts/StoriesContext';
 import { useEvents } from '@/contexts/EventsContext';
-import { EventAttendee, deleteEvent, fetchAttendees, getEventAttendeeCount, hasJoined, joinEvent, leaveEvent } from '@/lib/events';
+import {
+  CHECK_IN_MAX_DISTANCE_METERS,
+  checkInToEvent,
+  deleteEvent,
+  EventAttendee,
+  fetchAttendees,
+  getEventAttendeeCount,
+  getMyAttendance,
+  hasJoined,
+  joinEvent,
+  leaveEvent,
+  uploadCheckInPhoto,
+  type AttendanceStatus,
+} from '@/lib/events';
+import { distanceKm } from '@/lib/recommendations';
 import { getProfile, type Profile } from '@/lib/social';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
@@ -77,12 +94,16 @@ export default function EventDetail() {
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteFriends, setInviteFriends] = useState<Awaited<ReturnType<typeof getFriends>>>([]);
   const [viewerStories, setViewerStories] = useState<StoryGroup | null>(null);
+  const [attendance, setAttendance] = useState<AttendanceStatus>({ checkedIn: false, method: null });
+  const [distanceToEventM, setDistanceToEventM] = useState<number | null>(null);
+  const [checkingIn, setCheckingIn] = useState(false);
 
   useEffect(() => {
     if (!event || !user) return;
     fetchAttendees(event.id).then(setAttendees);
     getEventAttendeeCount(event.id).then(setAttendeeCount);
     hasJoined(event.id, user.id).then(setJoined);
+    getMyAttendance(event.id, user.id).then(setAttendance);
     if (event.hostId) getProfile(event.hostId).then(setHostProfile);
     getFriends(user.id).then(setInviteFriends);
   }, [event, user]);
@@ -98,6 +119,67 @@ export default function EventDetail() {
   const isPast = !!event?.startsAt && new Date(event.startsAt).getTime() < Date.now();
   const canInviteFriends = !!user && (isHost || joined) && !isPast;
   const isFull = !!event?.maxParticipants && attendeeCount >= event.maxParticipants && !joined;
+  const showAttendanceCard = !!event && !!user && joined && !isHost;
+  const showCheckInCard = showAttendanceCard && !attendance.checkedIn;
+  const withinCheckInRange = distanceToEventM !== null && distanceToEventM <= CHECK_IN_MAX_DISTANCE_METERS;
+
+  // Only ever used to enable/disable the check-in button and show a live
+  // distance hint — the check_in_to_event RPC re-checks distance server-side
+  // before it ever writes checked_in_at, so a stale or spoofed reading here
+  // can't grant a confirmed attendance on its own.
+  useEffect(() => {
+    if (!event || !showCheckInCard) return;
+    let cancelled = false;
+    (async () => {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        alertPermissionDenied(permission.canAskAgain, 'Activează locația ca să poți confirma participarea cu o poză.');
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (cancelled) return;
+      const km = distanceKm(
+        { lat: position.coords.latitude, lng: position.coords.longitude },
+        { lat: event.lat, lng: event.lng }
+      );
+      setDistanceToEventM(km * 1000);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event?.id, showCheckInCard]);
+
+  async function handleCheckIn() {
+    if (!event || !user || distanceToEventM === null || !withinCheckInRange) return;
+    const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!cameraPermission.granted) {
+      alertPermissionDenied(cameraPermission.canAskAgain, 'Activează camera ca să poți confirma participarea cu o poză.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+    if (result.canceled || !result.assets[0]) return;
+
+    setCheckingIn(true);
+    const asset = result.assets[0];
+    const extension = asset.uri.includes('.') ? asset.uri.slice(asset.uri.lastIndexOf('.')) : '.jpg';
+    const photoPath = await uploadCheckInPhoto(user.id, event.id, asset.uri, extension, asset.mimeType ?? 'image/jpeg');
+    if (!photoPath) {
+      setCheckingIn(false);
+      showAlert('Nu am putut încărca poza', 'Încearcă din nou.');
+      return;
+    }
+
+    const freshPosition = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    const outcome = await checkInToEvent(event.id, freshPosition.coords.latitude, freshPosition.coords.longitude, photoPath);
+    setCheckingIn(false);
+    if (!outcome.ok) {
+      showAlert('Nu am putut confirma participarea', outcome.error ?? 'Încearcă din nou.');
+      return;
+    }
+    medium();
+    setAttendance({ checkedIn: true, method: 'photo' });
+  }
 
   async function sendInvitations(recipientIds: string[]) {
     if (!event || !user) return;
@@ -404,6 +486,38 @@ export default function EventDetail() {
             )}
           </View>
 
+          {showAttendanceCard && (
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>CONFIRMĂ PARTICIPAREA</Text>
+              {showCheckInCard ? (
+                <>
+                  <Text style={[styles.checkInHint, { color: theme.textSecondary }]}>
+                    {distanceToEventM === null
+                      ? 'Se verifică locația ta...'
+                      : withinCheckInRange
+                        ? 'Ești în zonă ✅ — poți face o poză ca să confirmi.'
+                        : `Ești la ~${Math.round(distanceToEventM)} m de eveniment — apropie-te ca să poți confirma.`}
+                  </Text>
+                  <AnimatedPressable
+                    onPress={handleCheckIn}
+                    disabled={!withinCheckInRange || checkingIn}
+                    style={[
+                      styles.checkInButton,
+                      { backgroundColor: colors.green500, opacity: !withinCheckInRange || checkingIn ? 0.5 : 1 },
+                    ]}
+                  >
+                    <Ionicons name="camera-outline" size={16} color={colors.white} />
+                    <Text style={styles.checkInButtonText}>
+                      {checkingIn ? 'Se confirmă...' : 'Fă o poză ca să confirmi 📸'}
+                    </Text>
+                  </AnimatedPressable>
+                </>
+              ) : (
+                <Text style={[styles.checkInHint, { color: theme.textPrimary }]}>Participare confirmată ✅</Text>
+              )}
+            </View>
+          )}
+
           {canInviteFriends && (
             <AnimatedPressable
               onPress={() => {
@@ -701,6 +815,17 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.85)',
   },
   mapHint: { fontSize: 11, fontStyle: 'italic' },
+  checkInHint: { fontSize: 12, lineHeight: 17 },
+  checkInButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 46,
+    borderRadius: 14,
+    marginTop: 2,
+  },
+  checkInButtonText: { color: colors.white, fontSize: 14, fontWeight: '800' },
   directionsButton: {
     flexDirection: 'row',
     alignItems: 'center',

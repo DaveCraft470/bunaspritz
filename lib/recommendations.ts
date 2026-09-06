@@ -25,7 +25,7 @@ function normalize(value: string) {
   return value.trim().toLocaleLowerCase('ro-RO');
 }
 
-function distanceKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+export function distanceKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
   const earthRadiusKm = 6371;
   const latDelta = ((b.lat - a.lat) * Math.PI) / 180;
   const lngDelta = ((b.lng - a.lng) * Math.PI) / 180;

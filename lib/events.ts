@@ -2,6 +2,12 @@ import { supabase } from '@/lib/supabase';
 import { SpritzEvent } from '@/constants/events';
 
 const RENTAL_PROOF_BUCKET = 'rental-proofs';
+const CHECKIN_PHOTO_BUCKET = 'checkin-photos';
+
+// Mirrors check_in_to_event's v_max_distance_m in the migration — this copy
+// only ever gates whether the client's button is enabled; the server-side
+// value is the one that actually can't be bypassed.
+export const CHECK_IN_MAX_DISTANCE_METERS = 200;
 
 type EventRow = {
   id: string;
@@ -77,6 +83,72 @@ export async function uploadRentalProof(
 // in lib/messaging.ts; best-effort, a failed delete just leaves one file.
 export async function removeRentalProof(path: string): Promise<void> {
   await supabase.storage.from(RENTAL_PROOF_BUCKET).remove([path]);
+}
+
+// A live camera shot taken to confirm attendance — private to the uploader
+// (see the migration's checkin-photos bucket policies), same fetch/upload
+// idiom as uploadRentalProof.
+export async function uploadCheckInPhoto(
+  userId: string,
+  eventId: string,
+  localUri: string,
+  extension: string,
+  contentType: string
+): Promise<string | null> {
+  const bytes = await (await fetch(localUri)).arrayBuffer();
+  if (bytes.byteLength === 0) return null;
+
+  const path = `${userId}/${eventId}-${Date.now()}${extension}`;
+  const { error } = await supabase.storage.from(CHECKIN_PHOTO_BUCKET).upload(path, bytes, { contentType });
+  if (error) return null;
+
+  return path;
+}
+
+export type AttendanceStatus = { checkedIn: boolean; method: 'photo' | 'paid' | null };
+
+// Reads the caller's own event_attendees row directly — allowed by the
+// existing "see only your own attendance row directly" policy, no RPC needed
+// for a read. checked_in_at/check_in_method can only ever be *written* via
+// check_in_to_event (or, eventually, a payment webhook) — see the migration.
+export async function getMyAttendance(eventId: string, userId: string): Promise<AttendanceStatus> {
+  const { data } = await supabase
+    .from('event_attendees')
+    .select('checked_in_at, check_in_method')
+    .eq('event_id', eventId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  return { checkedIn: !!data?.checked_in_at, method: (data?.check_in_method as 'photo' | 'paid' | null) ?? null };
+}
+
+const CHECK_IN_ERROR_MESSAGES: Record<string, string> = {
+  'not joined': 'Trebuie să confirmi mai întâi participarea la eveniment.',
+  'already checked in': 'Participarea ta e deja confirmată.',
+  'too far from event location': 'Ești prea departe de locația evenimentului ca să confirmi.',
+  'event not found': 'Evenimentul nu mai există.',
+};
+
+// The one and only way check_in_photo_path/checked_in_at get set for the
+// 'photo' path — check_in_to_event (the migration) re-validates distance and
+// join status server-side, since the client-side distance check (used only
+// to enable/disable the button) can't be trusted on its own.
+export async function checkInToEvent(
+  eventId: string,
+  lat: number,
+  lng: number,
+  photoPath: string
+): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase.rpc('check_in_to_event', {
+    p_event_id: eventId,
+    p_lat: lat,
+    p_lng: lng,
+    p_photo_path: photoPath,
+  });
+  if (!error) return { ok: true };
+
+  const message = CHECK_IN_ERROR_MESSAGES[error.message] ?? 'Nu am putut confirma participarea. Încearcă din nou.';
+  return { ok: false, error: message };
 }
 
 // A privacy-safe count — never identities, so it's accurate regardless of
@@ -222,16 +294,20 @@ export async function getUserJoinedEventIds(userId: string): Promise<string[]> {
   return data.map((row) => row.event_id);
 }
 
-// joinEvent's "hosting an event auto-joins you as an attendee" means the
-// raw event_attendees count double-counts hosted events — subtract them out
-// so "Evenimente" reflects only spritzuri the user attended as a guest.
+// "Evenimente" now reflects confirmed attendance (checked_in_at set), not
+// just having joined — see check_in_to_event. joinEvent's "hosting an event
+// auto-joins you as an attendee" row never gets a check-in of its own, so it
+// no longer needs subtracting out of this count the way it used to.
 export async function getUserEventStats(userId: string): Promise<{ attended: number; hosted: number }> {
   const [attendedRows, hostedRows] = await Promise.all([
-    supabase.from('event_attendees').select('event_id', { count: 'exact', head: true }).eq('user_id', userId),
+    supabase
+      .from('event_attendees')
+      .select('event_id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .not('checked_in_at', 'is', null),
     supabase.from('events').select('id', { count: 'exact', head: true }).eq('host_id', userId),
   ]);
-  const hosted = hostedRows.count ?? 0;
-  return { attended: Math.max((attendedRows.count ?? 0) - hosted, 0), hosted };
+  return { attended: attendedRows.count ?? 0, hosted: hostedRows.count ?? 0 };
 }
 
 export async function joinEvent(eventId: string, userId: string): Promise<boolean> {
