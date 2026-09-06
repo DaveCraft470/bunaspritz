@@ -228,10 +228,14 @@ enable_signup = true
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-# app/auth.tsx shows a 6-digit code entry step right after signup (see
-# supabase/templates/confirmation.html for the email that carries the code,
-# and verifySignupCode/resendSignupCode in contexts/auth.ts).
-enable_confirmations = true
+# app/auth.tsx has a 6-digit code entry step ready for this (see
+# supabase/templates/confirmation.html and verifySignupCode/resendSignupCode
+# in contexts/auth.ts) — OFF for now because Resend can only deliver to the
+# account owner's own address until a domain is verified there (see the
+# rejection: "You can only send testing emails to your own email address").
+# registerUser() already branches on data.session, so flipping this back to
+# true later is the only step needed to turn signup verification back on.
+enable_confirmations = false
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
