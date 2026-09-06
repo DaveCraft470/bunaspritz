@@ -4,6 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack, Redirect, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Platform } from 'react-native';
 import {
   useFonts,
   Baloo2_400Regular,
@@ -29,6 +30,10 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function RootStack() {
   const { colors: theme } = useAppTheme();
+  const indexScreenOptions = {
+    contentStyle: { backgroundColor: 'transparent' },
+    presentation: Platform.OS === 'web' ? 'transparentModal' : undefined,
+  };
 
   // contentStyle needs to roughly match the current scheme, not a fixed
   // color — otherwise navigating away from whichever scheme it doesn't
