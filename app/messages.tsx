@@ -386,9 +386,6 @@ function GroupCard({
     <Pressable onPress={onPress} style={styles.groupCard}>
       <View style={[styles.groupCardAvatar, { backgroundColor: color }]}>
         <Text style={styles.groupCardEmoji}>{emoji}</Text>
-        <View style={styles.groupCardDemoBadge}>
-          <Text style={styles.groupCardDemoBadgeText}>PREVIEW</Text>
-        </View>
       </View>
       <Text numberOfLines={1} style={[styles.groupCardTitle, { color: theme.textPrimary }]}>
         {title}
@@ -1044,7 +1041,10 @@ export default function Messages() {
               {selectedGroup && <Text style={[styles.today, { color: theme.textSecondary }]}>ASTĂZI</Text>}
               {displayedMessages.map((message) => (
                 <View key={message.id} style={[styles.messageRow, message.mine && styles.messageRowMine]}>
-                  {!message.mine && <View style={styles.dot} />}
+                  {!message.mine && selectedGroup && (
+                    <Avatar name={message.sender} size={26} fontSize={11} color={selectedGroup.color} />
+                  )}
+                  {!message.mine && !selectedGroup && <View style={styles.dot} />}
                   <View
                     style={[
                       styles.bubble,
@@ -1243,16 +1243,6 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   groupCardEmoji: { fontSize: 32 },
-  groupCardDemoBadge: {
-    position: 'absolute',
-    bottom: -6,
-    alignSelf: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  groupCardDemoBadgeText: { color: '#FFFFFF', fontSize: 8, fontWeight: '900', letterSpacing: 0.4 },
   groupCardTitle: { fontSize: 12, fontWeight: '800', textAlign: 'center', marginTop: 4 },
   groupCardDetail: { fontSize: 10, textAlign: 'center', marginTop: 2 },
   friendsSection: { paddingHorizontal: 18, paddingTop: 22 },

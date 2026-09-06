@@ -47,7 +47,7 @@ export default function Profile() {
 
   const name = user?.name || 'Utilizator';
   const username = user?.username || 'utilizator';
-  const bio = user?.bio || 'Ieșiri bune, oameni faini și seri de ținut minte. ✨';
+  const bio = user?.bio || '';
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -86,7 +86,7 @@ export default function Profile() {
           </Pressable>
         </View>
 
-        <Text style={[styles.bio, { color: theme.textSecondary }]}>{bio}</Text>
+        {bio ? <Text style={[styles.bio, { color: theme.textSecondary }]}>{bio}</Text> : null}
         <InstagramLink handle={user?.instagramHandle} />
 
         <View style={[styles.statsRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>

@@ -50,6 +50,7 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [over18, setOver18] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -112,6 +113,10 @@ export default function Auth() {
       }
       if (password !== confirmPassword) {
         setError('Parolele nu coincid.');
+        return;
+      }
+      if (!over18) {
+        setError('Trebuie să declari că ai peste 18 ani pentru a-ți crea un cont.');
         return;
       }
 
@@ -284,6 +289,7 @@ export default function Auth() {
     setEmail('');
     setPassword('');
     setConfirmPassword('');
+    setOver18(false);
     setError(null);
   };
 
@@ -891,6 +897,29 @@ export default function Auth() {
             </View>
           )}
 
+          {mode === 'signup' && (
+            <Pressable
+              onPress={() => setOver18((v) => !v)}
+              style={styles.over18Row}
+              hitSlop={6}
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  {
+                    borderColor: over18 ? colors.green500 : theme.border,
+                    backgroundColor: over18 ? colors.green500 : 'transparent',
+                  },
+                ]}
+              >
+                {over18 && <Ionicons name="checkmark" size={14} color={colors.white} />}
+              </View>
+              <Text style={[styles.over18Text, { color: theme.textPrimary }]}>
+                Declar că am peste 18 ani
+              </Text>
+            </Pressable>
+          )}
+
           {mode === 'login' && (
             <Pressable
               onPress={() => {
@@ -1104,6 +1133,29 @@ const styles = StyleSheet.create({
   requirementText: {
     fontSize: 11,
     fontWeight: '600',
+  },
+
+  over18Row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 4,
+    marginBottom: 18,
+  },
+
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  over18Text: {
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
   },
 
   forgotButton: {
