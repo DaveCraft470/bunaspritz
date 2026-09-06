@@ -16,6 +16,7 @@ import {
 import { FredokaOne_400Regular } from '@expo-google-fonts/fredoka-one';
 
 import { FloatingBottomNav } from '@/components/layout/FloatingBottomNav';
+import { LanguageProvider } from '@/contexts/LanguageContext';
 import { ThemeProvider, useAppTheme } from '@/contexts/ThemeContext';
 import { NavVisibilityProvider } from '@/contexts/NavVisibilityContext';
 import { HomeViewProvider } from '@/contexts/HomeViewContext';
@@ -133,29 +134,31 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <ThemeProvider>
-          <UserProvider>
-            <NotificationProvider>
-              <StoriesProvider>
-                <HapticsProvider>
-                  <EventsProvider>
-                    <NavVisibilityProvider>
-                      <HomeViewProvider>
-                        {!splashDone ? (
-                          <AnimatedSplash onFinish={() => setSplashDone(true)} />
-                        ) : (
-                          <View style={{ flex: 1 }}>
-                            <AppChrome />
-                          </View>
-                        )}
-                      </HomeViewProvider>
-                    </NavVisibilityProvider>
-                  </EventsProvider>
-                </HapticsProvider>
-              </StoriesProvider>
-            </NotificationProvider>
-          </UserProvider>
-        </ThemeProvider>
+        <LanguageProvider>
+          <ThemeProvider>
+            <UserProvider>
+              <NotificationProvider>
+                <StoriesProvider>
+                  <HapticsProvider>
+                    <EventsProvider>
+                      <NavVisibilityProvider>
+                        <HomeViewProvider>
+                          {!splashDone ? (
+                            <AnimatedSplash onFinish={() => setSplashDone(true)} />
+                          ) : (
+                            <View style={{ flex: 1 }}>
+                              <AppChrome />
+                            </View>
+                          )}
+                        </HomeViewProvider>
+                      </NavVisibilityProvider>
+                    </EventsProvider>
+                  </HapticsProvider>
+                </StoriesProvider>
+              </NotificationProvider>
+            </UserProvider>
+          </ThemeProvider>
+        </LanguageProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

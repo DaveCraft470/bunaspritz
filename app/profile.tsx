@@ -7,6 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { colors } from '@/constants/theme';
 import { VERIFICATION_REQUIRED } from '@/constants/featureFlags';
 import { useAppTheme } from '@/contexts/ThemeContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
 import { InstagramLink } from '@/components/common/InstagramLink';
@@ -19,6 +20,7 @@ import { getUserEventStats } from '@/lib/events';
 export default function Profile() {
   const insets = useSafeAreaInsets();
   const { colors: theme } = useAppTheme();
+  const { t } = useLanguage();
   const { user, effectiveVerified } = useUser();
   const [friendCount, setFriendCount] = useState(0);
   const [eventStats, setEventStats] = useState({ attended: 0, hosted: 0 });
@@ -45,9 +47,9 @@ export default function Profile() {
     setRefreshing(false);
   }
 
-  const name = user?.name || 'Utilizator';
-  const username = user?.username || 'utilizator';
-  const bio = user?.bio || 'Ieșiri bune, oameni faini și seri de ținut minte. ✨';
+  const name = user?.name || t.profile.defaultName;
+  const username = user?.username || t.profile.defaultUsername;
+  const bio = user?.bio || t.profile.defaultBio;
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -82,7 +84,7 @@ export default function Profile() {
             onPress={() => router.push('/edit-profile')}
             style={[styles.editButton, { borderColor: theme.border }]}
           >
-            <Text style={[styles.editText, { color: theme.accent }]}>Editează</Text>
+            <Text style={[styles.editText, { color: theme.accent }]}>{t.profile.edit}</Text>
           </Pressable>
         </View>
 
@@ -92,15 +94,15 @@ export default function Profile() {
         <View style={[styles.statsRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Pressable style={styles.stat} onPress={() => router.push('/friends')}>
             <Text style={[styles.statNumber, { color: theme.textPrimary }]}>{friendCount}</Text>
-            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Prieteni</Text>
+            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>{t.profile.friends}</Text>
           </Pressable>
           <View style={styles.stat}>
             <Text style={[styles.statNumber, { color: theme.textPrimary }]}>{eventStats.attended}</Text>
-            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Evenimente</Text>
+            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>{t.profile.events}</Text>
           </View>
           <View style={styles.stat}>
             <Text style={[styles.statNumber, { color: theme.textPrimary }]}>{eventStats.hosted}</Text>
-            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Găzduite</Text>
+            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>{t.profile.hosted}</Text>
           </View>
         </View>
 
@@ -109,9 +111,9 @@ export default function Profile() {
           style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
         >
           <View style={styles.myEventsCopy}>
-            <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>Evenimentele mele</Text>
+            <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>{t.profile.myEvents}</Text>
             <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
-              Vezi evenimentele la care participi și pe cele organizate de tine.
+              {t.profile.myEventsDetail}
             </Text>
           </View>
           <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
@@ -131,12 +133,12 @@ export default function Profile() {
             </View>
             <View style={styles.verifyCopy}>
               <Text style={[styles.verifyTitle, { color: theme.textPrimary }]}>
-                {effectiveVerified ? 'Identitate verificată' : 'Verificare identitate'}
+                {effectiveVerified ? t.profile.identityVerified : t.profile.identityVerification}
               </Text>
               <Text style={[styles.verifyDetail, { color: theme.textSecondary }]}>
                 {effectiveVerified
-                  ? 'Contul tău a trecut de verificarea 18+.'
-                  : 'Necesară pentru a te alătura unui Spritz.'}
+                  ? t.profile.verifiedDetail
+                  : t.profile.verifyRequiredDetail}
               </Text>
             </View>
             {!effectiveVerified && <Text style={[styles.verifyArrow, { color: theme.accent }]}>›</Text>}

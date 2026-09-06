@@ -13,6 +13,8 @@ import { VERIFICATION_REQUIRED } from '@/constants/featureFlags';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
+import type { Translations } from '@/lib/i18n/ro';
 import { useUser } from '@/contexts/UserContext';
 import { useStories } from '@/contexts/StoriesContext';
 import { useEvents } from '@/contexts/EventsContext';
@@ -35,21 +37,21 @@ import { MusicCoverPlaceholder } from '@/components/music/MusicCoverPlaceholder'
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-function formatEventStart(iso: string | null) {
+function formatEventStart(iso: string | null, t: Translations, locale: string) {
   if (!iso) return null;
   const date = new Date(iso);
   const now = new Date();
   const dayPart =
     date.toDateString() === now.toDateString()
-      ? 'Azi'
-      : date.toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' });
-  const timePart = date.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' });
+      ? t.event.today
+      : date.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' });
+  const timePart = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
   return `${dayPart} · ${timePart}`;
 }
 
-function formatPrice(value: number | null) {
+function formatPrice(value: number | null, t: Translations) {
   if (value === null) return null;
-  if (value === 0) return 'Gratis';
+  if (value === 0) return t.event.free;
   return `${value} RON`;
 }
 
@@ -61,6 +63,7 @@ export default function EventDetail() {
   const { scheme, colors: theme } = useAppTheme();
   const { setHidden } = useNavVisibility();
   const { light, medium } = useHaptics();
+  const { t, locale } = useLanguage();
   const { user, effectiveVerified } = useUser();
   const { getEventStories } = useStories();
   const [celebrating, setCelebrating] = useState(false);
@@ -110,9 +113,9 @@ export default function EventDetail() {
     }
     setInviteModalOpen(false);
     if (sent > 0) {
-      Alert.alert('Invitații trimise', `${sent} ${sent === 1 ? 'invitație a fost trimisă' : 'invitații au fost trimise'}.`);
+      Alert.alert(t.event.invitationsSentTitle, t.event.invitationsSentMessage(sent));
     } else if (skipped > 0) {
-      Alert.alert('Invitații deja trimise', 'Prietenii selectați au fost deja invitați.');
+      Alert.alert(t.event.invitationsAlreadySentTitle, t.event.invitationsAlreadySentMessage);
     }
   }
 
@@ -123,17 +126,17 @@ export default function EventDetail() {
   function confirmLeave() {
     if (!event || !user) return;
     light();
-    Alert.alert('Renunți la participare?', `Nu vei mai fi în lista pentru „${event.title}”.`, [
-      { text: 'Anulează', style: 'cancel' },
+    Alert.alert(t.event.confirmLeaveTitle, t.event.confirmLeaveMessage(event.title), [
+      { text: t.event.cancel, style: 'cancel' },
       {
-        text: 'Renunță',
+        text: t.event.leave,
         style: 'destructive',
         onPress: async () => {
           setJoining(true);
           const ok = await leaveEvent(event.id, user.id);
           setJoining(false);
           if (!ok) {
-            showAlert('A apărut o eroare', 'Nu am putut anula participarea. Încearcă din nou.');
+            showAlert(t.event.genericErrorTitle, t.event.couldNotCancelParticipation);
             return;
           }
           setJoined(false);
@@ -153,18 +156,18 @@ export default function EventDetail() {
     if (!event || !user) return;
     light();
     const attendeeNote =
-      attendeeCount > 1 ? `${attendeeCount} persoane sunt în listă.` : 'Ești singurul din listă.';
-    Alert.alert('Anulezi evenimentul?', `„${event.title}” va fi șters definitiv. ${attendeeNote}`, [
-      { text: 'Înapoi', style: 'cancel' },
+      attendeeCount > 1 ? t.event.attendeeNoteMultiple(attendeeCount) : t.event.attendeeNoteSolo;
+    Alert.alert(t.event.confirmCancelEventTitle, t.event.confirmCancelEventMessage(event.title, attendeeNote), [
+      { text: t.common.back, style: 'cancel' },
       {
-        text: 'Anulează evenimentul',
+        text: t.event.cancelEvent,
         style: 'destructive',
         onPress: async () => {
           setJoining(true);
           const ok = await deleteEvent(event.id, user.id, event.rentalProofPath);
           setJoining(false);
           if (!ok) {
-            showAlert('A apărut o eroare', 'Nu am putut anula evenimentul. Încearcă din nou.');
+            showAlert(t.event.genericErrorTitle, t.event.couldNotCancelEvent);
             return;
           }
           removeEvent(event.id);
@@ -193,7 +196,7 @@ export default function EventDetail() {
     const ok = await joinEvent(event.id, user.id);
     setJoining(false);
     if (!ok) {
-      showAlert('A apărut o eroare', 'Nu am putut confirma participarea. Încearcă din nou.');
+      showAlert(t.event.genericErrorTitle, t.event.couldNotConfirmParticipation);
       return;
     }
     medium();
@@ -243,15 +246,15 @@ export default function EventDetail() {
         <View style={styles.missingState}>
           {eventsLoading && <ActivityIndicator color={colors.green500} />}
           <Text style={[styles.missingText, { color: theme.textPrimary }]}>
-            {eventsLoading ? 'Se încarcă evenimentul...' : eventsError ? 'Nu am putut încărca evenimentul.' : 'Eveniment negăsit.'}
+            {eventsLoading ? t.event.loadingEvent : eventsError ? t.event.couldNotLoadEvent : t.event.eventNotFound}
           </Text>
           {eventsError && (
             <AnimatedPressable onPress={refresh} style={[styles.retryButton, { borderColor: theme.border }]}>
-              <Text style={[styles.retryText, { color: theme.textPrimary }]}>Reîncearcă</Text>
+              <Text style={[styles.retryText, { color: theme.textPrimary }]}>{t.event.retry}</Text>
             </AnimatedPressable>
           )}
           <AnimatedPressable onPress={() => router.back()} style={styles.missingBack}>
-            <Text style={[styles.retryText, { color: theme.accent }]}>Înapoi</Text>
+            <Text style={[styles.retryText, { color: theme.accent }]}>{t.common.back}</Text>
           </AnimatedPressable>
         </View>
       </SafeAreaView>
@@ -275,7 +278,7 @@ export default function EventDetail() {
           <AnimatedPressable
             onPress={handleBack}
             hitSlop={10}
-            accessibilityLabel="Înapoi"
+            accessibilityLabel={t.common.back}
             style={[styles.backButton, shadows.soft, { backgroundColor: theme.surface, borderColor: theme.border }]}
           >
             <Ionicons name="chevron-back" size={20} color={theme.textPrimary} />
@@ -305,7 +308,7 @@ export default function EventDetail() {
             >
               <Avatar uri={hostProfile.avatar_url} name={hostProfile.name} size={46} fontSize={18} />
               <View style={styles.organizerCopy}>
-                <Text style={[styles.organizerLabel, { color: theme.textSecondary }]}>ORGANIZATOR</Text>
+                <Text style={[styles.organizerLabel, { color: theme.textSecondary }]}>{t.event.organizer}</Text>
                 <Text style={[styles.organizerName, { color: theme.textPrimary }]} numberOfLines={1}>{hostProfile.name}</Text>
                 <Text style={[styles.organizerUsername, { color: theme.textSecondary }]} numberOfLines={1}>@{hostProfile.username}</Text>
               </View>
@@ -320,27 +323,27 @@ export default function EventDetail() {
                 if (event.sourceUrl) Linking.openURL(event.sourceUrl).catch(() => {});
               }}
             >
-              <Text style={[styles.hostLine, { color: theme.textSecondary }]}>🌐 Descoperit pe zilesinopti.ro</Text>
+              <Text style={[styles.hostLine, { color: theme.textSecondary }]}>{t.event.discoveredOn}</Text>
             </AnimatedPressable>
           )}
 
-          {(formatEventStart(event.startsAt) ||
+          {(formatEventStart(event.startsAt, t, locale) ||
             event.entryFeeRon !== null ||
             event.drinksPriceRon !== null ||
             event.maxParticipants !== null ||
             event.locationIsRented === true) && (
             <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              {formatEventStart(event.startsAt) && (
+              {formatEventStart(event.startsAt, t, locale) && (
                 <View style={styles.infoRow}>
                   <Ionicons name="calendar-outline" size={16} color={colors.green500} />
-                  <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>{formatEventStart(event.startsAt)}</Text>
+                  <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>{formatEventStart(event.startsAt, t, locale)}</Text>
                 </View>
               )}
               {event.entryFeeRon !== null && (
                 <View style={styles.infoRow}>
                   <Ionicons name="ticket-outline" size={16} color={colors.green500} />
                   <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
-                    Intrare: {formatPrice(event.entryFeeRon)}
+                    {t.event.entry(formatPrice(event.entryFeeRon, t)!)}
                   </Text>
                 </View>
               )}
@@ -348,7 +351,7 @@ export default function EventDetail() {
                 <View style={styles.infoRow}>
                   <Ionicons name="wine-outline" size={16} color={colors.green500} />
                   <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
-                    Băuturi de la {formatPrice(event.drinksPriceRon)}
+                    {t.event.drinksFrom(formatPrice(event.drinksPriceRon, t)!)}
                   </Text>
                 </View>
               )}
@@ -356,7 +359,7 @@ export default function EventDetail() {
                 <View style={styles.infoRow}>
                   <Ionicons name="people-outline" size={16} color={colors.green500} />
                   <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
-                    Max {event.maxParticipants} persoane
+                    {t.event.maxPeople(event.maxParticipants)}
                   </Text>
                 </View>
               )}
@@ -364,7 +367,7 @@ export default function EventDetail() {
                 <View style={styles.infoRow}>
                   <Ionicons name="key-outline" size={16} color={colors.green500} />
                   <Text style={[styles.infoRowText, { color: theme.textPrimary }]}>
-                    Locație închiriată{event.rentalProofPath ? ' · cu dovadă' : ''}
+                    {t.event.rentedLocation(!!event.rentalProofPath)}
                   </Text>
                 </View>
               )}
@@ -374,31 +377,31 @@ export default function EventDetail() {
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             {joined ? (
               <>
-                <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>LOCAȚIE EXACTĂ</Text>
+                <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>{t.event.exactLocation}</Text>
                 <View style={styles.mapWrap}>
                   <Image source={{ uri: exactMapUrl }} style={styles.mapImage} resizeMode="cover" />
                 </View>
                 <AnimatedPressable
                   onPress={() =>
                     Linking.openURL(buildDirectionsUrl(event.lng, event.lat)).catch(() =>
-                      showAlert('Nu am putut deschide harta', 'Încearcă din nou mai târziu.')
+                      showAlert(t.event.couldNotOpenMap, t.event.tryAgainLater)
                     )
                   }
                   style={[styles.directionsButton, { backgroundColor: theme.surfaceMuted }]}
                 >
                   <Ionicons name="navigate" size={14} color={colors.green500} />
-                  <Text style={[styles.directionsText, { color: colors.green500 }]}>Deschide în hartă</Text>
+                  <Text style={[styles.directionsText, { color: colors.green500 }]}>{t.event.openInMap}</Text>
                 </AnimatedPressable>
               </>
             ) : (
               <>
-                <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>LOCAȚIE APROXIMATIVĂ</Text>
+                <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>{t.event.approxLocation}</Text>
                 <View style={styles.mapWrap}>
                   <Image source={{ uri: mapUrl }} style={styles.mapImage} resizeMode="cover" />
                   <View style={styles.mapCircle} pointerEvents="none" />
                 </View>
                 <Text style={[styles.mapHint, { color: theme.textSecondary }]}>
-                  Locația exactă apare doar celor confirmați.
+                  {t.event.exactLocationHint}
                 </Text>
               </>
             )}
@@ -413,21 +416,21 @@ export default function EventDetail() {
               style={[styles.inviteFriendsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
             >
               <Ionicons name="person-add-outline" size={18} color={theme.accent} />
-              <Text style={[styles.inviteFriendsText, { color: theme.accent }]}>Invită prieteni</Text>
+              <Text style={[styles.inviteFriendsText, { color: theme.accent }]}>{t.event.inviteFriends}</Text>
               <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
             </AnimatedPressable>
           )}
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>CINE VINE</Text>
+            <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>{t.event.whosComing}</Text>
             <PartyMeter attendeeCount={attendeeCount} maxParticipants={event.maxParticipants} />
             {!event.maxParticipants && (
-              <Text style={[styles.attendeeCount, { color: theme.textPrimary }]}>{attendeeCount} persoane</Text>
+              <Text style={[styles.attendeeCount, { color: theme.textPrimary }]}>{t.event.peopleCount(attendeeCount)}</Text>
             )}
             {friendsParticipating.length > 0 && (
               <View style={styles.friendsParticipatingBlock}>
                 <Text style={[styles.friendsParticipatingText, { color: theme.accent }]}>
-                  {friendsParticipating.length} {friendsParticipating.length === 1 ? 'prieten participă' : 'prieteni participă'}
+                  {t.event.friendsAttending(friendsParticipating.length)}
                 </Text>
                 <View style={styles.friendAvatarRow}>
                   {friendsParticipating.slice(0, 4).map((friend) => (
@@ -466,7 +469,7 @@ export default function EventDetail() {
                 style={[styles.manageParticipantsButton, { borderColor: theme.border }]}
               >
                 <Ionicons name="settings-outline" size={15} color={theme.accent} />
-                <Text style={[styles.manageParticipantsText, { color: theme.accent }]}>Gestionează participanții</Text>
+                <Text style={[styles.manageParticipantsText, { color: theme.accent }]}>{t.event.manageParticipants}</Text>
               </AnimatedPressable>
             )}
             {!isHost && (
@@ -474,7 +477,7 @@ export default function EventDetail() {
                 onPress={() => setReportModalOpen(true)}
                 style={[styles.reportEventButton, { borderColor: theme.border }]}
               >
-                <Text style={[styles.reportEventText, { color: theme.textSecondary }]}>Raportează evenimentul</Text>
+                <Text style={[styles.reportEventText, { color: theme.textSecondary }]}>{t.event.reportEvent}</Text>
               </AnimatedPressable>
             )}
           </View>
@@ -483,7 +486,7 @@ export default function EventDetail() {
             <StoriesRow
               stories={eventStories}
               currentUserId={user?.id}
-              title="Stories recente"
+              title={t.event.recentStories}
               compact
               onOpen={(group) => setViewerStories(group)}
             />
@@ -491,7 +494,7 @@ export default function EventDetail() {
 
           {eventDrinks.length > 0 && (
             <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>BĂUTURI</Text>
+              <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>{t.event.drinks}</Text>
               {eventDrinks.map((drink) => (
                 <View key={drink.id} style={styles.drinkRow}>
                   <View style={styles.drinkCopy}><Text style={[styles.drinkName, { color: theme.textPrimary }]}>{drink.name}</Text><Text style={[styles.drinkMeta, { color: theme.textSecondary }]}>{formatDrinkVolume(drink.volumeMl)}</Text></View>
@@ -505,14 +508,14 @@ export default function EventDetail() {
             <View
               style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
             >
-              <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>🎵 PLAYLIST</Text>
+              <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>{t.event.playlist}</Text>
               {eventSongs.slice(0, 4).map((song) => (
                 <View key={song.id} style={styles.songRow}>
                   {song.coverUrl ? <Image source={{ uri: song.coverUrl }} style={styles.songCover} /> : <MusicCoverPlaceholder size={38} />}
                   <View style={styles.songText}><Text style={[styles.songTitle, { color: theme.textPrimary }]} numberOfLines={1}>{song.title}</Text><Text style={[styles.songArtist, { color: theme.textSecondary }]} numberOfLines={1}>{song.artist}</Text></View>
                 </View>
               ))}
-              {eventSongs.length > 4 && <Text style={[styles.moreSongs, { color: theme.accent }]}>+ {eventSongs.length - 4} alte melodii</Text>}
+              {eventSongs.length > 4 && <Text style={[styles.moreSongs, { color: theme.accent }]}>{t.event.moreSongs(eventSongs.length - 4)}</Text>}
             </View>
           )}
 
@@ -520,7 +523,7 @@ export default function EventDetail() {
             <View
               style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
             >
-            <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>MUZICA</Text>
+            <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>{t.event.music}</Text>
             <Text style={[styles.genre, { color: theme.textPrimary }]}>{event.genre}</Text>
             {SPRITZ_SONGS.map((song) => (
               <View key={song.title} style={styles.songRow}>
@@ -551,11 +554,11 @@ export default function EventDetail() {
                 style={[styles.editEventButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
               >
                 <Ionicons name="create-outline" size={15} color={theme.accent} />
-                <Text style={[styles.editEventText, { color: theme.accent }]}>Editează evenimentul</Text>
+                <Text style={[styles.editEventText, { color: theme.accent }]}>{t.event.editEvent}</Text>
               </AnimatedPressable>
               <AnimatedPressable onPress={confirmCancelEvent} style={styles.cancelEventButton}>
                 <Ionicons name="trash-outline" size={14} color="#E5484D" />
-                <Text style={styles.cancelEventText}>Anulează evenimentul</Text>
+                <Text style={styles.cancelEventText}>{t.event.cancelEvent}</Text>
               </AnimatedPressable>
             </>
           )}
@@ -569,14 +572,14 @@ export default function EventDetail() {
           >
             <Text style={styles.ctaText}>
               {joining
-                ? 'Se procesează...'
+                ? t.event.ctaProcessing
                 : joined
                   ? isHost
-                    ? 'Găzduiești ✓'
-                    : 'Ești în listă ✓ · Renunță'
+                    ? t.event.ctaHosting
+                    : t.event.ctaJoinedLeave
                   : isFull
-                    ? 'Eveniment plin 🙁'
-                    : 'Hai la Spritz! 🍻'}
+                    ? t.event.ctaFull
+                    : t.event.ctaJoin}
             </Text>
           </AnimatedPressable>
         </View>
@@ -614,7 +617,7 @@ export default function EventDetail() {
           reasons={EVENT_REPORT_REASONS}
           onSubmit={(reason, description) => {
             if (hasActiveReport(user.id, 'event', event.id)) {
-              Alert.alert('Raport duplicat', 'Ai raportat deja acest eveniment.');
+              Alert.alert(t.event.duplicateReportTitle, t.event.duplicateReportMessage);
               return;
             }
             addReport({
@@ -626,7 +629,7 @@ export default function EventDetail() {
               reason,
               description,
             });
-            Alert.alert('Raport trimis', 'Raportul a fost adăugat local pentru verificare.');
+            Alert.alert(t.event.reportSentTitle, t.event.reportSentMessage);
           }}
           onClose={() => setReportModalOpen(false)}
         />

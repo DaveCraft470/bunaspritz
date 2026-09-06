@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
 import { useAppTheme } from '@/contexts/ThemeContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { colors } from '@/constants/theme';
 import { LogoWordmark } from '@/components/home/LogoWordmark';
@@ -13,8 +14,8 @@ import { showAlert } from '@/lib/alert';
 
 type Mode = 'login' | 'signup';
 // 'form' is the login/signup card. The other three are full-screen takeovers
-// of the same card, entered from signup (verify-signup) or the "Ai uitat
-// parola?" link (forgot-request → forgot-verify) — see handleSubmit and
+// of the same card, entered from signup (verify-signup) or the "forgot
+// password?" link (forgot-request → forgot-verify) — see handleSubmit and
 // handleForgotPassword below.
 type Stage = 'form' | 'verify-signup' | 'forgot-request' | 'forgot-verify';
 
@@ -23,15 +24,15 @@ const USERNAME_REGEX = /^[a-z0-9_.]{3,20}$/i;
 const CODE_REGEX = /^\d{6}$/;
 const RESEND_COOLDOWN_SECONDS = 30;
 
-const PASSWORD_REQUIREMENTS: { label: string; test: (value: string) => boolean }[] = [
-  { label: 'Minim 8 caractere', test: (v) => v.length >= 8 },
-  { label: 'O literă mare', test: (v) => /[A-Z]/.test(v) },
-  { label: 'O cifră', test: (v) => /[0-9]/.test(v) },
-  { label: 'Un caracter special', test: (v) => /[^A-Za-z0-9]/.test(v) },
-];
-
 export default function Auth() {
   const { colors: theme } = useAppTheme();
+  const { t } = useLanguage();
+  const PASSWORD_REQUIREMENTS: { label: string; test: (value: string) => boolean }[] = [
+    { label: t.auth.passwordReqMinLength, test: (v) => v.length >= 8 },
+    { label: t.auth.passwordReqUppercase, test: (v) => /[A-Z]/.test(v) },
+    { label: t.auth.passwordReqDigit, test: (v) => /[0-9]/.test(v) },
+    { label: t.auth.passwordReqSpecial, test: (v) => /[^A-Za-z0-9]/.test(v) },
+  ];
   const {
     signUp,
     logIn,
@@ -95,23 +96,23 @@ export default function Auth() {
 
     if (mode === 'signup') {
       if (!name.trim()) {
-        setError('Introdu numele tău.');
+        setError(t.auth.errorEnterName);
         return;
       }
       if (!USERNAME_REGEX.test(username.trim())) {
-        setError('Username: 3-20 caractere, doar litere, cifre, "." sau "_".');
+        setError(t.auth.errorUsernameFormat);
         return;
       }
       if (!EMAIL_REGEX.test(email.trim())) {
-        setError('Introdu o adresă de email validă.');
+        setError(t.auth.errorEnterValidEmail);
         return;
       }
       if (!passwordValid) {
-        setError('Parola nu îndeplinește toate cerințele.');
+        setError(t.auth.errorPasswordRequirements);
         return;
       }
       if (password !== confirmPassword) {
-        setError('Parolele nu coincid.');
+        setError(t.auth.errorPasswordsDontMatch);
         return;
       }
 
@@ -137,7 +138,7 @@ export default function Auth() {
     }
 
     if (!email.trim() || !password) {
-      setError('Introdu emailul și parola.');
+      setError(t.auth.errorEnterEmailAndPassword);
       return;
     }
 
@@ -173,7 +174,7 @@ export default function Auth() {
   const handleVerifySignup = async () => {
     if (submitting) return;
     if (!CODE_REGEX.test(code.trim())) {
-      setError('Introdu codul de 6 cifre primit pe email.');
+      setError(t.auth.errorEnterCode);
       return;
     }
 
@@ -197,11 +198,11 @@ export default function Auth() {
     setResending(false);
 
     if (!result.ok) {
-      showAlert('Nu am putut retrimite codul', result.error);
+      showAlert(t.auth.resendFailedTitle, result.error);
       return;
     }
     setResendCooldown(RESEND_COOLDOWN_SECONDS);
-    showAlert('Cod retrimis', `Verifică ${pendingEmail}.`);
+    showAlert(t.auth.resendSuccessTitle, t.auth.resendSuccessMessage(pendingEmail));
   };
 
   // Step 1 of the forgot-password flow: entered from the "Ai uitat parola?"
@@ -211,7 +212,7 @@ export default function Auth() {
     if (submitting) return;
     const trimmedEmail = email.trim().toLowerCase();
     if (!EMAIL_REGEX.test(trimmedEmail)) {
-      setError('Introdu o adresă de email validă.');
+      setError(t.auth.errorEnterValidEmail);
       return;
     }
 
@@ -240,11 +241,11 @@ export default function Auth() {
     setResending(false);
 
     if (!result.ok) {
-      showAlert('Nu am putut retrimite codul', result.error);
+      showAlert(t.auth.resendFailedTitle, result.error);
       return;
     }
     setResendCooldown(RESEND_COOLDOWN_SECONDS);
-    showAlert('Cod retrimis', `Verifică ${pendingEmail}.`);
+    showAlert(t.auth.resendSuccessTitle, t.auth.resendSuccessMessage(pendingEmail));
   };
 
   // Step 2: exchanges the code for a session and sets the new password in
@@ -252,15 +253,15 @@ export default function Auth() {
   const handleForgotVerify = async () => {
     if (submitting) return;
     if (!CODE_REGEX.test(code.trim())) {
-      setError('Introdu codul de 6 cifre primit pe email.');
+      setError(t.auth.errorEnterCode);
       return;
     }
     if (!newPasswordValid) {
-      setError('Parola nu îndeplinește toate cerințele.');
+      setError(t.auth.errorPasswordRequirements);
       return;
     }
     if (newPassword !== confirmNewPassword) {
-      setError('Parolele nu coincid.');
+      setError(t.auth.errorPasswordsDontMatch);
       return;
     }
 
@@ -308,7 +309,7 @@ export default function Auth() {
               { color: theme.textSecondary },
             ]}
           >
-            Descoperă evenimentele din jurul tău.
+            {t.auth.subtitle}
           </Text>
         </View>
 
@@ -328,19 +329,19 @@ export default function Auth() {
               style={styles.backButton}
             >
               <Ionicons name="arrow-back" size={18} color={theme.textSecondary} />
-              <Text style={[styles.backText, { color: theme.textSecondary }]}>Înapoi</Text>
+              <Text style={[styles.backText, { color: theme.textSecondary }]}>{t.common.back}</Text>
             </Pressable>
           )}
 
           {stage === 'verify-signup' && (
             <>
-              <Text style={[styles.heading, { color: theme.textPrimary }]}>Confirmă emailul</Text>
+              <Text style={[styles.heading, { color: theme.textPrimary }]}>{t.auth.confirmEmailHeading}</Text>
               <Text style={[styles.description, { color: theme.textSecondary }]}>
-                Am trimis un cod de 6 cifre la {pendingEmail}. Introdu-l mai jos ca să îți activezi contul.
+                {t.auth.confirmEmailDescription(pendingEmail)}
               </Text>
 
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: theme.textPrimary }]}>Cod de confirmare</Text>
+                <Text style={[styles.label, { color: theme.textPrimary }]}>{t.auth.confirmationCodeLabel}</Text>
                 <View
                   style={[
                     styles.inputWrapper,
@@ -370,7 +371,7 @@ export default function Auth() {
                   { backgroundColor: colors.green500, opacity: pressed || submitting ? 0.8 : 1 },
                 ]}
               >
-                <Text style={styles.submitText}>Confirmă</Text>
+                <Text style={styles.submitText}>{t.auth.confirmSubmit}</Text>
                 <Ionicons name="arrow-forward" size={20} color={colors.white} />
               </Pressable>
 
@@ -381,10 +382,10 @@ export default function Auth() {
               >
                 <Text style={[styles.forgotText, { color: colors.green500 }]}>
                   {resendCooldown > 0
-                    ? `Retrimite codul (${resendCooldown}s)`
+                    ? t.auth.resendCodeCooldown(resendCooldown)
                     : resending
-                      ? 'Se retrimite...'
-                      : 'Retrimite codul'}
+                      ? t.auth.resending
+                      : t.auth.resendCode}
                 </Text>
               </Pressable>
             </>
@@ -392,13 +393,13 @@ export default function Auth() {
 
           {stage === 'forgot-request' && (
             <>
-              <Text style={[styles.heading, { color: theme.textPrimary }]}>Ai uitat parola?</Text>
+              <Text style={[styles.heading, { color: theme.textPrimary }]}>{t.auth.forgotRequestHeading}</Text>
               <Text style={[styles.description, { color: theme.textSecondary }]}>
-                Introdu emailul contului tău și îți trimitem un cod de resetare.
+                {t.auth.forgotRequestDescription}
               </Text>
 
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: theme.textPrimary }]}>Email</Text>
+                <Text style={[styles.label, { color: theme.textPrimary }]}>{t.auth.emailLabel}</Text>
                 <View
                   style={[
                     styles.inputWrapper,
@@ -409,7 +410,7 @@ export default function Auth() {
                   <TextInput
                     value={email}
                     onChangeText={setEmail}
-                    placeholder="numele@email.com"
+                    placeholder={t.auth.emailPlaceholder}
                     placeholderTextColor={theme.textSecondary}
                     style={[styles.input, { color: theme.textPrimary }]}
                     keyboardType="email-address"
@@ -429,7 +430,7 @@ export default function Auth() {
                   { backgroundColor: colors.green500, opacity: pressed || submitting ? 0.8 : 1 },
                 ]}
               >
-                <Text style={styles.submitText}>Trimite codul</Text>
+                <Text style={styles.submitText}>{t.auth.sendCodeSubmit}</Text>
                 <Ionicons name="arrow-forward" size={20} color={colors.white} />
               </Pressable>
             </>
@@ -437,13 +438,13 @@ export default function Auth() {
 
           {stage === 'forgot-verify' && (
             <>
-              <Text style={[styles.heading, { color: theme.textPrimary }]}>Resetează parola</Text>
+              <Text style={[styles.heading, { color: theme.textPrimary }]}>{t.auth.resetPasswordHeading}</Text>
               <Text style={[styles.description, { color: theme.textSecondary }]}>
-                Am trimis un cod de 6 cifre la {pendingEmail}. Introdu-l mai jos împreună cu noua parolă.
+                {t.auth.resetPasswordDescription(pendingEmail)}
               </Text>
 
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: theme.textPrimary }]}>Cod de resetare</Text>
+                <Text style={[styles.label, { color: theme.textPrimary }]}>{t.auth.resetCodeLabel}</Text>
                 <View
                   style={[
                     styles.inputWrapper,
@@ -464,7 +465,7 @@ export default function Auth() {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: theme.textPrimary }]}>Parolă nouă</Text>
+                <Text style={[styles.label, { color: theme.textPrimary }]}>{t.auth.newPasswordLabel}</Text>
                 <View
                   style={[
                     styles.inputWrapper,
@@ -475,7 +476,7 @@ export default function Auth() {
                   <TextInput
                     value={newPassword}
                     onChangeText={setNewPassword}
-                    placeholder="Parola nouă"
+                    placeholder={t.auth.newPasswordPlaceholder}
                     placeholderTextColor={theme.textSecondary}
                     style={[styles.input, { color: theme.textPrimary }]}
                     secureTextEntry={!showNewPassword}
@@ -484,7 +485,7 @@ export default function Auth() {
                   <Pressable
                     onPress={() => setShowNewPassword(!showNewPassword)}
                     hitSlop={10}
-                    accessibilityLabel={showNewPassword ? 'Ascunde parola' : 'Arată parola'}
+                    accessibilityLabel={showNewPassword ? t.auth.hidePassword : t.auth.showPassword}
                   >
                     <Ionicons
                       name={showNewPassword ? 'eye-off-outline' : 'eye-outline'}
@@ -516,7 +517,7 @@ export default function Auth() {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: theme.textPrimary }]}>Confirmă parola nouă</Text>
+                <Text style={[styles.label, { color: theme.textPrimary }]}>{t.auth.confirmNewPasswordLabel}</Text>
                 <View
                   style={[
                     styles.inputWrapper,
@@ -527,7 +528,7 @@ export default function Auth() {
                   <TextInput
                     value={confirmNewPassword}
                     onChangeText={setConfirmNewPassword}
-                    placeholder="Introdu parola din nou"
+                    placeholder={t.auth.confirmPasswordPlaceholder}
                     placeholderTextColor={theme.textSecondary}
                     style={[styles.input, { color: theme.textPrimary }]}
                     secureTextEntry={!showNewPassword}
@@ -546,7 +547,7 @@ export default function Auth() {
                   { backgroundColor: colors.green500, opacity: pressed || submitting ? 0.8 : 1 },
                 ]}
               >
-                <Text style={styles.submitText}>Resetează parola</Text>
+                <Text style={styles.submitText}>{t.auth.resetPasswordSubmit}</Text>
                 <Ionicons name="arrow-forward" size={20} color={colors.white} />
               </Pressable>
 
@@ -557,10 +558,10 @@ export default function Auth() {
               >
                 <Text style={[styles.forgotText, { color: colors.green500 }]}>
                   {resendCooldown > 0
-                    ? `Retrimite codul (${resendCooldown}s)`
+                    ? t.auth.resendCodeCooldown(resendCooldown)
                     : resending
-                      ? 'Se retrimite...'
-                      : 'Retrimite codul'}
+                      ? t.auth.resending
+                      : t.auth.resendCode}
                 </Text>
               </Pressable>
             </>
@@ -594,7 +595,7 @@ export default function Auth() {
                   },
                 ]}
               >
-                Login
+                {t.auth.loginTab}
               </Text>
             </Pressable>
 
@@ -618,7 +619,7 @@ export default function Auth() {
                   },
                 ]}
               >
-                Sign Up
+                {t.auth.signupTab}
               </Text>
             </Pressable>
           </View>
@@ -630,8 +631,8 @@ export default function Auth() {
             ]}
           >
             {mode === 'login'
-              ? 'Bine ai revenit!'
-              : 'Creează-ți contul'}
+              ? t.auth.welcomeBackHeading
+              : t.auth.createAccountHeading}
           </Text>
 
           <Text
@@ -641,8 +642,8 @@ export default function Auth() {
             ]}
           >
             {mode === 'login'
-              ? 'Conectează-te pentru a continua.'
-              : 'Creează un cont pentru a descoperi evenimente.'}
+              ? t.auth.welcomeBackDescription
+              : t.auth.createAccountDescription}
           </Text>
 
           {mode === 'signup' && (
@@ -653,7 +654,7 @@ export default function Auth() {
                   { color: theme.textPrimary },
                 ]}
               >
-                Nume
+                {t.auth.nameLabel}
               </Text>
 
               <View
@@ -674,7 +675,7 @@ export default function Auth() {
                 <TextInput
                   value={name}
                   onChangeText={setName}
-                  placeholder="Numele tău"
+                  placeholder={t.auth.namePlaceholder}
                   placeholderTextColor={theme.textSecondary}
                   style={[
                     styles.input,
@@ -694,7 +695,7 @@ export default function Auth() {
                   { color: theme.textPrimary },
                 ]}
               >
-                Username
+                {t.auth.usernameLabel}
               </Text>
 
               <View
@@ -715,7 +716,7 @@ export default function Auth() {
                 <TextInput
                   value={username}
                   onChangeText={setUsername}
-                  placeholder="username"
+                  placeholder={t.auth.usernamePlaceholder}
                   placeholderTextColor={theme.textSecondary}
                   style={[
                     styles.input,
@@ -735,7 +736,7 @@ export default function Auth() {
                 { color: theme.textPrimary },
               ]}
             >
-              Email
+              {t.auth.emailLabel}
             </Text>
 
             <View
@@ -756,7 +757,7 @@ export default function Auth() {
               <TextInput
                 value={email}
                 onChangeText={setEmail}
-                placeholder="numele@email.com"
+                placeholder={t.auth.emailPlaceholder}
                 placeholderTextColor={theme.textSecondary}
                 style={[
                   styles.input,
@@ -776,7 +777,7 @@ export default function Auth() {
                 { color: theme.textPrimary },
               ]}
             >
-              Parolă
+              {t.auth.passwordLabel}
             </Text>
 
             <View
@@ -797,7 +798,7 @@ export default function Auth() {
               <TextInput
                 value={password}
                 onChangeText={setPassword}
-                placeholder="Parola ta"
+                placeholder={t.auth.passwordPlaceholder}
                 placeholderTextColor={theme.textSecondary}
                 style={[
                   styles.input,
@@ -812,7 +813,7 @@ export default function Auth() {
                   setShowPassword(!showPassword)
                 }
                 hitSlop={10}
-                accessibilityLabel={showPassword ? 'Ascunde parola' : 'Arată parola'}
+                accessibilityLabel={showPassword ? t.auth.hidePassword : t.auth.showPassword}
               >
                 <Ionicons
                   name={
@@ -857,7 +858,7 @@ export default function Auth() {
                   { color: theme.textPrimary },
                 ]}
               >
-                Confirmă parola
+                {t.auth.confirmPasswordLabel}
               </Text>
 
               <View
@@ -878,7 +879,7 @@ export default function Auth() {
                 <TextInput
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
-                  placeholder="Introdu parola din nou"
+                  placeholder={t.auth.confirmPasswordPlaceholder}
                   placeholderTextColor={theme.textSecondary}
                   style={[
                     styles.input,
@@ -905,7 +906,7 @@ export default function Auth() {
                   { color: colors.green500 },
                 ]}
               >
-                Ai uitat parola?
+                {t.auth.forgotPassword}
               </Text>
             </Pressable>
           )}
@@ -925,8 +926,8 @@ export default function Auth() {
           >
             <Text style={styles.submitText}>
               {mode === 'login'
-                ? 'Intră în cont'
-                : 'Continuă'}
+                ? t.auth.loginSubmit
+                : t.auth.signupSubmit}
             </Text>
 
             <Ionicons
@@ -944,8 +945,8 @@ export default function Auth() {
               ]}
             >
               {mode === 'login'
-                ? 'Nu ai încă un cont?'
-                : 'Ai deja un cont?'}
+                ? t.auth.noAccountYet
+                : t.auth.haveAccountAlready}
             </Text>
 
             <Pressable
@@ -964,8 +965,8 @@ export default function Auth() {
                 ]}
               >
                 {mode === 'login'
-                  ? 'Sign Up'
-                  : 'Login'}
+                  ? t.auth.signupTab
+                  : t.auth.loginTab}
               </Text>
             </Pressable>
           </View>
@@ -979,8 +980,7 @@ export default function Auth() {
             { color: theme.textSecondary },
           ]}
         >
-          Prin continuare accepți termenii și politica de
-          confidențialitate.
+          {t.auth.footer}
         </Text>
 
         {/* `__DEV__` would be false in the sideloaded preview APK — the
@@ -989,7 +989,7 @@ export default function Auth() {
             a real production release. */}
         <Pressable onPress={handleDevSkip} style={styles.devSkip}>
           <Text style={[styles.devSkipText, { color: theme.textSecondary }]}>
-            Sări peste (doar dev)
+            {t.auth.devSkip}
           </Text>
         </Pressable>
       </KeyboardAwareScrollView>
