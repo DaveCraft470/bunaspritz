@@ -23,14 +23,24 @@ Deno.serve(async (req) => {
   if (!event) return new Response('event not found', { status: 404 });
 
   const { data: requester } = await admin.from('profiles').select('name').eq('id', callerId).single();
-  const { data: tokens } = await admin.from('push_tokens').select('token').eq('user_id', event.host_id);
 
-  await sendExpoPush(
-    (tokens ?? []).map((t) => t.token),
-    'Cerere de participare',
-    `${requester?.name ?? 'Cineva'} vrea să participe la ${event.title}.`,
-    { route: `/organizer-participants/${event.id}` }
-  );
+  const title = 'Cerere de participare';
+  const body = `${requester?.name ?? 'Cineva'} vrea să participe la ${event.title}.`;
+
+  // No dedicated notification type for this yet (see the `notifications`
+  // table's type check) — 'system' is the closest fit without touching a
+  // constraint another job's migration currently owns.
+  await admin.from('notifications').insert({
+    recipient_id: event.host_id,
+    actor_id: callerId,
+    type: 'system',
+    title,
+    body,
+    data: { target_id: event.id },
+  });
+
+  const { data: tokens } = await admin.from('push_tokens').select('token').eq('user_id', event.host_id);
+  await sendExpoPush((tokens ?? []).map((t) => t.token), title, body);
 
   return new Response('ok', { status: 200 });
 });

@@ -50,12 +50,14 @@ export async function registerForPushNotifications(userId: string): Promise<void
 
 // Without an explicit handler, expo-notifications' default behavior is to
 // suppress the OS banner entirely while the app is in the foreground — every
-// push (join, message, follow, join-request...) was arriving silently
-// whenever the app happened to be open, which reads as "push doesn't work"
-// even though the send side was fine. Also wires up tap-to-navigate: every
-// edge function (see supabase/functions/_shared/push.ts) sends a
-// `data.route` in-app path, so a tap just needs to hand that to the router.
-// Call once, near the app root — returns a cleanup for the listener.
+// push (join, message, friend request...) was arriving silently whenever
+// the app happened to be open, which reads as "push doesn't work" even
+// though the send side was fine. Also sends a tap to the notifications
+// screen — every notify-* edge function now writes a matching row to the
+// `notifications` table (see the `data`/`title`/`body` it inserts) as well
+// as sending the push, so that screen is always the right landing spot
+// regardless of which function fired. Call once, near the app root —
+// returns a cleanup for the listener.
 export function setupPushNotificationHandling(): () => void {
   if (pushUnsupportedHere()) return () => {};
 
@@ -74,9 +76,8 @@ export function setupPushNotificationHandling(): () => void {
       }),
     });
 
-    responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const route = response.notification.request.content.data?.route;
-      if (typeof route === 'string') router.push(route);
+    responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
+      router.push('/notifications');
     });
   });
 

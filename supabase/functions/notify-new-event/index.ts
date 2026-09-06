@@ -64,14 +64,21 @@ Deno.serve(async (req) => {
   const recipients = frequentUserIds.filter((id) => !muted.has(id) && !hiddenFrom.has(id));
   if (!recipients.length) return new Response('no eligible recipients', { status: 200 });
 
-  const { data: tokens } = await admin.from('push_tokens').select('token').in('user_id', recipients);
+  const title = `${host?.name ?? 'Un host'} a creat un Spritz nou!`;
 
-  await sendExpoPush(
-    (tokens ?? []).map((t) => t.token),
-    `${host?.name ?? 'Un host'} a creat un Spritz nou!`,
-    event.title,
-    { route: `/event/${event.id}` }
+  await admin.from('notifications').insert(
+    recipients.map((recipientId) => ({
+      recipient_id: recipientId,
+      actor_id: callerId,
+      type: 'event_updated',
+      title,
+      body: event.title,
+      data: { target_id: eventId },
+    }))
   );
+
+  const { data: tokens } = await admin.from('push_tokens').select('token').in('user_id', recipients);
+  await sendExpoPush((tokens ?? []).map((t) => t.token), title, event.title);
 
   return new Response('ok', { status: 200 });
 });
