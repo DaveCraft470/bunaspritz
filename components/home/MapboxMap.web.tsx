@@ -17,10 +17,10 @@ import { FakeMapBackdrop } from './FakeMapBackdrop';
 
 type Provider = 'mapbox' | 'maplibre';
 
-type PinData = Pick<SpritzEvent, 'id' | 'emoji' | 'color' | 'lng' | 'lat'>;
+type PinData = Pick<SpritzEvent, 'id' | 'emoji' | 'color' | 'lng' | 'lat' | 'source'>;
 
 function toPinData(events: SpritzEvent[]): PinData[] {
-  return events.map((e) => ({ id: e.id, emoji: e.emoji, color: e.color, lng: e.lng, lat: e.lat }));
+  return events.map((e) => ({ id: e.id, emoji: e.emoji, color: e.color, lng: e.lng, lat: e.lat, source: e.source }));
 }
 
 export type MapboxMapHandle = {
@@ -82,8 +82,12 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
     // Whichever library actually loaded — see the build effect below, only
     // one of these two globals will exist at a time.
     const gl = (window as any).mapboxgl || (window as any).maplibregl;
+    const isScraped = ev.source === 'scraper';
     const el = document.createElement('div');
-    el.className = 'spritz-event-pin';
+    // Scraped events (from zilesinopti.ro) get a badge shape of their own —
+    // see spritz-scraper-event-pin in lib/mapboxGlWeb.ts — so they never look
+    // like a host's own hosted Spritz on the map.
+    el.className = isScraped ? 'spritz-scraper-event-pin' : 'spritz-event-pin';
     el.style.background = ev.color;
     el.innerHTML = `<span>${ev.emoji}</span>`;
     el.addEventListener('click', () => {
@@ -93,7 +97,9 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
         params: { id: ev.id, originX: String(Math.round(p.x)), originY: String(Math.round(p.y)) },
       });
     });
-    const marker = new gl.Marker({ element: el, anchor: 'bottom' }).setLngLat([ev.lng, ev.lat]).addTo(map);
+    const marker = new gl.Marker({ element: el, anchor: isScraped ? 'center' : 'bottom' })
+      .setLngLat([ev.lng, ev.lat])
+      .addTo(map);
     eventMarkersRef.current.set(ev.id, marker);
   }
 

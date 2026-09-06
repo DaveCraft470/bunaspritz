@@ -37,6 +37,25 @@ const PIN_STYLES = `
   transform: rotate(45deg);
   font-size: 17px;
 }
+/* Scraped events (source === 'scraper', pulled in from zilesinopti.ro) get a
+   shape of their own — a rounded square badge with a dashed border, floating
+   centered on its coordinate rather than pointing down at one — so they
+   never read as a host's own hosted Spritz at a glance. */
+.spritz-scraper-event-pin {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+  border: 2px dashed rgba(255,255,255,0.92);
+  cursor: pointer;
+}
+.spritz-scraper-event-pin span {
+  display: block;
+  font-size: 16px;
+}
 .spritz-user-pin {
   width: 18px;
   height: 18px;

@@ -29,12 +29,20 @@ type Provider = 'mapbox' | 'maplibre';
 // runtime from the web build, so it can't share that module's state).
 let mapboxKnownDead = false;
 
-type PinData = Pick<SpritzEvent, 'id' | 'emoji' | 'color' | 'lng' | 'lat'>;
+type PinData = Pick<SpritzEvent, 'id' | 'emoji' | 'color' | 'lng' | 'lat' | 'source'>;
 
 type PinWithStory = PinData & { hasStories: boolean };
 
 function toPinData(events: SpritzEvent[], storyEventIds?: Set<string>): PinWithStory[] {
-  return events.map((e) => ({ id: e.id, emoji: e.emoji, color: e.color, lng: e.lng, lat: e.lat, hasStories: storyEventIds?.has(e.id) ?? false }));
+  return events.map((e) => ({
+    id: e.id,
+    emoji: e.emoji,
+    color: e.color,
+    lng: e.lng,
+    lat: e.lat,
+    source: e.source,
+    hasStories: storyEventIds?.has(e.id) ?? false,
+  }));
 }
 
 // `provider` picks the whole library + style + token combo — see
@@ -99,6 +107,26 @@ function buildHtml(provider: Provider, styleUrl: string, initialEvents: PinData[
       border: 2px solid #1FD460;
       border-radius: 50%;
     }
+    /* Scraped events (source === 'scraper', pulled in from zilesinopti.ro)
+       get a shape of their own — a rounded square badge with a dashed
+       border, floating centered on its coordinate rather than pointing down
+       at one — so they never read as a host's own hosted Spritz at a glance,
+       even at a distance or a quick look. */
+    .scraper-event-pin {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+      border: 2px dashed rgba(255,255,255,0.92);
+      cursor: pointer;
+    }
+    .scraper-event-pin span {
+      display: block;
+      font-size: 16px;
+    }
     .user-pin {
       width: 18px;
       height: 18px;
@@ -147,15 +175,16 @@ function buildHtml(provider: Provider, styleUrl: string, initialEvents: PinData[
       });
       send('debug:map constructed');
       function addEventPin(ev) {
+        var isScraped = ev.source === 'scraper';
         var el = document.createElement('div');
-        el.className = 'event-pin' + (ev.hasStories ? ' story-pin' : '');
+        el.className = isScraped ? 'scraper-event-pin' : ('event-pin' + (ev.hasStories ? ' story-pin' : ''));
         el.style.background = ev.color;
         el.innerHTML = '<span>' + ev.emoji + '</span>';
         el.addEventListener('click', function () {
           var p = map.project([ev.lng, ev.lat]);
           send('event:' + ev.id + ':' + Math.round(p.x) + ':' + Math.round(p.y));
         });
-        new gl.Marker({ element: el, anchor: 'bottom' })
+        new gl.Marker({ element: el, anchor: isScraped ? 'center' : 'bottom' })
           .setLngLat([ev.lng, ev.lat])
           .addTo(map);
       }

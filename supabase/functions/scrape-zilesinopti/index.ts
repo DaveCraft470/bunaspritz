@@ -1,19 +1,29 @@
-// Periodically pulls "Party" events out of zilesinopti.ro's Brașov listings
-// (the dedicated party-brasov archive, plus anything tagged "Party" on the
-// general evenimente-brasov listing) and adds the ones that actually involve
-// alcohol as events in the app — with a distinct emoji/color (source =
+// Periodically pulls events out of zilesinopti.ro's Brașov listings (the
+// dedicated party-brasov archive, plus every real event on the general
+// evenimente-brasov listing) and adds the ones that actually involve alcohol
+// as events in the app — with a distinct emoji/color/pin shape (source =
 // 'scraper') so they read as auto-discovered rather than host-created.
 // Triggered on a schedule by pg_cron (see the schedule_scrape_zilesinopti
 // migration); not reachable by end users (verify_jwt is off, but the
 // x-cron-secret header stands in).
+//
+// Deliberately does NOT pre-filter the general listing down to items
+// zilesinopti itself tagged "Party" — a beer festival like Oktoberfest gets
+// tagged "Festival" there, not "Party", even though it obviously involves
+// alcohol. Trusting the site's own taxonomy instead of Gemini's actual
+// content classification silently drops exactly the events this scraper
+// exists to catch. So every real event (any item with a genuine
+// /evenimente/<slug>/ link) is a candidate, and classifyEvent's alcohol
+// verdict is the only gate — see its prompt below for why that's still cheap
+// (each slug is only ever classified once, cached in scraped_event_checks).
 import { adminClient } from '../_shared/push.ts';
 
 // The dedicated Party taxonomy archive for Brașov — every event listed here
 // IS a party by definition, even though its own "kzn-sw-item-textsus" tag is
 // often a more specific subgenre (e.g. "DJ Set") rather than the literal
-// string "Party". The generic mixed listing below is kept only as a
-// supplementary source for the rarer case where an event is tagged "Party"
-// there without (yet) appearing in the dedicated archive.
+// string "Party". Kept as a separate fetch (rather than relying solely on
+// the general listing) since it surfaces party listings the general listing
+// sometimes doesn't carry yet.
 const PARTY_LISTING_URL = 'https://zilesinopti.ro/party-brasov/';
 const LISTING_URL = 'https://zilesinopti.ro/evenimente-brasov/';
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
@@ -24,10 +34,10 @@ const SCRAPER_UA = 'Mozilla/5.0 (compatible; SpritzAppBot/1.0; +party-alcohol-ev
 // silently dropped.
 const BRASOV_FALLBACK = { lng: 25.5887, lat: 45.6427 };
 
-// Deliberately different from any default a host picks in new-event.tsx —
-// this pair of emoji + color is the whole "different icon" story: both map
-// renderers (MapboxMap.tsx / .web.tsx) already key a pin's look purely off
-// event.emoji + event.color, so no marker-rendering code needs to change.
+// Deliberately different from any default a host picks in new-event.tsx.
+// The map pin shape itself is also different for source === 'scraper' (see
+// MapboxMap.tsx / .web.tsx / lib/mapboxGlWeb.ts) — this emoji/color pair is
+// just what fills that distinct shape, not the whole "different icon" story.
 const SCRAPER_EMOJI = '🍾';
 const SCRAPER_COLOR = '#8B5CF6';
 
@@ -141,22 +151,35 @@ async function fetchDetailText(url: string): Promise<string> {
   return truncateAtWord(cleanText(chunk), 4000);
 }
 
-type GeminiVerdict = { alcohol: boolean; venue: string | null; starts_at_iso: string | null; reason: string };
+type GeminiVerdict = {
+  alcohol: boolean;
+  venue: string | null;
+  starts_at_iso: string | null;
+  ends_at_iso: string | null;
+  reason: string;
+};
 
 async function classifyEvent(apiKey: string, title: string, description: string): Promise<GeminiVerdict> {
   const today = new Date().toISOString().slice(0, 10);
-  const prompt = `Ești un asistent care analizează un eveniment de tip "petrecere" (party) din Brașov, România, pentru o aplicație de social/evenimente.
+  // Deliberately NOT scoped to "petrecere/party" — the candidate pool now
+  // includes every event type on the listing (concerts, festivals, theatre,
+  // ...), and it's this alcohol verdict alone that decides whether something
+  // belongs in the app. A beer/wine festival (e.g. Oktoberfest) is exactly
+  // the kind of event that must score alcohol:true here even though nothing
+  // about it looks like a nightclub party.
+  const prompt = `Ești un asistent care analizează un eveniment din Brașov, România (poate fi petrecere, festival, concert, degustare, târg etc.), pentru o aplicație de social/evenimente axată pe ieșiri unde se consumă băuturi alcoolice.
 
 Titlu: ${title}
 Descriere: ${description}
 
 Astăzi este ${today}. Răspunde STRICT cu un obiect JSON (fără text în plus, fără markdown), cu exact aceste chei:
-{"alcohol": true sau false, "venue": string sau null, "starts_at_iso": string sau null, "reason": string}
+{"alcohol": true sau false, "venue": string sau null, "starts_at_iso": string sau null, "ends_at_iso": string sau null, "reason": string}
 
 Reguli:
-- "alcohol": true DOAR dacă textul menționează clar băuturi alcoolice sau ceva ce le implică direct (bar, bere, vin, cocktailuri, șampanie, "open bar", "drinkuri", petrecere într-un club/bar etc). Dacă nu e clar sau textul sugerează un eveniment fără alcool (ex: petrecere pentru copii, eveniment religios, eveniment "family friendly" explicit), pune false.
+- "alcohol": true dacă textul menționează clar băuturi alcoolice sau ceva ce le implică direct — nu doar petreceri de club: bar, bere, vin, cocktailuri, șampanie, "open bar", "drinkuri", festival de bere/vin (ex. Oktoberfest, festival al vinului), degustare de bere/vin, food truck festival cu bere la halbă etc. Dacă nu e clar sau textul sugerează un eveniment fără alcool (ex: petrecere pentru copii, eveniment religios, eveniment sportiv, eveniment "family friendly" explicit), pune false.
 - "venue": numele exact al locației menționate în text (ex. "ORCA SMASH, La Metrom, Brașov"), sau null dacă nu apare nicio locație specifică (nu pune doar "Brașov").
 - "starts_at_iso": data și ora de start, format ISO 8601 cu ora locală a României, ex "2026-09-05T20:00:00+03:00". Dacă anul lipsește din text, alege anul curent sau următorul, oricare rezultă într-o dată în viitor față de azi. Dacă nu poți determina o dată/oră, pune null.
+- "ends_at_iso": pentru evenimente pe mai multe zile (festivaluri, târguri), data și ora de final ale ÎNTREGULUI eveniment (nu a unei singure zile), același format ISO 8601. Pentru un eveniment de o singură seară, sau dacă nu poți determina finalul, pune null.
 - "reason": o propoziție scurtă în română care explică verdictul pentru "alcohol".`;
 
   // gemini-flash-latest returns transient 503s under load fairly often in
@@ -209,6 +232,19 @@ function resolveStartsAt(isoCandidate: string | null): string | null {
   return parsed.toISOString();
 }
 
+// Only meaningful once a valid start exists, and only kept when it's
+// actually after that start — otherwise it's either a single-day event (no
+// end given) or a hallucinated one, and startsAt alone already covers both.
+function resolveEndsAt(isoCandidate: string | null, startsAtIso: string | null): string | null {
+  if (!isoCandidate || !startsAtIso) return null;
+  const parsed = new Date(isoCandidate);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const driftDays = Math.abs(parsed.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+  if (driftDays > MAX_STARTS_AT_DRIFT_DAYS) return null;
+  if (parsed.getTime() <= new Date(startsAtIso).getTime()) return null;
+  return parsed.toISOString();
+}
+
 Deno.serve(async (req) => {
   const cronSecret = Deno.env.get('CRON_SECRET');
   if (!cronSecret || req.headers.get('x-cron-secret') !== cronSecret) {
@@ -220,15 +256,21 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
 
-  // Keep the map tidy: drop scraped events whose party has already happened,
-  // and undated scraped events that have sat around unresolved too long.
-  // Host-created events are never touched (both deletes are source='scraper' only).
+  // Keep the map tidy: drop scraped events that are already over, and undated
+  // scraped events that have sat around unresolved too long. Host-created
+  // events are never touched (every delete below is source='scraper' only).
+  // "Already over" is keyed on ends_at when we have one — a multi-day
+  // festival (e.g. Oktoberfest) is very much still on after its first day's
+  // starts_at has passed, and this used to delete it mid-run.
+  const cutoffIso = new Date(Date.now() - PAST_EVENT_GRACE_MS).toISOString();
+  await admin.from('events').delete().eq('source', 'scraper').not('ends_at', 'is', null).lt('ends_at', cutoffIso);
   await admin
     .from('events')
     .delete()
     .eq('source', 'scraper')
+    .is('ends_at', null)
     .not('starts_at', 'is', null)
-    .lt('starts_at', new Date(Date.now() - PAST_EVENT_GRACE_MS).toISOString());
+    .lt('starts_at', cutoffIso);
   await admin
     .from('events')
     .delete()
@@ -241,18 +283,25 @@ Deno.serve(async (req) => {
     fetch(LISTING_URL, { headers: { 'User-Agent': SCRAPER_UA } }),
   ]);
   if (!partyListingRes.ok) return new Response(`failed to fetch party listing page: ${partyListingRes.status}`, { status: 502 });
+  // The general listing is the primary source of breadth now (see the
+  // top-of-file note on why it's no longer filtered to category === 'Party'),
+  // so a failed fetch here can't be allowed to silently look like "nothing
+  // new today" — log it loudly and surface it in the response, but don't
+  // fail the whole run: the party archive fetch above still succeeded and is
+  // worth processing on its own.
+  if (!mixedListingRes.ok) console.error(`failed to fetch mixed listing page: ${mixedListingRes.status}`);
 
   // Every event on the dedicated party-brasov archive is a party by
-  // definition, regardless of its own subgenre tag. The generic listing is
-  // only trusted when it explicitly says "Party", since it mixes in every
-  // other category (and even non-event articles, filtered out above by the
-  // /evenimente/ slug requirement).
+  // definition, regardless of its own subgenre tag — no category filtering
+  // needed. The general listing carries every event type Brașov has
+  // (concerts, theatre, festivals, ...); non-event articles are already
+  // excluded by the /evenimente/<slug>/ link requirement in parseListing, and
+  // classifyEvent's alcohol verdict below is what actually decides whether an
+  // event belongs in the app — not zilesinopti's own category tag.
   const fromPartyArchive = parseListing(await partyListingRes.text());
-  const fromMixedListing = mixedListingRes.ok
-    ? parseListing(await mixedListingRes.text()).filter((item) => item.category?.toLowerCase() === 'party')
-    : [];
-  const partyItems = [...fromPartyArchive, ...fromMixedListing];
-  const slugs = partyItems.map((item) => item.slug);
+  const fromMixedListing = mixedListingRes.ok ? parseListing(await mixedListingRes.text()) : [];
+  const allItems = [...fromPartyArchive, ...fromMixedListing];
+  const slugs = allItems.map((item) => item.slug);
 
   const [{ data: existingEvents }, { data: existingChecks }] = await Promise.all([
     slugs.length ? admin.from('events').select('external_id').in('external_id', slugs) : Promise.resolve({ data: [] as { external_id: string }[] }),
@@ -267,7 +316,7 @@ Deno.serve(async (req) => {
   // The same event routinely shows up in more than one widget on the page
   // (a "featured" strip plus the full listing) with an identical slug — keep
   // just the first occurrence so it isn't fetched/classified twice per run.
-  const candidates = [...new Map(partyItems.map((item) => [item.slug, item])).values()].filter(
+  const candidates = [...new Map(allItems.map((item) => [item.slug, item])).values()].filter(
     (item) => !alreadyHandled.has(item.slug)
   );
 
@@ -288,11 +337,15 @@ Deno.serve(async (req) => {
       }
 
       const startsAt = resolveStartsAt(verdict.starts_at_iso);
+      const endsAt = resolveEndsAt(verdict.ends_at_iso, startsAt);
       // Gemini sometimes resolves a date that's already passed (e.g. it kept
       // the year mentioned in the text instead of rolling to next year's
       // occurrence) — importing it would just insert an event the very next
-      // cleanup pass deletes, flashing a "current" party that's already over.
-      if (startsAt && new Date(startsAt).getTime() < Date.now() - PAST_EVENT_GRACE_MS) {
+      // cleanup pass deletes, flashing a "current" event that's already over.
+      // Judged on the actual end for multi-day events (a festival's first day
+      // being in the past doesn't mean the festival is over) — see endsAt.
+      const effectiveEnd = endsAt ?? startsAt;
+      if (effectiveEnd && new Date(effectiveEnd).getTime() < Date.now() - PAST_EVENT_GRACE_MS) {
         await admin.from('scraped_event_checks').insert({ external_id: item.slug, alcohol: true });
         skippedPast++;
         continue;
@@ -317,8 +370,12 @@ Deno.serve(async (req) => {
         color: SCRAPER_COLOR,
         lng: coords.lng,
         lat: coords.lat,
-        genre: 'Party',
+        // zilesinopti's own category tag (e.g. "Festival", "Concerte") now
+        // that candidates aren't restricted to "Party" — falls back to
+        // "Party" only when a card genuinely carried no tag.
+        genre: item.category?.trim() || 'Party',
         starts_at: startsAt,
+        ends_at: endsAt,
         entry_fee_ron: null,
         drinks_price_ron: null,
         max_participants: null,
@@ -346,7 +403,15 @@ Deno.serve(async (req) => {
   }
 
   return new Response(
-    JSON.stringify({ partyItemsFound: partyItems.length, candidates: candidates.length, imported, rejected, skippedPast, failed }),
+    JSON.stringify({
+      itemsFound: allItems.length,
+      mixedListingOk: mixedListingRes.ok,
+      candidates: candidates.length,
+      imported,
+      rejected,
+      skippedPast,
+      failed,
+    }),
     { headers: { 'Content-Type': 'application/json' } }
   );
 });
