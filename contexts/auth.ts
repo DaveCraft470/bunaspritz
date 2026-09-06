@@ -130,6 +130,18 @@ export async function signOut(): Promise<void> {
   await supabase.auth.signOut();
 }
 
+// A signed-in client can't delete its own auth.users row directly (GoTrue
+// doesn't expose that as an RLS-governed table), so this needs the service
+// role — see supabase/functions/delete-account. Everything downstream
+// (profile, events, messages, friendships, ...) cascades from profiles.id
+// referencing auth.users(id), so this one call is enough.
+export async function deleteAccount(): Promise<boolean> {
+  const { error } = await supabase.functions.invoke('delete-account');
+  if (error) return false;
+  await supabase.auth.signOut();
+  return true;
+}
+
 export async function updateCurrentUser(
   fields: Partial<Pick<PublicUser, 'name' | 'username' | 'bio'>> & { instagramHandle?: string }
 ): Promise<AuthResult> {

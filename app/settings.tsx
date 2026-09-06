@@ -1,4 +1,4 @@
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, StyleSheet, Switch, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -12,6 +12,7 @@ import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
+import { showAlert } from '@/lib/alert';
 import { isAdminAccessEnabled } from '@/lib/admin';
 
 const DANGER_COLOR = '#E5484D';
@@ -19,7 +20,7 @@ const DANGER_COLOR = '#E5484D';
 export default function Settings() {
   const { scheme, colors: theme, toggleScheme } = useAppTheme();
   const { enabled: hapticsEnabled, setEnabled: setHapticsEnabled, light } = useHaptics();
-  const { user, effectiveVerified, signOut, setNotifyFriendsOnJoin } = useUser();
+  const { user, effectiveVerified, signOut, deleteAccount, setNotifyFriendsOnJoin } = useUser();
 
   async function handleSignOut() {
     light();
@@ -32,6 +33,30 @@ export default function Settings() {
     // time something unwinds the stack back to them.
     router.dismissAll();
     router.replace('/auth');
+  }
+
+  function handleDeleteAccount() {
+    light();
+    Alert.alert(
+      'Ștergi contul?',
+      'Această acțiune este ireversibilă. Profilul, evenimentele, mesajele și prietenii vor fi șterse definitiv.',
+      [
+        { text: 'Anulează', style: 'cancel' },
+        {
+          text: 'Șterge definitiv',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await deleteAccount();
+            if (!ok) {
+              showAlert('A apărut o eroare', 'Nu am putut șterge contul. Încearcă din nou.');
+              return;
+            }
+            router.dismissAll();
+            router.replace('/auth');
+          },
+        },
+      ],
+    );
   }
 
   function handleToggleNotifyOnJoin(value: boolean) {
@@ -191,6 +216,19 @@ export default function Settings() {
           </Text>
         </View>
         <Ionicons name="log-out-outline" size={18} color={DANGER_COLOR} />
+      </AnimatedPressable>
+
+      <AnimatedPressable
+        onPress={handleDeleteAccount}
+        style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+      >
+        <View style={styles.rowText}>
+          <Text style={[styles.rowLabel, { color: DANGER_COLOR }]}>Șterge contul</Text>
+          <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
+            Șterge definitiv contul și toate datele asociate.
+          </Text>
+        </View>
+        <Ionicons name="trash-outline" size={18} color={DANGER_COLOR} />
       </AnimatedPressable>
     </SafeAreaView>
   );

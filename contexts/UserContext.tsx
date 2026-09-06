@@ -5,6 +5,7 @@ import { registerForPushNotifications, unregisterPushToken } from '@/lib/pushTok
 import { freshChannel } from '@/lib/realtime';
 import {
   PublicUser,
+  deleteAccount as deleteAccountStorage,
   devSkipAuth,
   getCurrentUser,
   logInUser,
@@ -25,6 +26,7 @@ type UserContextValue = {
   signUp: (name: string, username: string, email: string, password: string) => Promise<AuthResult>;
   logIn: (email: string, password: string) => Promise<AuthResult & { verified?: boolean }>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<boolean>;
   devSkip: () => Promise<void>;
   updateProfile: (fields: {
     name?: string;
@@ -120,6 +122,17 @@ export function UserProvider({ children }: PropsWithChildren) {
         await signOutStorage();
         setAuthenticated(false);
         setUser(null);
+      },
+      async deleteAccount() {
+        // Same push-token-unregister-before ordering as signOut, for the
+        // same reason: unregisterPushToken needs a still-live session.
+        if (user) await unregisterPushToken(user.id);
+        const ok = await deleteAccountStorage();
+        if (ok) {
+          setAuthenticated(false);
+          setUser(null);
+        }
+        return ok;
       },
       async devSkip() {
         await devSkipAuth();
