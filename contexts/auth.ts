@@ -15,7 +15,10 @@ export type PublicUser = {
 };
 
 type AuthResult = { ok: true } | { ok: false; error: string };
-type LoginResult = { ok: true; verified: boolean } | { ok: false; error: string };
+type LoginResult =
+  | { ok: true; verified: boolean }
+  | { ok: false; error: string; needsVerification?: boolean };
+type SignUpResult = { ok: true; needsVerification: boolean } | { ok: false; error: string };
 
 // Accepts a bare username, an @-prefixed one, or a pasted profile URL
 // (with or without www/https, trailing slash, query string) and reduces it
@@ -29,11 +32,26 @@ export function normalizeInstagramHandle(input: string): string {
     .toLowerCase();
 }
 
-function mapAuthError(message: string): string {
-  if (/already registered|already exists/i.test(message)) return 'Există deja un cont cu acest email.';
-  if (/invalid login credentials/i.test(message)) return 'Email sau parolă incorectă.';
-  if (/password/i.test(message)) return 'Parola nu îndeplinește cerințele Supabase.';
-  return message;
+// Branches on `error.code` (stable, per Supabase) rather than parsing
+// `error.message` (free text, can change wording between versions).
+function mapAuthError(error: { message: string; code?: string }): string {
+  switch (error.code) {
+    case 'user_already_exists':
+    case 'email_exists':
+      return 'Există deja un cont cu acest email.';
+    case 'invalid_credentials':
+      return 'Email sau parolă incorectă.';
+    case 'email_not_confirmed':
+      return 'Emailul nu a fost confirmat încă.';
+    case 'weak_password':
+      return 'Parola nu îndeplinește cerințele Supabase.';
+    case 'otp_expired':
+      return 'Cod invalid sau expirat.';
+    case 'over_email_send_rate_limit':
+      return 'Ai cerut prea multe coduri. Așteaptă puțin și încearcă din nou.';
+    default:
+      return error.message;
+  }
 }
 
 async function fetchProfile(userId: string, email: string): Promise<PublicUser | null> {
@@ -73,7 +91,7 @@ export async function registerUser(
   username: string,
   email: string,
   password: string
-): Promise<AuthResult> {
+): Promise<SignUpResult> {
   const normalizedUsername = username.trim().toLowerCase();
 
   // Runs before signUp, while the caller is still anonymous — profiles
@@ -97,16 +115,84 @@ export async function registerUser(
   });
 
   if (error) {
-    return { ok: false, error: mapAuthError(error.message) };
+    return { ok: false, error: mapAuthError(error) };
   }
 
+  // No session back means Supabase Auth's "Confirm email" setting is on
+  // (it is, for this project — see supabase/config.toml) and is waiting on
+  // the 6-digit code emailed to them; the caller shows the code-entry step.
+  return { ok: true, needsVerification: !data.session };
+}
+
+// Completes signup: exchanges the 6-digit code from the confirmation email
+// for a session. Supabase treats a right-looking-but-wrong code the same as
+// an expired one ('otp_expired') to avoid leaking which case it is.
+export async function verifySignupCode(email: string, code: string): Promise<AuthResult> {
+  const { data, error } = await supabase.auth.verifyOtp({
+    email: email.trim().toLowerCase(),
+    token: code.trim(),
+    type: 'signup',
+  });
+
+  if (error) {
+    return { ok: false, error: mapAuthError(error) };
+  }
   if (!data.session) {
-    return {
-      ok: false,
-      error: 'Contul a fost creat, dar necesită confirmare prin email — dezactivează "Confirm email" din Supabase Auth.',
-    };
+    return { ok: false, error: 'Codul nu a putut fi confirmat.' };
+  }
+  return { ok: true };
+}
+
+// Re-sends the signup confirmation email (same 6-digit code mechanism).
+export async function resendSignupCode(email: string): Promise<AuthResult> {
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email: email.trim().toLowerCase(),
+  });
+
+  if (error) {
+    return { ok: false, error: mapAuthError(error) };
+  }
+  return { ok: true };
+}
+
+// Sends the password-reset email, which — per the custom "recovery" template
+// pushed to Supabase (see supabase/templates/recovery.html) — shows a
+// 6-digit code rather than a magic link, since this app has no universal-link
+// / deep-link handling set up to catch a link tap from the email client.
+export async function requestPasswordReset(email: string): Promise<AuthResult> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
+  if (error) {
+    return { ok: false, error: mapAuthError(error) };
+  }
+  return { ok: true };
+}
+
+// Exchanges the reset code for a (recovery) session, then immediately uses
+// that session to set the new password — the two-step dance Supabase's API
+// requires; the caller only sees one "reset" action.
+export async function confirmPasswordReset(
+  email: string,
+  code: string,
+  newPassword: string
+): Promise<AuthResult> {
+  const { data, error } = await supabase.auth.verifyOtp({
+    email: email.trim().toLowerCase(),
+    token: code.trim(),
+    type: 'recovery',
+  });
+
+  if (error) {
+    return { ok: false, error: mapAuthError(error) };
+  }
+  if (!data.session) {
+    return { ok: false, error: 'Codul nu a putut fi confirmat.' };
   }
 
+  const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+  if (updateError) {
+    return { ok: false, error: mapAuthError(updateError) };
+  }
   return { ok: true };
 }
 
@@ -117,7 +203,7 @@ export async function logInUser(email: string, password: string): Promise<LoginR
   });
 
   if (error) {
-    return { ok: false, error: mapAuthError(error.message) };
+    return { ok: false, error: mapAuthError(error), needsVerification: error.code === 'email_not_confirmed' };
   }
 
   const profile = await fetchProfile(data.user.id, data.user.email ?? '');
@@ -225,18 +311,16 @@ export async function setNotifyFriendsOnJoin(value: boolean): Promise<void> {
 // Bypass for the login screen, for the current pre-release phase only —
 // remove this (and its button in app/auth.tsx) before a real production
 // release. A real, RLS-respecting Supabase session, but backed by a fresh
-// throwaway account with a random password generated on-device each tap —
-// never a fixed credential, since a fixed one would sit readable in the
-// public app bundle/repo and grant anyone a live authenticated session.
+// anonymous account generated on-device each tap — never a fixed credential,
+// since a fixed one would sit readable in the public app bundle/repo and
+// grant anyone a live authenticated session. Anonymous (not a throwaway
+// email+password signUp) specifically so this keeps working now that signup
+// requires email confirmation — there's no inbox to confirm from here.
 export async function devSkipAuth(): Promise<void> {
   const rand = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  const email = `dev-${rand}@bunaspritz.local`;
-  const password = `${rand}Aa1!`;
 
-  const signUp = await supabase.auth.signUp({
-    email,
-    password,
+  const signIn = await supabase.auth.signInAnonymously({
     options: { data: { name: 'Dev User', username: `dev_${rand.slice(0, 10)}` } },
   });
-  if (signUp.error || !signUp.data.user) return;
+  if (signIn.error || !signIn.data.user) return;
 }
