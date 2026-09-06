@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 
 import { useAppTheme } from '@/contexts/ThemeContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/constants/theme';
@@ -27,6 +28,7 @@ const WAIT_TIMEOUT_MS = 3 * 60 * 1000;
 
 export default function Verification() {
   const { colors: theme } = useAppTheme();
+  const { t } = useLanguage();
   const { user, effectiveVerified } = useUser();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
 
@@ -84,8 +86,8 @@ export default function Verification() {
           </Pressable>
 
           <View style={styles.headerText}>
-            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Verificare</Text>
-            <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>Verificarea vârstei 18+</Text>
+            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>{t.verification.title}</Text>
+            <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>{t.verification.subtitle}</Text>
           </View>
 
           <View style={styles.placeholder} />
@@ -96,34 +98,34 @@ export default function Verification() {
             <Ionicons name="shield-checkmark-outline" size={46} color={colors.green500} />
           </View>
 
-          <Text style={[styles.title, { color: theme.textPrimary }]}>Verificare identitate</Text>
+          <Text style={[styles.title, { color: theme.textPrimary }]}>{t.verification.identityVerification}</Text>
 
           <Text style={[styles.description, { color: theme.textSecondary }]}>
             {status === 'waiting'
-              ? 'Se procesează verificarea. Poate dura câteva minute — te trecem automat mai departe imediat ce e gata.'
+              ? t.verification.descriptionWaiting
               : status === 'timedOut'
-                ? 'Durează mai mult decât de obicei — verificarea poate să fi eșuat. Poți încerca din nou.'
-                : 'Vei fi dus la pagina noastră de verificare (act de identitate + o poză live) pentru a confirma că ai peste 18 ani.'}
+                ? t.verification.descriptionTimedOut
+                : t.verification.descriptionIdle}
           </Text>
 
           <View style={[styles.infoBox, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
             <Ionicons name="lock-closed-outline" size={21} color={colors.green500} />
             <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-              Datele tale sunt procesate securizat de furnizorul de verificare, nu sunt stocate de noi.
+              {t.verification.privacyNote}
             </Text>
           </View>
 
           {status === 'error' && (
-            <Text style={styles.errorText}>Nu am putut porni verificarea. Încearcă din nou.</Text>
+            <Text style={styles.errorText}>{t.verification.errorCouldNotStart}</Text>
           )}
           {status === 'timedOut' && (
-            <Text style={styles.errorText}>Verificarea nu s-a finalizat. Încearcă din nou.</Text>
+            <Text style={styles.errorText}>{t.verification.errorNotCompleted}</Text>
           )}
 
           {status === 'waiting' ? (
             <View style={styles.waitingRow}>
               <ActivityIndicator color={colors.green500} />
-              <Text style={[styles.waitingText, { color: theme.textSecondary }]}>Se așteaptă rezultatul...</Text>
+              <Text style={[styles.waitingText, { color: theme.textSecondary }]}>{t.verification.waitingForResult}</Text>
             </View>
           ) : (
             <Pressable
@@ -135,7 +137,7 @@ export default function Verification() {
               ]}
             >
               <Text style={styles.continueText}>
-                {status === 'starting' ? 'Se pregătește...' : 'Începe verificarea'}
+                {status === 'starting' ? t.verification.preparing : t.verification.startVerification}
               </Text>
               <Ionicons name="arrow-forward" size={20} color={colors.white} />
             </Pressable>
@@ -145,7 +147,7 @@ export default function Verification() {
         <View style={styles.security}>
           <Ionicons name="information-circle-outline" size={16} color={theme.textSecondary} />
           <Text style={[styles.securityText, { color: theme.textSecondary }]}>
-            Verificarea este necesară pentru a te alătura unui Spritz.
+            {t.verification.verificationRequiredNote}
           </Text>
         </View>
       </ScrollView>
