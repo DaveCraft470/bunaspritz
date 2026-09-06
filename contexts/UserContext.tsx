@@ -102,7 +102,9 @@ export function UserProvider({ children }: PropsWithChildren) {
       async signUp(name, username, email, password) {
         const result = await registerUser(name, username, email, password);
         if (result.ok) {
-          setUser(await getCurrentUser());
+          const profile = await getCurrentUser();
+          setUser(profile);
+          setAuthenticated(profile !== null);
         }
         return result;
       },

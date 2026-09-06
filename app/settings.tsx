@@ -14,6 +14,7 @@ import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { showAlert } from '@/lib/alert';
 import { isAdminAccessEnabled } from '@/lib/admin';
+import { useNotifications } from '@/contexts/NotificationContext';
 
 const DANGER_COLOR = '#E5484D';
 
@@ -21,6 +22,7 @@ export default function Settings() {
   const { scheme, colors: theme, toggleScheme } = useAppTheme();
   const { enabled: hapticsEnabled, setEnabled: setHapticsEnabled, light } = useHaptics();
   const { user, effectiveVerified, signOut, deleteAccount, setNotifyFriendsOnJoin } = useUser();
+  const { unreadCount } = useNotifications();
 
   async function handleSignOut() {
     light();
@@ -131,6 +133,26 @@ export default function Settings() {
           />
         </View>
       </View>
+
+      <AnimatedPressable
+        onPress={() => {
+          light();
+          router.push('/notifications');
+        }}
+        style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+      >
+        <View style={styles.rowText}>
+          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Notificări</Text>
+          <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>Cereri de prietenie și activitatea ta recentă.</Text>
+        </View>
+        {unreadCount > 0 ? (
+          <View style={styles.notificationBadge}>
+            <Text style={styles.notificationBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+          </View>
+        ) : (
+          <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+        )}
+      </AnimatedPressable>
 
       <View style={[styles.card, styles.cardSpaced, { backgroundColor: theme.surface, borderColor: theme.border }]}>
         <View style={styles.row}>
@@ -273,4 +295,6 @@ const styles = StyleSheet.create({
   rowText: { flex: 1 },
   rowLabel: { fontSize: 15, fontWeight: '700' },
   rowDetail: { fontSize: 12, marginTop: 3 },
+  notificationBadge: { minWidth: 24, height: 24, borderRadius: 12, paddingHorizontal: 6, backgroundColor: colors.green500, alignItems: 'center', justifyContent: 'center' },
+  notificationBadgeText: { color: colors.white, fontSize: 11, fontWeight: '800' },
 });

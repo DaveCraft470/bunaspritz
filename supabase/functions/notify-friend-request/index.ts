@@ -50,6 +50,7 @@ Deno.serve(async (req) => {
     type: accepted ? 'friend_request_accepted' : 'friend_request',
     title,
     body,
+    data: { target_id: callerId },
   });
 
   const { data: tokens } = await admin.from('push_tokens').select('token').eq('user_id', receiverId);

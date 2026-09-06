@@ -1,7 +1,9 @@
--- In-app notification center backing store. No screen reads this yet (none
--- exists), but the four notify-* edge functions are updated alongside this
--- migration to insert a row here every time they send a push, so the table
--- isn't empty on day one once a UI lands.
+-- In-app notification center backing store. The four notify-* edge
+-- functions are updated alongside this migration to insert a row here
+-- every time they send a push. Type values match the client contract in
+-- lib/notifications.ts (a mock the collaborator built in parallel — this
+-- migration, plus the lib/notifications.ts rewrite, is what replaces its
+-- in-memory array).
 
 create table public.notifications (
   id uuid primary key default gen_random_uuid(),
@@ -9,7 +11,7 @@ create table public.notifications (
   actor_id uuid references public.profiles (id) on delete set null,
   type text not null check (type in (
     'friend_request', 'friend_request_accepted', 'message', 'event_invite',
-    'event_join', 'event_cancelled', 'event_update', 'review', 'system'
+    'event_join', 'event_cancelled', 'event_updated', 'review', 'system'
   )),
   title text not null,
   body text not null default '',

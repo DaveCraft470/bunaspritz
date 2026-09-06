@@ -4,7 +4,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 
 import { MAPBOX_INITIAL_VIEW, buildApproxStaticMapUrl } from '@/constants/mapbox';
@@ -22,6 +22,11 @@ import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { extensionAndTypeForImage } from '@/lib/media';
 import { alertPermissionDenied } from '@/lib/permissions';
 import { removeRentalProof, updateEvent, uploadRentalProof } from '@/lib/events';
+import { getEventPreviewDraft, setEventPreviewDraft } from '@/lib/eventPreview';
+import { DrinkListEditor } from '@/components/event/DrinkListEditor';
+import { getEventDrinks, setEventDrinks, type EventDrink } from '@/lib/drinks';
+import { getEventSongs, setEventSongs, type SongCatalogItem } from '@/lib/music';
+import { MusicPlaylistEditor } from '@/components/event/MusicPlaylistEditor';
 
 const TITLE_MAX_LENGTH = 60;
 const DETAIL_MAX_LENGTH = 200;
@@ -36,10 +41,11 @@ function initialDate(event: SpritzEvent) {
 }
 
 export default function EditEvent() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, publish } = useLocalSearchParams<{ id: string; publish?: string }>();
   const { events, loading: eventsLoading, error: eventsError, refresh, updateEvent: updateEventInContext } = useEvents();
   const { user } = useUser();
   const { colors: theme, scheme } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { light, medium } = useHaptics();
   const event = useMemo(() => events.find((item) => item.id === id), [events, id]);
   const [saving, setSaving] = useState(false);
@@ -61,6 +67,9 @@ export default function EditEvent() {
   const [entryFee, setEntryFee] = useState('');
   const [drinksPrice, setDrinksPrice] = useState('');
   const [maxParticipants, setMaxParticipants] = useState('');
+  const [drinks, setDrinks] = useState<EventDrink[]>([]);
+  const [songs, setSongs] = useState<SongCatalogItem[]>([]);
+  const [draftHydrated, setDraftHydrated] = useState(false);
 
   useEffect(() => {
     if (!event) return;
@@ -79,6 +88,32 @@ export default function EditEvent() {
     setEntryFee(event.entryFeeRon === null ? '' : String(event.entryFeeRon));
     setDrinksPrice(event.drinksPriceRon === null ? '' : String(event.drinksPriceRon));
     setMaxParticipants(event.maxParticipants === null ? '' : String(event.maxParticipants));
+    setDrinks(getEventDrinks(event.id));
+    setSongs(getEventSongs(event.id));
+  }, [event]);
+
+  useEffect(() => {
+    if (!event) return;
+    const draft = getEventPreviewDraft();
+    if (draft?.mode === 'edit' && draft.eventId === event.id) {
+      setTitle(draft.title);
+      setDetail(draft.detail);
+      setGenre(draft.genre);
+      setEmoji(draft.emoji);
+      setColor(draft.color);
+      setCoords(draft.lng !== null && draft.lat !== null ? { lng: draft.lng, lat: draft.lat } : null);
+      setLocationIsRented(draft.locationIsRented);
+      setHour(draft.startsAt ? new Date(draft.startsAt).getHours() : 0);
+      setMinute(draft.startsAt ? new Date(draft.startsAt).getMinutes() : 0);
+      setSelectedDate(draft.startsAt ? startOfDay(new Date(draft.startsAt)) : startOfDay(new Date()));
+      setDateEdited(!!draft.startsAt);
+      setEntryFee(draft.entryFeeRon === null ? '' : String(draft.entryFeeRon));
+      setDrinksPrice(draft.drinksPriceRon === null ? '' : String(draft.drinksPriceRon));
+      setMaxParticipants(draft.maxParticipants === null ? '' : String(draft.maxParticipants));
+      setDrinks(draft.drinks ?? []);
+      setSongs(draft.songs ?? []);
+    }
+    setDraftHydrated(true);
   }, [event]);
 
   useEffect(() => {
@@ -250,6 +285,8 @@ export default function EditEvent() {
       if (!updated) throw new Error('event-update-failed');
       if (oldProofPath && oldProofPath !== proofPath) await removeRentalProof(oldProofPath);
       updateEventInContext(updated);
+      setEventDrinks(currentEvent.id, drinks);
+      setEventSongs(currentEvent.id, songs);
       medium();
       router.replace({ pathname: '/event/[id]', params: { id: updated.id } });
     } catch (error) {
@@ -263,6 +300,32 @@ export default function EditEvent() {
       setSaving(false);
     }
   }
+
+  function handlePreview() {
+    const hasStart = originalStart !== null || dateEdited;
+    const parsedEntryFee = entryFee.trim() ? Number(entryFee.replace(',', '.')) : null;
+    const parsedDrinksPrice = drinksPrice.trim() ? Number(drinksPrice.replace(',', '.')) : null;
+    const parsedMaxParticipants = maxParticipants.trim() ? Number(maxParticipants) : null;
+    setEventPreviewDraft({
+      mode: 'edit', eventId: currentEvent.id, title, detail, genre, emoji, color,
+      startsAt: hasStart ? buildStartsAt().toISOString() : null,
+      entryFeeRon: parsedEntryFee !== null && Number.isFinite(parsedEntryFee) ? parsedEntryFee : null,
+      drinksPriceRon: parsedDrinksPrice !== null && Number.isFinite(parsedDrinksPrice) ? parsedDrinksPrice : null,
+      maxParticipants: parsedMaxParticipants !== null && Number.isFinite(parsedMaxParticipants) && parsedMaxParticipants > 0 ? Math.floor(parsedMaxParticipants) : null,
+      lng: coords?.lng ?? null, lat: coords?.lat ?? null,
+      locationIsRented, rentalProofAttached: !!rentalProofAsset || !!currentEvent.rentalProofPath,
+      drinks,
+      songs,
+    });
+    light();
+    router.push('/event-preview');
+  }
+
+  useEffect(() => {
+    if (publish === '1' && draftHydrated) {
+      void save();
+    }
+  }, [draftHydrated, publish]);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -279,7 +342,7 @@ export default function EditEvent() {
         <Text style={[styles.message, { color: theme.textSecondary }]}>Doar organizatorul poate edita acest eveniment.</Text>
       ) : (
         <KeyboardAwareScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 116 }]}
           keyboardShouldPersistTaps="handled"
           enableOnAndroid
           extraScrollHeight={Platform.OS === 'ios' ? 20 : 0}
@@ -307,12 +370,17 @@ export default function EditEvent() {
             <Text style={[styles.timeSeparator, { color: theme.textPrimary }]}>:</Text>
             <WheelPicker label="MINUTE" options={MINUTES.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={minute} onValueChange={(value) => { setDateEdited(true); setMinute(value); }} />
           </View>
-          <FieldLabel text="MUZICĂ / GEN" theme={theme} />
+          <FieldLabel text="MUZICĂ" theme={theme} />
+          <Text style={[styles.subLabel, { color: theme.textSecondary }]}>GEN MUZICAL</Text>
           <TextInput value={genre} onChangeText={setGenre} placeholder="Genul muzical" placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
           <FieldLabel text="PREȚ INTRARE (RON)" theme={theme} />
           <TextInput value={entryFee} onChangeText={setEntryFee} keyboardType="decimal-pad" placeholder="Ex: 20" placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
           <FieldLabel text="PREȚ BĂUTURI (RON)" theme={theme} />
           <TextInput value={drinksPrice} onChangeText={setDrinksPrice} keyboardType="decimal-pad" placeholder="Ex: 15" placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
+          <FieldLabel text="BĂUTURI LA EVENIMENT" theme={theme} />
+          <DrinkListEditor value={drinks} onChange={setDrinks} />
+          <Text style={[styles.subLabel, { color: theme.textSecondary }]}>MELODII REPREZENTATIVE</Text>
+          <MusicPlaylistEditor value={songs} onChange={setSongs} />
           <FieldLabel text="MAX PARTICIPANȚI" theme={theme} />
           <TextInput value={maxParticipants} onChangeText={setMaxParticipants} keyboardType="number-pad" placeholder="Lasă gol pentru nelimitat" placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
           <FieldLabel text="LOCAȚIA E ÎNCHIRIATĂ?" theme={theme} />
@@ -322,6 +390,7 @@ export default function EditEvent() {
           <View style={styles.emojiRow}>{EMOJI_CHOICES.map((choice) => <AnimatedPressable key={choice} onPress={() => setEmoji(choice)} style={[styles.emojiChip, { borderColor: choice === emoji ? colors.green500 : theme.border }]}><Text style={styles.emoji}>{choice}</Text></AnimatedPressable>)}</View>
           <FieldLabel text="CULOARE" theme={theme} />
           <View style={styles.emojiRow}>{COLOR_CHOICES.map((choice) => <AnimatedPressable key={choice} onPress={() => setColor(choice)} style={[styles.colorChip, { backgroundColor: choice }, choice === color && styles.colorActive]} />)}</View>
+          <AnimatedPressable onPress={handlePreview} disabled={saving} style={[styles.previewButton, { borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}><Text style={[styles.previewText, { color: theme.accent }]}>Previzualizează</Text></AnimatedPressable>
           <AnimatedPressable onPress={save} disabled={saving} style={[styles.saveButton, shadows.glowGreen, saving && { opacity: 0.6 }]}><Text style={styles.saveText}>{saving ? 'Se salvează...' : 'Salvează modificările'}</Text></AnimatedPressable>
         </KeyboardAwareScrollView>
       )}
@@ -345,6 +414,7 @@ const styles = StyleSheet.create({
   topTitle: { fontSize: 18, fontWeight: '800' },
   content: { paddingHorizontal: spacing.lg, paddingBottom: 60, gap: 6 },
   label: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginTop: 14, marginBottom: 6 },
+  subLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginTop: 6, marginBottom: 4 },
   counter: { fontSize: 10, textAlign: 'right' },
   input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15 },
   locationCard: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
@@ -367,6 +437,8 @@ const styles = StyleSheet.create({
   colorActive: { borderWidth: 4, borderColor: colors.white },
   saveButton: { alignItems: 'center', justifyContent: 'center', height: 56, borderRadius: 28, backgroundColor: colors.green500, marginTop: 24 },
   saveText: { color: colors.white, fontSize: 16, fontWeight: '900' },
+  previewButton: { alignItems: 'center', justifyContent: 'center', minHeight: 48, borderRadius: 14, borderWidth: 1, marginTop: 24 },
+  previewText: { fontSize: 14, fontWeight: '800' },
   message: { textAlign: 'center', padding: spacing.xl, fontSize: 15 },
   retryButton: { alignSelf: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 10 },
   retryText: { fontSize: 13, fontWeight: '800' },

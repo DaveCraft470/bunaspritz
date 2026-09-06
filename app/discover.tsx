@@ -11,7 +11,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { colors, spacing } from '@/constants/theme';
@@ -130,6 +130,7 @@ function ChipRow<T extends string>({
 
 export default function Discover() {
   const { colors: theme } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { events, loading, error, refresh } = useEvents();
   const [filters, setFilters] = useState<DiscoveryFilters>(DEFAULT_DISCOVERY_FILTERS);
   const [refreshing, setRefreshing] = useState(false);
@@ -152,7 +153,7 @@ export default function Discover() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
       <StatusBar style={theme.statusBar} />
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.green500} />}
       >
@@ -225,7 +226,7 @@ export default function Discover() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  content: { paddingHorizontal: spacing.lg, paddingBottom: 40 },
+  content: { paddingHorizontal: spacing.lg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.md },
   backButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 22, fontWeight: '800' },

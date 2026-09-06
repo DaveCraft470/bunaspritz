@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Dimensions, Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,14 +14,24 @@ import { useAppTheme } from '@/contexts/ThemeContext';
 import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
+import { useStories } from '@/contexts/StoriesContext';
 import { useEvents } from '@/contexts/EventsContext';
 import { EventAttendee, deleteEvent, fetchAttendees, getEventAttendeeCount, hasJoined, joinEvent, leaveEvent } from '@/lib/events';
-import { getProfile } from '@/lib/social';
+import { getProfile, type Profile } from '@/lib/social';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { CelebrationOverlay } from '@/components/event/CelebrationOverlay';
+import { PartyMeter } from '@/components/event/PartyMeter';
 import { ReportModal } from '@/components/social/ReportModal';
+import { EventInviteModal } from '@/components/social/EventInviteModal';
+import { StoriesRow, type StoryGroup } from '@/components/stories/StoriesRow';
+import { StoryViewer } from '@/components/stories/StoryViewer';
 import { addReport, EVENT_REPORT_REASONS, hasActiveReport } from '@/lib/reports';
+import { getFriends } from '@/lib/friendRequests';
+import { sendEventInvitation } from '@/lib/eventInvitations';
+import { formatDrinkVolume, getEventDrinks } from '@/lib/drinks';
+import { getEventSongs } from '@/lib/music';
+import { MusicCoverPlaceholder } from '@/components/music/MusicCoverPlaceholder';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -52,6 +62,7 @@ export default function EventDetail() {
   const { setHidden } = useNavVisibility();
   const { light, medium } = useHaptics();
   const { user, effectiveVerified } = useUser();
+  const { getEventStories } = useStories();
   const [celebrating, setCelebrating] = useState(false);
   const [attendees, setAttendees] = useState<EventAttendee[]>([]);
   // A separate, privacy-safe true count — attendees (above) comes from
@@ -59,21 +70,51 @@ export default function EventDetail() {
   // has hidden their activity from, and this drives capacity so it can't be
   // wrong in either direction.
   const [attendeeCount, setAttendeeCount] = useState(0);
-  const [hostName, setHostName] = useState<string | null>(null);
+  const [hostProfile, setHostProfile] = useState<Profile | null>(null);
   const [joined, setJoined] = useState(false);
   const [joining, setJoining] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteFriends, setInviteFriends] = useState<Awaited<ReturnType<typeof getFriends>>>([]);
+  const [viewerStories, setViewerStories] = useState<StoryGroup | null>(null);
 
   useEffect(() => {
     if (!event || !user) return;
     fetchAttendees(event.id).then(setAttendees);
     getEventAttendeeCount(event.id).then(setAttendeeCount);
     hasJoined(event.id, user.id).then(setJoined);
-    getProfile(event.hostId).then((host) => setHostName(host?.name ?? null));
+    getProfile(event.hostId).then(setHostProfile);
+    getFriends(user.id).then(setInviteFriends);
   }, [event, user]);
 
   const isHost = !!user && !!event && user.id === event.hostId;
+  const eventStories = event ? getEventStories(event.id) : [];
+  const eventDrinks = event ? getEventDrinks(event.id) : [];
+  const eventSongs = event ? getEventSongs(event.id) : [];
+  const friendsParticipating = useMemo(() => {
+    const attendeeIds = new Set(attendees.map((attendee) => attendee.userId));
+    return inviteFriends.filter((friend) => attendeeIds.has(friend.id));
+  }, [attendees, inviteFriends]);
+  const isPast = !!event?.startsAt && new Date(event.startsAt).getTime() < Date.now();
+  const canInviteFriends = !!user && (isHost || joined) && !isPast;
   const isFull = !!event?.maxParticipants && attendeeCount >= event.maxParticipants && !joined;
+
+  async function sendInvitations(recipientIds: string[]) {
+    if (!event || !user) return;
+    let sent = 0;
+    let skipped = 0;
+    for (const recipientId of recipientIds) {
+      const result = await sendEventInvitation(event, user.id, recipientId, user.name);
+      if (result.ok) sent += 1;
+      else skipped += 1;
+    }
+    setInviteModalOpen(false);
+    if (sent > 0) {
+      Alert.alert('Invitații trimise', `${sent} ${sent === 1 ? 'invitație a fost trimisă' : 'invitații au fost trimise'}.`);
+    } else if (skipped > 0) {
+      Alert.alert('Invitații deja trimise', 'Prietenii selectați au fost deja invitați.');
+    }
+  }
 
   // The DB has always allowed leaving (see lib/events.ts) but nothing in
   // the app ever exposed it — once max_participants shipped this session,
@@ -254,14 +295,22 @@ export default function EventDetail() {
           </View>
           <Text style={[styles.title, { color: theme.textPrimary }]}>{event.title}</Text>
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{event.detail}</Text>
-          {hostName && (
+          {hostProfile && (
             <AnimatedPressable
               onPress={() => {
                 light();
                 router.push(`/user/${event.hostId}`);
               }}
+              style={[styles.organizerCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
             >
-              <Text style={[styles.hostLine, { color: theme.textSecondary }]}>Găzduit de {hostName}</Text>
+              <Avatar uri={hostProfile.avatar_url} name={hostProfile.name} size={46} fontSize={18} />
+              <View style={styles.organizerCopy}>
+                <Text style={[styles.organizerLabel, { color: theme.textSecondary }]}>ORGANIZATOR</Text>
+                <Text style={[styles.organizerName, { color: theme.textPrimary }]} numberOfLines={1}>{hostProfile.name}</Text>
+                <Text style={[styles.organizerUsername, { color: theme.textSecondary }]} numberOfLines={1}>@{hostProfile.username}</Text>
+              </View>
+              {hostProfile.verified && <Ionicons name="checkmark-circle" size={19} color={theme.accent} />}
+              <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
             </AnimatedPressable>
           )}
 
@@ -345,11 +394,45 @@ export default function EventDetail() {
             )}
           </View>
 
+          {canInviteFriends && (
+            <AnimatedPressable
+              onPress={() => {
+                light();
+                setInviteModalOpen(true);
+              }}
+              style={[styles.inviteFriendsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            >
+              <Ionicons name="person-add-outline" size={18} color={theme.accent} />
+              <Text style={[styles.inviteFriendsText, { color: theme.accent }]}>Invită prieteni</Text>
+              <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+            </AnimatedPressable>
+          )}
+
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>CINE VINE</Text>
-            <Text style={[styles.attendeeCount, { color: theme.textPrimary }]}>
-              {attendeeCount}{event.maxParticipants !== null ? ` / ${event.maxParticipants}` : ''} persoane
-            </Text>
+            <PartyMeter attendeeCount={attendeeCount} maxParticipants={event.maxParticipants} />
+            {!event.maxParticipants && (
+              <Text style={[styles.attendeeCount, { color: theme.textPrimary }]}>{attendeeCount} persoane</Text>
+            )}
+            {friendsParticipating.length > 0 && (
+              <View style={styles.friendsParticipatingBlock}>
+                <Text style={[styles.friendsParticipatingText, { color: theme.accent }]}>
+                  {friendsParticipating.length} {friendsParticipating.length === 1 ? 'prieten participă' : 'prieteni participă'}
+                </Text>
+                <View style={styles.friendAvatarRow}>
+                  {friendsParticipating.slice(0, 4).map((friend) => (
+                    <AnimatedPressable key={friend.id} onPress={() => router.push(`/user/${friend.id}`)} style={styles.friendAvatarItem}>
+                      <Avatar uri={friend.avatar_url} name={friend.name} size={34} fontSize={14} />
+                    </AnimatedPressable>
+                  ))}
+                  {friendsParticipating.length > 4 && (
+                    <View style={[styles.moreFriends, { backgroundColor: theme.surfaceMuted }]}>
+                      <Text style={[styles.moreFriendsText, { color: theme.textSecondary }]}>+{friendsParticipating.length - 4}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
             <View style={styles.attendeeRow}>
               {attendees.map((attendee) => (
                 <AnimatedPressable
@@ -386,7 +469,47 @@ export default function EventDetail() {
             )}
           </View>
 
-          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          {eventStories.length > 0 && (
+            <StoriesRow
+              stories={eventStories}
+              currentUserId={user?.id}
+              title="Stories recente"
+              compact
+              onOpen={(group) => setViewerStories(group)}
+            />
+          )}
+
+          {eventDrinks.length > 0 && (
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>BĂUTURI</Text>
+              {eventDrinks.map((drink) => (
+                <View key={drink.id} style={styles.drinkRow}>
+                  <View style={styles.drinkCopy}><Text style={[styles.drinkName, { color: theme.textPrimary }]}>{drink.name}</Text><Text style={[styles.drinkMeta, { color: theme.textSecondary }]}>{formatDrinkVolume(drink.volumeMl)}</Text></View>
+                  <Text style={[styles.drinkQuantity, { color: theme.accent }]}>× {drink.quantity}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {eventSongs.length > 0 && (
+            <View
+              style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            >
+              <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>🎵 PLAYLIST</Text>
+              {eventSongs.slice(0, 4).map((song) => (
+                <View key={song.id} style={styles.songRow}>
+                  {song.coverUrl ? <Image source={{ uri: song.coverUrl }} style={styles.songCover} /> : <MusicCoverPlaceholder size={38} />}
+                  <View style={styles.songText}><Text style={[styles.songTitle, { color: theme.textPrimary }]} numberOfLines={1}>{song.title}</Text><Text style={[styles.songArtist, { color: theme.textSecondary }]} numberOfLines={1}>{song.artist}</Text></View>
+                </View>
+              ))}
+              {eventSongs.length > 4 && <Text style={[styles.moreSongs, { color: theme.accent }]}>+ {eventSongs.length - 4} alte melodii</Text>}
+            </View>
+          )}
+
+          {eventSongs.length === 0 && (
+            <View
+              style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            >
             <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>MUZICA</Text>
             <Text style={[styles.genre, { color: theme.textPrimary }]}>{event.genre}</Text>
             {SPRITZ_SONGS.map((song) => (
@@ -408,7 +531,8 @@ export default function EventDetail() {
                 </View>
               </View>
             ))}
-          </View>
+            </View>
+          )}
 
           {isHost && (
             <>
@@ -453,6 +577,25 @@ export default function EventDetail() {
           notch/status-bar included, and isn't shrunk by the entrance/exit
           transform (it's a separate, later, user-triggered overlay). */}
       {celebrating ? <CelebrationOverlay onDone={() => setCelebrating(false)} /> : null}
+      {event && user ? (
+        <EventInviteModal
+          visible={inviteModalOpen}
+          eventId={event.id}
+          senderId={user.id}
+          friends={inviteFriends.filter((friend) => friend.id !== user.id)}
+          joinedIds={new Set(attendees.map((attendee) => attendee.userId))}
+          theme={theme}
+          onClose={() => setInviteModalOpen(false)}
+          onSend={sendInvitations}
+        />
+      ) : null}
+      <StoryViewer
+        visible={!!viewerStories}
+        stories={viewerStories?.stories ?? []}
+        currentUserId={user?.id}
+        onClose={() => setViewerStories(null)}
+        onEventPress={() => setViewerStories(null)}
+      />
       {event && user ? (
         <ReportModal
           visible={reportModalOpen}
@@ -521,10 +664,15 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   heroEmoji: { fontSize: 42 },
-  title: { fontSize: 24, fontWeight: '800', textAlign: 'center', letterSpacing: -0.4 },
+  title: { fontSize: 24, fontWeight: '800', textAlign: 'center', lineHeight: 30 },
   subtitle: { fontSize: 13, textAlign: 'center', marginBottom: 4 },
   hostLine: { fontSize: 11, textAlign: 'center', marginBottom: 4, fontStyle: 'italic' },
   card: { borderRadius: 18, borderWidth: 1, padding: 14, gap: 8 },
+  organizerCard: { flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 16, borderWidth: 1, padding: 12 },
+  organizerCopy: { flex: 1, minWidth: 0 },
+  organizerLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 1.1 },
+  organizerName: { fontSize: 14, fontWeight: '800', marginTop: 2 },
+  organizerUsername: { fontSize: 11, marginTop: 1 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   infoRowText: { fontSize: 14, fontWeight: '700' },
   cardLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1 },
@@ -555,11 +703,26 @@ const styles = StyleSheet.create({
   },
   directionsText: { fontSize: 13, fontWeight: '800' },
   attendeeCount: { fontSize: 18, fontWeight: '800' },
+  friendsParticipatingBlock: { gap: 7, marginTop: 2, paddingVertical: 3 },
+  friendsParticipatingText: { fontSize: 12, fontWeight: '800' },
+  friendAvatarRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  friendAvatarItem: { padding: 1 },
+  moreFriends: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  moreFriendsText: { fontSize: 11, fontWeight: '800' },
   attendeeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 2 },
   manageParticipantsButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderRadius: 12, paddingVertical: 10, marginTop: 14 },
   manageParticipantsText: { fontSize: 12, fontWeight: '800' },
   reportEventButton: { alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingVertical: 10, marginTop: 10 },
   reportEventText: { fontSize: 12, fontWeight: '700' },
+  inviteFriendsButton: { flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 15, borderWidth: 1, padding: 13 },
+  inviteFriendsText: { flex: 1, fontSize: 13, fontWeight: '800' },
+  drinkRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  drinkCopy: { flex: 1, minWidth: 0 },
+  drinkName: { fontSize: 13, fontWeight: '800' },
+  drinkMeta: { fontSize: 11, marginTop: 2 },
+  drinkQuantity: { fontSize: 13, fontWeight: '900' },
+  songCover: { width: 38, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  moreSongs: { fontSize: 11, fontWeight: '800', marginTop: 2 },
   attendeeItem: { alignItems: 'center', width: 52 },
   attendeeAvatar: { width: 44, height: 44, borderRadius: 22 },
   attendeeName: { fontSize: 10, marginTop: 4 },

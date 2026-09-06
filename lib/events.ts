@@ -291,7 +291,8 @@ export async function leaveEvent(eventId: string, userId: string): Promise<boole
 // private storage), so it needs its own best-effort cleanup first — same
 // idiom as removeRentalProof's own doc comment about orphaned uploads.
 export async function deleteEvent(eventId: string, hostId: string, rentalProofPath: string | null): Promise<boolean> {
-  if (rentalProofPath) await removeRentalProof(rentalProofPath);
   const { error } = await supabase.from('events').delete().eq('id', eventId).eq('host_id', hostId);
-  return !error;
+  if (error) return false;
+  if (rentalProofPath) await removeRentalProof(rentalProofPath);
+  return true;
 }

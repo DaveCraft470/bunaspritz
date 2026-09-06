@@ -25,7 +25,9 @@ import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
-import { Profile, getFriends } from '@/lib/social';
+import { FriendsHubTabs } from '@/components/friends/FriendsHubTabs';
+import { Profile } from '@/lib/social';
+import { getFriends } from '@/lib/friendRequests';
 import { extensionAndTypeForImage } from '@/lib/media';
 import { alertPermissionDenied } from '@/lib/permissions';
 import { showAlert } from '@/lib/alert';
@@ -860,6 +862,8 @@ export default function Messages() {
                 <Text style={styles.roundButtonText}>+</Text>
               </Pressable>
             </View>
+
+            <FriendsHubTabs active="messages" />
 
             <ScrollView
               contentContainerStyle={{ paddingBottom: insets.bottom + 116 }}

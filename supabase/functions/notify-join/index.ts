@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
       type: 'event_join',
       title,
       body,
-      data: { event_id: eventId },
+      data: { target_id: eventId },
     }))
   );
 

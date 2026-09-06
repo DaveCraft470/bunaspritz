@@ -112,7 +112,7 @@ returns table (
   id uuid, user_id uuid, user_name text, user_username text, user_avatar_url text,
   media_path text, media_type text, caption text, visibility text,
   event_id uuid, lat double precision, lng double precision,
-  created_at timestamptz, expires_at timestamptz
+  created_at timestamptz, expires_at timestamptz, viewed_by_me boolean
 )
 language sql
 security definer
@@ -121,7 +121,8 @@ stable
 as $$
   select s.id, s.user_id, p.name, p.username, p.avatar_url,
          s.media_path, s.media_type, s.caption, s.visibility,
-         s.event_id, s.lat, s.lng, s.created_at, s.expires_at
+         s.event_id, s.lat, s.lng, s.created_at, s.expires_at,
+         exists (select 1 from public.story_views v where v.story_id = s.id and v.viewer_id = auth.uid())
   from public.stories s
   join public.profiles p on p.id = s.user_id
   where now() < s.expires_at

@@ -66,10 +66,10 @@ Deno.serve(async (req) => {
     recipients.map((recipientId) => ({
       recipient_id: recipientId,
       actor_id: callerId,
-      type: 'event_update',
+      type: 'event_updated',
       title,
       body: event.title,
-      data: { event_id: eventId },
+      data: { target_id: eventId },
     }))
   );
 

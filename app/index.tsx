@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 
 import { MapPlaceholder } from '@/components/home/MapPlaceholder';
@@ -17,6 +17,9 @@ import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { getUserJoinedEventIds } from '@/lib/events';
 import { getRecommendedEvents, RecommendedEvent } from '@/lib/recommendations';
 import { useUser } from '@/contexts/UserContext';
+import { useStories } from '@/contexts/StoriesContext';
+import { type StoryGroup } from '@/components/stories/StoriesRow';
+import { StoryViewer } from '@/components/stories/StoryViewer';
 import { useHomeView } from '@/contexts/HomeViewContext';
 
 function PublicEventRow({ event }: { event: SpritzEvent }) {
@@ -207,6 +210,12 @@ function PublicCalendar({ onShowMap }: { onShowMap: () => void }) {
 export default function Home() {
   const { showingMap, setShowingMap } = useHomeView();
   const { user } = useUser();
+  const { mapStories, getEventStories } = useStories();
+  const storyEventIds = useMemo(
+    () => new Set(mapStories.map((story) => story.eventId).filter((eventId): eventId is string => !!eventId)),
+    [mapStories],
+  );
+  const [viewerStories, setViewerStories] = useState<StoryGroup | null>(null);
   const { events, loading: eventsLoading } = useEvents();
   const [joinedEventIds, setJoinedEventIds] = useState<Set<string>>(new Set());
   const [joinedLoading, setJoinedLoading] = useState(false);
@@ -248,7 +257,14 @@ export default function Home() {
           calendar and the map. Toggling it via pointerEvents/opacity instead
           keeps that GL context alive underneath. */}
       <View style={[styles.mapLayer, !showingMap && styles.hiddenBehindCalendar]} pointerEvents={showingMap ? 'box-none' : 'none'}>
-        <MapPlaceholder onOpenCalendar={() => setShowingMap(false)} />
+        <MapPlaceholder
+          onOpenCalendar={() => setShowingMap(false)}
+          storyEventIds={storyEventIds}
+          onOpenStories={(eventId) => {
+            const stories = getEventStories(eventId);
+            if (stories.length) setViewerStories({ userId: eventId, label: 'Stories', stories });
+          }}
+        />
         <AnimatedPressable
           onPress={() => router.push('/discover')}
           style={styles.exploreButton}
@@ -281,6 +297,16 @@ export default function Home() {
           <PublicCalendar onShowMap={() => setShowingMap(true)} />
         </View>
       )}
+      <StoryViewer
+        visible={!!viewerStories}
+        stories={viewerStories?.stories ?? []}
+        currentUserId={user?.id}
+        onClose={() => setViewerStories(null)}
+        onEventPress={(eventId) => {
+          setViewerStories(null);
+          router.push(`/event/${eventId}`);
+        }}
+      />
     </View>
   );
 }

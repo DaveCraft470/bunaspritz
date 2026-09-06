@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -45,7 +45,7 @@ export default function Admin() {
         <View style={styles.backButton} />
       </View>
 
-      <View style={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.stats}>
           <Stat label="Evenimente" value={events.length} theme={theme} />
           <Stat label="Viitoare" value={upcoming} theme={theme} />
@@ -61,7 +61,7 @@ export default function Admin() {
         <Text style={[styles.note, { color: theme.textSecondary }]}>
           Panoul e vizibil doar în development, dar fiecare acțiune (suspendare, ascundere, rezolvare) trece printr-un RPC verificat server-side pe rolul de admin — nu doar prin acest flag de client.
         </Text>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }

@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
     type: 'message',
     title,
     body,
-    data: { message_id: messageId },
+    data: { target_id: message.sender_id, message_id: messageId },
   });
 
   await sendExpoPush((tokens ?? []).map((t) => t.token), title, body);
