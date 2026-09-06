@@ -49,7 +49,7 @@ import {
 // Sentinel playingMessageId for the not-yet-sent recording preview — no real
 // message has this id, so it can share the shared voicePlayer/playingMessageId
 // state with the sent-message bubbles without colliding.
-const MESSAGE_MAX_LENGTH = 1000;
+const MESSAGE_MAX_LENGTH = 500;
 
 const VOICE_PREVIEW_ID = '__voice-preview__';
 
@@ -127,6 +127,7 @@ type DisplayMessage = {
   text: string;
   time: string;
   sender: string;
+  senderAvatarUrl?: string | null;
   mine: boolean;
   read: boolean;
   mediaType?: MediaType | null;
@@ -298,6 +299,13 @@ const chats = [
   { id: 'poiana', title: 'Poiana Brașov', detail: 'Ioana: Vin și eu!', emoji: '❄️', color: '#74EB99', time: 'Azi' },
 ];
 
+// Mock avatar URLs for groupchat members — keyed by sender name.
+const groupMemberAvatars: Record<string, string | null> = {
+  Mara: null,
+  Vlad: null,
+  Ioana: null,
+};
+
 // Shared chat-list row — same shape for the mock group chats and the real
 // friend DMs, matching the reference design: avatar, name + timestamp on
 // top, preview (with a read-receipt tick when it's your own last message)
@@ -395,10 +403,10 @@ function GroupCard({
 }
 
 const starterMessages: DisplayMessage[] = [
-  { id: '1', sender: 'Mara', text: 'Ce faceți diseară? ✨', time: '18:41', mine: false, read: false },
-  { id: '2', sender: 'Vlad', text: 'Mergem la un spriț în centru?', time: '18:42', mine: false, read: false },
-  { id: '3', sender: 'Tu', text: 'Eu sunt pentru! Unde ne vedem?', time: '18:43', mine: true, read: true },
-  { id: '4', sender: 'Ioana', text: 'La Republicii, pe la 20:00?', time: '18:44', mine: false, read: false },
+  { id: '1', sender: 'Mara', senderAvatarUrl: groupMemberAvatars['Mara'], text: 'Ce faceți diseară? ✨', time: '18:41', mine: false, read: false },
+  { id: '2', sender: 'Vlad', senderAvatarUrl: groupMemberAvatars['Vlad'], text: 'Mergem la un spriț în centru?', time: '18:42', mine: false, read: false },
+  { id: '3', sender: 'Tu', senderAvatarUrl: undefined, text: 'Eu sunt pentru! Unde ne vedem?', time: '18:43', mine: true, read: true },
+  { id: '4', sender: 'Ioana', senderAvatarUrl: groupMemberAvatars['Ioana'], text: 'La Republicii, pe la 20:00?', time: '18:44', mine: false, read: false },
 ];
 
 export default function Messages() {
@@ -824,11 +832,15 @@ export default function Messages() {
   async function sendMessage() {
     const text = draft.trim();
     if (!text || !activeChat) return;
+    if (text.length > MESSAGE_MAX_LENGTH) {
+      showAlert('Mesaj prea lung', `Mesajul poate avea maximum ${MESSAGE_MAX_LENGTH} de caractere.`);
+      return;
+    }
     light();
     setDraft('');
 
     if (activeChat.kind === 'group') {
-      setGroupMessages((current) => [...current, { id: String(Date.now()), sender: 'Tu', text, time: 'Acum', mine: true, read: false }]);
+      setGroupMessages((current) => [...current, { id: String(Date.now()), sender: 'Tu', senderAvatarUrl: undefined, text, time: 'Acum', mine: true, read: false }]);
       return;
     }
 
@@ -854,8 +866,8 @@ export default function Messages() {
           <>
             <View style={styles.topBar}>
               <View>
-                <Text style={[styles.eyebrow, { color: theme.accent }]}>BUNĂ {(user?.name || '').toUpperCase()}, SPRITZ?</Text>
-                <Text style={[styles.title, { color: theme.textPrimary }]}>Mesaje</Text>
+                <Text style={[styles.eyebrow, { color: theme.accent }]}>BUNĂ {(user?.name || '').toUpperCase()}</Text>
+                <Text style={[styles.title, { color: theme.textPrimary }]}>Mesaje Test</Text>
               </View>
               <Pressable
                 onPress={() => {
@@ -875,26 +887,6 @@ export default function Messages() {
               contentContainerStyle={{ paddingBottom: insets.bottom + 116 }}
               showsVerticalScrollIndicator={false}
             >
-              <View style={styles.groupsSection}>
-                <Text style={[styles.sectionLabel, styles.groupsSectionLabel, { color: theme.textSecondary }]}>GRUPURI</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupsRow}>
-                  {chats.map((chat) => (
-                    <GroupCard
-                      key={chat.id}
-                      emoji={chat.emoji}
-                      color={chat.color}
-                      title={chat.title}
-                      detail={chat.detail}
-                      onPress={() => {
-                        light();
-                        setHidden(true);
-                        setActiveChat({ kind: 'group', id: chat.id });
-                      }}
-                    />
-                  ))}
-                </ScrollView>
-              </View>
-
               {friendsLoading && (
                 <View style={styles.listState}>
                   <ActivityIndicator color={colors.green500} />
@@ -997,56 +989,70 @@ export default function Messages() {
               onContentSizeChange={() => messagesScrollRef.current?.scrollToEnd({ animated: true })}
             >
               {selectedGroup && <Text style={[styles.today, { color: theme.textSecondary }]}>ASTĂZI</Text>}
-              {displayedMessages.map((message) => (
-                <View key={message.id} style={[styles.messageRow, message.mine && styles.messageRowMine]}>
-                  {!message.mine && <View style={styles.dot} />}
-                  <View
-                    style={[
-                      styles.bubble,
-                      message.mine ? styles.mine : [styles.other, { backgroundColor: theme.surfaceMuted }],
-                    ]}
-                  >
-                    {selectedGroup && (
-                      <Text style={[styles.sender, message.mine ? styles.senderMine : { color: theme.accent }]}>
-                        {message.sender}
-                      </Text>
-                    )}
-                    {message.mediaType === 'image' && message.mediaPath ? (
-                      <ImageBubble path={message.mediaPath} />
-                    ) : message.mediaType === 'audio' && message.mediaPath ? (
-                      <VoiceBubble
-                        isPlaying={playingMessageId === message.id}
-                        isMine={message.mine}
-                        durationMs={message.durationMs}
-                        elapsedMs={playingMessageId === message.id ? voicePlayerStatus.currentTime * 1000 : 0}
-                        waveform={message.waveform}
-                        onToggle={() => toggleVoicePlayback(message.id, message.mediaPath!)}
-                      />
-                    ) : (
-                      <Text
-                        style={[
-                          styles.messageText,
-                          message.mine ? styles.messageTextMine : { color: theme.textPrimary },
-                        ]}
-                      >
-                        {message.text}
-                      </Text>
-                    )}
-                    <View style={styles.bubbleFooter}>
-                      <Text style={[styles.time, message.mine ? styles.timeMine : { color: theme.textSecondary }]}>
-                        {message.time}
-                      </Text>
-                      {message.mine && (
-                        <Ionicons
-                          name={message.read ? 'checkmark-done' : 'checkmark'}
-                          size={13}
-                          color={message.read ? colors.white : 'rgba(255,255,255,0.7)'}
-                        />
+              {displayedMessages.map((message, index) => {
+                const prevMessage = index > 0 ? displayedMessages[index - 1] : null;
+                const showPfp = selectedGroup && !message.mine && prevMessage?.sender !== message.sender;
+                return (
+                  <View key={message.id} style={[styles.messageRow, message.mine && styles.messageRowMine]}>
+                    {selectedGroup && !message.mine ? (
+                      showPfp ? (
+                        <View style={styles.messageAvatar}>
+                          <Avatar uri={message.senderAvatarUrl ?? null} name={message.sender} size={28} fontSize={11} />
+                        </View>
+                      ) : (
+                        <View style={styles.messageAvatarPlaceholder} />
+                      )
+                    ) : !message.mine ? (
+                      <View style={styles.dot} />
+                    ) : null}
+                    <View
+                      style={[
+                        styles.bubble,
+                        message.mine ? styles.mine : [styles.other, { backgroundColor: theme.surfaceMuted }],
+                      ]}
+                    >
+                      {selectedGroup && (
+                        <Text style={[styles.sender, message.mine ? styles.senderMine : { color: theme.accent }]}>
+                          {message.sender}
+                        </Text>
                       )}
+                      {message.mediaType === 'image' && message.mediaPath ? (
+                        <ImageBubble path={message.mediaPath} />
+                      ) : message.mediaType === 'audio' && message.mediaPath ? (
+                        <VoiceBubble
+                          isPlaying={playingMessageId === message.id}
+                          isMine={message.mine}
+                          durationMs={message.durationMs}
+                          elapsedMs={playingMessageId === message.id ? voicePlayerStatus.currentTime * 1000 : 0}
+                          waveform={message.waveform}
+                          onToggle={() => toggleVoicePlayback(message.id, message.mediaPath!)}
+                        />
+                      ) : (
+                        <Text
+                          style={[
+                            styles.messageText,
+                            message.mine ? styles.messageTextMine : { color: theme.textPrimary },
+                          ]}
+                        >
+                          {message.text}
+                        </Text>
+                      )}
+                      <View style={styles.bubbleFooter}>
+                        <Text style={[styles.time, message.mine ? styles.timeMine : { color: theme.textSecondary }]}>
+                          {message.time}
+                        </Text>
+                        {message.mine && (
+                          <Ionicons
+                            name={message.read ? 'checkmark-done' : 'checkmark'}
+                            size={13}
+                            color={message.read ? colors.white : 'rgba(255,255,255,0.7)'}
+                          />
+                        )}
+                      </View>
                     </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
 
             {/* marginBottom tracks the keyboard directly (see the effect above)
@@ -1291,4 +1297,6 @@ const styles = StyleSheet.create({
   voiceWaveformRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 2, height: 18 },
   voiceWaveformBar: { flex: 1, minWidth: 2, borderRadius: 1 },
   voiceDuration: { fontSize: 12, fontWeight: '700' },
+  messageAvatar: { width: 28, alignItems: 'center', justifyContent: 'flex-end' },
+  messageAvatarPlaceholder: { width: 28 },
 });

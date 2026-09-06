@@ -4,9 +4,9 @@ import { Animated, StyleSheet, View } from 'react-native';
 import { typography } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 
-const TEXT = 'Bunaspritz ';
+const TEXT = 'Bună, Spritz ';
 const SPACE_INDEX = TEXT.indexOf(' ');
-const GREEN_FROM = TEXT.indexOf('spritz');
+const GREEN_FROM = TEXT.indexOf('Spritz');
 
 const CURVE_ANGLE = 5; // deg of arc across the whole word — kept very slight
 const CURVE_LIFT = 6; // px the middle characters rise above the ends

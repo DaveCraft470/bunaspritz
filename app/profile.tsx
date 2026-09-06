@@ -47,7 +47,7 @@ export default function Profile() {
 
   const name = user?.name || 'Utilizator';
   const username = user?.username || 'utilizator';
-  const bio = user?.bio || 'Ieșiri bune, oameni faini și seri de ținut minte. ✨';
+  const bio = user?.bio || '';
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>

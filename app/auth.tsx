@@ -38,6 +38,7 @@ export default function Auth() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
+  const [isAdult, setIsAdult] = useState(false);
 
   const passwordChecks = PASSWORD_REQUIREMENTS.map((req) => ({ ...req, met: req.test(password) }));
   const passwordValid = passwordChecks.every((check) => check.met);
@@ -65,6 +66,10 @@ export default function Auth() {
       }
       if (password !== confirmPassword) {
         setError('Parolele nu coincid.');
+        return;
+      }
+      if (!isAdult) {
+        setError('Trebuie să confirmi că ai peste 18 ani pentru a-ți crea un cont.');
         return;
       }
 
@@ -136,6 +141,7 @@ export default function Auth() {
     setEmail('');
     setPassword('');
     setConfirmPassword('');
+    setIsAdult(false);
     setError(null);
   };
 
@@ -513,6 +519,38 @@ export default function Auth() {
             </Pressable>
           )}
 
+          {mode === 'signup' && (
+            <Pressable
+              onPress={() => setIsAdult(!isAdult)}
+              style={styles.consentRow}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isAdult }}
+              accessibilityLabel="Declar că am peste 18 ani"
+            >
+              <View
+                style={[
+                  styles.consentCheckbox,
+                  {
+                    backgroundColor: isAdult ? colors.green500 : 'transparent',
+                    borderColor: isAdult ? colors.green500 : theme.border,
+                  },
+                ]}
+              >
+                {isAdult && (
+                  <Ionicons name="checkmark" size={14} color={colors.white} />
+                )}
+              </View>
+              <Text
+                style={[
+                  styles.consentText,
+                  { color: theme.textPrimary },
+                ]}
+              >
+                Declar că am peste 18 ani
+              </Text>
+            </Pressable>
+          )}
+
           {error && <Text style={styles.errorText}>{error}</Text>}
 
           <Pressable
@@ -778,5 +816,28 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     textDecorationLine: 'underline',
+  },
+
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 4,
+    marginBottom: 6,
+  },
+
+  consentCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  consentText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
