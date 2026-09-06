@@ -1,5 +1,3 @@
-import { File } from 'expo-file-system';
-
 import { supabase } from '@/lib/supabase';
 
 const AVATAR_BUCKET = 'avatars';
@@ -182,8 +180,11 @@ export async function uploadAvatar(
     return { ok: false, error: 'Niciun cont conectat.' };
   }
 
-  const file = new File(localUri);
-  const bytes = await file.arrayBuffer();
+  // expo-file-system's File class is a no-op stub on the web build (it only
+  // warns "not supported on web") — fetch() reads both file:// (native) and
+  // blob:/data: (web) uris the same way, so it works everywhere without a
+  // platform branch (see lib/messaging.ts's sendMediaMessage for the same fix).
+  const bytes = await (await fetch(localUri)).arrayBuffer();
   if (bytes.byteLength === 0) {
     return { ok: false, error: 'Nu am putut citi imaginea.' };
   }
