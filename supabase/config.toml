@@ -237,15 +237,20 @@ otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
-# Use a production-ready SMTP server
-# [auth.email.smtp]
-# enabled = true
-# host = "smtp.sendgrid.net"
-# port = 587
-# user = "apikey"
-# pass = "env(SENDGRID_API_KEY)"
-# admin_email = "admin@email.com"
-# sender_name = "Admin"
+# Custom SMTP (Resend) — required to customize email templates at all;
+# Supabase's free tier rejects any [auth.email.template.*] change while using
+# its own built-in mailer (see the "Email template modification is not
+# available for free tier projects..." error from `config push` otherwise).
+# RESEND_API_KEY and RESEND_FROM_EMAIL must be set in the shell that runs
+# `supabase config push` — never commit the key itself.
+[auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 587
+user = "resend"
+pass = "env(RESEND_API_KEY)"
+admin_email = "env(RESEND_FROM_EMAIL)"
+sender_name = "Spritz"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]
