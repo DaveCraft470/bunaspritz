@@ -56,7 +56,7 @@ export default function PublicProfile() {
   const [profileError, setProfileError] = useState(false);
   const [relationship, setRelationship] = useState<RelationshipStatus>('none');
   const [requestId, setRequestId] = useState<string | null>(null);
-  const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false });
+  const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false, blocked: false });
   const [menuOpen, setMenuOpen] = useState(false);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewSummary, setReviewSummary] = useState<ReviewSummary>({ average: 0, count: 0 });
