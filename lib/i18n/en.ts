@@ -374,7 +374,7 @@ export const en: Translations = {
     couldNotPublishTitle: "Couldn't publish",
     couldNotPublishMessage: 'Choose an image before posting.',
     chooseImage: 'Choose an image',
-    imageStoredLocallyHint: 'The image is kept locally for this version.',
+    imageStoredLocallyHint: 'The story disappears automatically after 24 hours.',
     optionalTextLabel: 'OPTIONAL TEXT',
     textPlaceholder: 'Say something about your moment...',
     visibilityLabel: 'VISIBILITY',

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
@@ -15,7 +15,13 @@ import { useEvents } from '@/contexts/EventsContext';
 import { useStories } from '@/contexts/StoriesContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
+import { extensionAndTypeForImage } from '@/lib/media';
+import { getRecentAttendedEventIds } from '@/lib/events';
 import type { StoryVisibility } from '@/lib/stories';
+
+// Narrowed to the user's last 2-3 attended (checked-in) events rather than
+// any event, so linking a story to an event actually means "I was there".
+const RECENT_ATTENDED_EVENTS_LIMIT = 3;
 
 export default function NewStory() {
   const { colors: theme } = useAppTheme();
@@ -24,11 +30,21 @@ export default function NewStory() {
   const { user } = useUser();
   const { events } = useEvents();
   const { create } = useStories();
-  const [mediaUri, setMediaUri] = useState<string | null>(null);
+  const [asset, setAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [text, setText] = useState('');
   const [visibility, setVisibility] = useState<StoryVisibility>('public');
   const [eventId, setEventId] = useState<string | undefined>();
   const [posting, setPosting] = useState(false);
+  const [recentEventIds, setRecentEventIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    getRecentAttendedEventIds(user.id, RECENT_ATTENDED_EVENTS_LIMIT).then(setRecentEventIds);
+  }, [user]);
+
+  const recentEvents = recentEventIds
+    .map((id) => events.find((event) => event.id === id))
+    .filter((event): event is (typeof events)[number] => !!event);
 
   async function pickMedia() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -39,26 +55,27 @@ export default function NewStory() {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
     if (!result.canceled && result.assets[0]) {
       light();
-      setMediaUri(result.assets[0].uri);
+      setAsset(result.assets[0]);
     }
   }
 
-  function post() {
-    if (!user || !mediaUri || posting) return;
+  async function post() {
+    if (!user || !asset || posting) return;
     const selectedEvent = eventId ? events.find((event) => event.id === eventId) : undefined;
     if (eventId && !selectedEvent) {
       Alert.alert(t.newStory.unavailableEventTitle, t.newStory.unavailableEventMessage);
       return;
     }
     setPosting(true);
-    const story = create({
+    const { extension, contentType } = extensionAndTypeForImage(asset);
+    const story = await create({
       userId: user.id,
-      mediaUri,
+      localUri: asset.uri,
+      extension,
+      contentType,
       text,
       visibility,
       eventId: selectedEvent?.id,
-      authorName: user.name,
-      authorAvatarUri: user.avatarUrl,
     });
     setPosting(false);
     if (!story) {
@@ -83,7 +100,7 @@ export default function NewStory() {
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <AnimatedPressable onPress={pickMedia} style={[styles.mediaCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          {mediaUri ? <Image source={{ uri: mediaUri }} style={styles.preview} resizeMode="cover" /> : (
+          {asset ? <Image source={{ uri: asset.uri }} style={styles.preview} resizeMode="cover" /> : (
             <View style={styles.mediaEmpty}>
               <Ionicons name="image-outline" size={34} color={theme.accent} />
               <Text style={[styles.mediaTitle, { color: theme.textPrimary }]}>{t.newStory.chooseImage}</Text>
@@ -112,14 +129,14 @@ export default function NewStory() {
           <AnimatedPressable onPress={() => setEventId(undefined)} style={[styles.eventChip, { borderColor: !eventId ? colors.green500 : theme.border, backgroundColor: !eventId ? theme.surfaceMuted : theme.surface }]}>
             <Text style={[styles.eventChipText, { color: theme.textPrimary }]}>{t.newStory.noAssociation}</Text>
           </AnimatedPressable>
-          {events.slice(0, 12).map((event) => (
+          {recentEvents.map((event) => (
             <AnimatedPressable key={event.id} onPress={() => setEventId(event.id)} style={[styles.eventChip, { borderColor: eventId === event.id ? colors.green500 : theme.border, backgroundColor: eventId === event.id ? theme.surfaceMuted : theme.surface }]}>
               <Text numberOfLines={1} style={[styles.eventChipText, { color: theme.textPrimary }]}>{event.emoji} {event.title}</Text>
             </AnimatedPressable>
           ))}
         </ScrollView>
 
-        <AnimatedPressable onPress={post} disabled={!mediaUri || posting} style={[styles.postButton, { backgroundColor: colors.green500, opacity: !mediaUri || posting ? 0.55 : 1 }]}>
+        <AnimatedPressable onPress={post} disabled={!asset || posting} style={[styles.postButton, { backgroundColor: colors.green500, opacity: !asset || posting ? 0.55 : 1 }]}>
           <Text style={styles.postText}>{posting ? t.newStory.posting : t.newStory.postStory}</Text>
         </AnimatedPressable>
       </ScrollView>

@@ -318,6 +318,19 @@ export async function getUserEventStats(userId: string): Promise<{ attended: num
   return { attended: attendedRows.count ?? 0, hosted: hostedRows.count ?? 0 };
 }
 
+// Most-recently-checked-in-to events first — used to narrow the new-story
+// event picker to events the user actually attended, not just any event.
+export async function getRecentAttendedEventIds(userId: string, limit: number): Promise<string[]> {
+  const { data } = await supabase
+    .from('event_attendees')
+    .select('event_id')
+    .eq('user_id', userId)
+    .not('checked_in_at', 'is', null)
+    .order('checked_in_at', { ascending: false })
+    .limit(limit);
+  return (data ?? []).map((row) => row.event_id);
+}
+
 export async function joinEvent(eventId: string, userId: string): Promise<boolean> {
   const { error } = await supabase.from('event_attendees').insert({ event_id: eventId, user_id: userId });
   if (error) return false;

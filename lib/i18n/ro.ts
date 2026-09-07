@@ -372,7 +372,7 @@ export const ro = {
     couldNotPublishTitle: 'Nu am putut publica',
     couldNotPublishMessage: 'Alege o imagine înainte să postezi.',
     chooseImage: 'Alege o imagine',
-    imageStoredLocallyHint: 'Imaginea este păstrată local pentru această versiune.',
+    imageStoredLocallyHint: 'Story-ul dispare automat după 24 de ore.',
     optionalTextLabel: 'TEXT OPȚIONAL',
     textPlaceholder: 'Spune ceva despre momentul tău...',
     visibilityLabel: 'VIZIBILITATE',

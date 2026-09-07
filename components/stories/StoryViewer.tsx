@@ -35,9 +35,12 @@ export function StoryViewer({
   }, [initialIndex, stories.length, visible]);
 
   useEffect(() => {
-    if (!visible || !story) return;
+    // Skip recording a view when the owner looks at their own story — same
+    // guard lib/stories.ts's markStoryViewed used to apply itself before it
+    // only received a storyId (not the full story) to check against.
+    if (!visible || !story || story.userId === currentUserId) return;
     markViewed(story.id);
-  }, [markViewed, story, visible]);
+  }, [currentUserId, markViewed, story, visible]);
 
   useEffect(() => {
     if (!visible || paused || stories.length <= 1) return;

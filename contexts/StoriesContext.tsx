@@ -1,13 +1,10 @@
-import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { useUser } from '@/contexts/UserContext';
-import { getFriends } from '@/lib/friendRequests';
 import {
   createStory,
   deleteStory,
   getActiveStories,
-  getStoriesForEvent,
-  getStoriesForFriends,
   markStoryViewed,
   subscribeToStories,
   type Story,
@@ -18,46 +15,53 @@ type StoriesContextValue = {
   friendsStories: Story[];
   mapStories: Story[];
   getEventStories: (eventId: string) => Story[];
-  create: typeof createStory;
+  create: (input: Parameters<typeof createStory>[0]) => Promise<Story | null>;
   markViewed: (storyId: string) => void;
-  remove: (storyId: string) => boolean;
+  remove: (storyId: string) => Promise<boolean>;
 };
 
 const StoriesContext = createContext<StoriesContextValue | null>(null);
 
 export function StoriesProvider({ children }: PropsWithChildren) {
   const { user } = useUser();
-  const [version, setVersion] = useState(0);
-  const [friendIds, setFriendIds] = useState<string[]>([]);
+  const [stories, setStories] = useState<Story[]>([]);
+
+  // RLS on the stories table already restricts what comes back to what's
+  // visible to this user (public, their own, or friends' friends-only
+  // posts) — no client-side visibility filtering needed on top of this.
+  const refresh = useCallback(async () => {
+    setStories(await getActiveStories());
+  }, []);
 
   useEffect(() => {
-    if (!user) {
-      setFriendIds([]);
-      return;
-    }
-    getFriends(user.id).then((friends) => setFriendIds(friends.map((friend) => friend.id)));
-  }, [user?.id, version]);
+    refresh();
+  }, [refresh]);
 
-  useEffect(() => subscribeToStories(() => setVersion((current) => current + 1)), []);
+  useEffect(() => subscribeToStories(refresh), [refresh]);
 
   const value = useMemo<StoriesContextValue>(() => {
     const userId = user?.id ?? '';
-    const allowedIds = new Set([userId, ...friendIds]);
-    const visible = getActiveStories().filter((story) => story.visibility === 'public' || allowedIds.has(story.userId));
-    const friendVisible = userId ? getStoriesForFriends(userId, friendIds).filter((story) => story.visibility === 'public' || allowedIds.has(story.userId)) : [];
     return {
-      stories: visible,
-      friendsStories: friendVisible.filter((story) => story.userId !== userId),
-      mapStories: visible.filter((story) => !!story.location || !!story.eventId),
-      getEventStories: (eventId) => {
-        const allowedIds = new Set([userId, ...friendIds]);
-        return getStoriesForEvent(eventId).filter((story) => story.visibility === 'public' || allowedIds.has(story.userId));
+      stories,
+      friendsStories: stories.filter((story) => story.userId !== userId),
+      mapStories: stories.filter((story) => !!story.eventId),
+      getEventStories: (eventId) => stories.filter((story) => story.eventId === eventId),
+      create: async (input) => {
+        const story = await createStory(input);
+        if (story) refresh();
+        return story;
       },
-      create: createStory,
-      markViewed: (storyId) => userId && markStoryViewed(storyId, userId),
-      remove: (storyId) => (userId ? deleteStory(storyId, userId) : false),
+      markViewed: (storyId) => {
+        if (userId) markStoryViewed(storyId, userId);
+      },
+      remove: async (storyId) => {
+        if (!userId) return false;
+        const ok = await deleteStory(storyId, userId);
+        if (ok) refresh();
+        return ok;
+      },
     };
-  }, [friendIds, user?.id, version]);
+  }, [stories, user?.id, refresh]);
 
   return <StoriesContext.Provider value={value}>{children}</StoriesContext.Provider>;
 }
