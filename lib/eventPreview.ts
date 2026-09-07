@@ -24,6 +24,7 @@ export type EventPreviewDraft = {
   songs: SongCatalogItem[];
   visibility: 'public' | 'private';
   approvalMode: 'instant' | 'manual';
+  isOutdoor?: boolean;
 };
 
 let draft: EventPreviewDraft | null = null;
@@ -61,5 +62,15 @@ export function previewDraftFromEvent(event: SpritzEvent): EventPreviewDraft {
     songs: [],
     visibility: event.visibility,
     approvalMode: event.approvalMode,
+    isOutdoor: event.isOutdoor,
   };
+}
+
+// Duplicate Event: same field mapping as previewDraftFromEvent, but
+// mode: 'create' (no eventId) so new-event.tsx inserts a fresh event
+// instead of editing the original — and a past start time resets to null
+// (form defaults to "now") rather than pre-filling an already-past date.
+export function duplicateDraftFromEvent(event: SpritzEvent): EventPreviewDraft {
+  const startsAt = event.startsAt && new Date(event.startsAt).getTime() > Date.now() ? event.startsAt : null;
+  return { ...previewDraftFromEvent(event), mode: 'create', eventId: undefined, startsAt, rentalProofAttached: false };
 }

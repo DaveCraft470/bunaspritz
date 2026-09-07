@@ -17,6 +17,8 @@ import { getUserEventStats } from '@/lib/events';
 import { getReviews, getReviewSummary, type Review, type ReviewSummary } from '@/lib/reviews';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { clearGoingOut, getMyGoingOutStatus, setGoingOut } from '@/lib/goingOut';
+import { QrModal } from '@/components/common/QrModal';
+import { buildProfileDeepLink } from '@/lib/sharing';
 
 // Profile design by raulnitu8 — ported from App.tsx's ProfileScreen onto its
 // own Expo Router screen, matching how app/messages.tsx was ported.
@@ -34,6 +36,7 @@ export default function Profile() {
   const [refreshing, setRefreshing] = useState(false);
   const [goingOutActive, setGoingOutActive] = useState(false);
   const [togglingGoingOut, setTogglingGoingOut] = useState(false);
+  const [qrModalVisible, setQrModalVisible] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -113,6 +116,17 @@ export default function Profile() {
             </View>
             <Text style={[styles.profileHandle, { color: theme.textSecondary }]}>@{username}</Text>
           </View>
+          <Pressable
+            onPress={() => {
+              light();
+              setQrModalVisible(true);
+            }}
+            hitSlop={8}
+            accessibilityLabel="Codul tău QR"
+            style={styles.qrButton}
+          >
+            <Ionicons name="qr-code-outline" size={20} color={theme.textPrimary} />
+          </Pressable>
           <Pressable
             onPress={() => router.push('/edit-profile')}
             style={[styles.editButton, { borderColor: theme.border }]}
@@ -311,6 +325,9 @@ export default function Profile() {
           )}
         </View>
       </ScrollView>
+      {user && (
+        <QrModal visible={qrModalVisible} title={`@${username}`} link={buildProfileDeepLink(user.id)} onClose={() => setQrModalVisible(false)} />
+      )}
     </SafeAreaView>
   );
 }
@@ -328,6 +345,7 @@ const styles = StyleSheet.create({
   verifiedText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
   profileHandle: { fontSize: 12, marginTop: 3 },
   editButton: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 10, borderWidth: 1 },
+  qrButton: { padding: 8, marginRight: 4 },
   editText: { fontSize: 11, fontWeight: '800' },
   bio: { fontSize: 14, lineHeight: 20, marginTop: 20, marginBottom: 18 },
   goingOutPill: { flexDirection: 'row', alignSelf: 'center', alignItems: 'center', gap: 7, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 16 },

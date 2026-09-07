@@ -29,10 +29,12 @@ type EventRow = {
   approval_mode: 'instant' | 'manual';
   source: 'host' | 'scraper';
   source_url: string | null;
+  is_outdoor: boolean;
+  publish_at: string | null;
 };
 
 const EVENT_COLUMNS =
-  'id, host_id, title, detail, emoji, color, lng, lat, genre, starts_at, entry_fee_ron, drinks_price_ron, max_participants, location_is_rented, rental_proof_path, visibility, approval_mode, source, source_url';
+  'id, host_id, title, detail, emoji, color, lng, lat, genre, starts_at, entry_fee_ron, drinks_price_ron, max_participants, location_is_rented, rental_proof_path, visibility, approval_mode, source, source_url, is_outdoor, publish_at';
 
 function mapEvent(row: EventRow): SpritzEvent {
   return {
@@ -55,6 +57,8 @@ function mapEvent(row: EventRow): SpritzEvent {
     approvalMode: row.approval_mode,
     source: row.source,
     sourceUrl: row.source_url,
+    isOutdoor: row.is_outdoor,
+    publishAt: row.publish_at,
   };
 }
 
@@ -193,6 +197,8 @@ export async function createEvent(
       rental_proof_path: fields.rentalProofPath,
       visibility: fields.visibility,
       approval_mode: fields.approvalMode,
+      is_outdoor: fields.isOutdoor,
+      publish_at: fields.publishAt,
     })
     .select(EVENT_COLUMNS)
     .single();
@@ -232,6 +238,8 @@ export async function updateEvent(
       rental_proof_path: fields.rentalProofPath,
       visibility: fields.visibility,
       approval_mode: fields.approvalMode,
+      is_outdoor: fields.isOutdoor,
+      publish_at: fields.publishAt,
     })
     .eq('id', eventId)
     .eq('host_id', hostId)

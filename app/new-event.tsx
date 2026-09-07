@@ -25,7 +25,8 @@ import { LocationPickerModal } from '@/components/event/LocationPickerModal';
 import { extensionAndTypeForImage } from '@/lib/media';
 import { addMonths, isDateBetween, startOfDay } from '@/lib/calendar';
 import { WheelPicker } from '@/components/common/WheelPicker';
-import { getEventPreviewDraft, setEventPreviewDraft } from '@/lib/eventPreview';
+import { clearEventPreviewDraft, getEventPreviewDraft, setEventPreviewDraft } from '@/lib/eventPreview';
+import { createRecurringEvents } from '@/lib/organizerTools';
 import { DrinkListEditor } from '@/components/event/DrinkListEditor';
 import { setEventDrinks, type EventDrink } from '@/lib/drinks';
 import { setEventSongs, type SongCatalogItem } from '@/lib/music';
@@ -81,6 +82,11 @@ export default function NewEvent() {
   const [songs, setSongs] = useState<SongCatalogItem[]>([]);
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
   const [approvalMode, setApprovalMode] = useState<'instant' | 'manual'>('instant');
+  const [isOutdoor, setIsOutdoor] = useState(false);
+  // Recurring Events: 0 = just this one (the default/existing behavior);
+  // N>0 also creates N more weekly occurrences after this one via
+  // createRecurringEvents, same insert path as any other event.
+  const [repeatWeeks, setRepeatWeeks] = useState(0);
 
   useEffect(() => {
     const draft = getEventPreviewDraft();
@@ -106,6 +112,11 @@ export default function NewEvent() {
         setHour(date.getHours());
         setMinute(date.getMinutes());
       }
+      if (typeof draft.isOutdoor === 'boolean') setIsOutdoor(draft.isOutdoor);
+      // Consumed — without this, leaving and coming back to a fresh
+      // "/new-event" later would silently re-hydrate this same stale draft
+      // (nothing else in the app ever clears it; see lib/eventPreview.ts).
+      clearEventPreviewDraft();
     }
     setDraftHydrated(true);
   }, []);
@@ -285,6 +296,8 @@ export default function NewEvent() {
         rentalProofPath,
         visibility,
         approvalMode,
+        isOutdoor,
+        publishAt: null,
       });
 
       if (!created) {
@@ -300,6 +313,42 @@ export default function NewEvent() {
       setEventDrinks(created.id, drinks);
       setEventSongs(created.id, songs);
       addEvent(created);
+
+      if (repeatWeeks > 0) {
+        // The first occurrence is already created above — this only ever
+        // creates the *additional* ones, starting a week after it (i=0 in
+        // createRecurringEvents would otherwise re-create the same date).
+        const nextWeek = buildStartsAt();
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        createRecurringEvents(
+          user.id,
+          {
+            title: trimmedTitle,
+            detail: detail.trim() || t.newEvent.defaultDetail,
+            emoji,
+            color,
+            lng: finalCoords.lng,
+            lat: finalCoords.lat,
+            genre: genre.trim() || t.newEvent.defaultGenre,
+            startsAt: nextWeek.toISOString(),
+            entryFeeRon: parsedEntryFee !== null && !Number.isNaN(parsedEntryFee) ? parsedEntryFee : null,
+            drinksPriceRon: parsedDrinksPrice !== null && !Number.isNaN(parsedDrinksPrice) ? parsedDrinksPrice : null,
+            maxParticipants:
+              parsedMaxParticipants !== null && !Number.isNaN(parsedMaxParticipants) && parsedMaxParticipants > 0
+                ? Math.floor(parsedMaxParticipants)
+                : null,
+            locationIsRented,
+            rentalProofPath: null,
+            visibility,
+            approvalMode,
+            isOutdoor,
+            publishAt: null,
+          },
+          repeatWeeks,
+          7,
+        ).catch(() => {});
+      }
+
       router.replace({ pathname: '/event/[id]', params: { id: created.id } });
     } finally {
       publishingRef.current = false;
@@ -477,6 +526,56 @@ export default function NewEvent() {
           keyboardType="number-pad"
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
         />
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>LOCAȚIE</Text>
+        <View style={styles.rentedRow}>
+          {[
+            { label: 'În interior', value: false },
+            { label: 'În aer liber', value: true },
+          ].map((option) => (
+            <AnimatedPressable
+              key={String(option.value)}
+              onPress={() => {
+                light();
+                setIsOutdoor(option.value);
+              }}
+              style={[
+                styles.rentedChip,
+                { backgroundColor: theme.surface, borderColor: isOutdoor === option.value ? colors.green500 : theme.border },
+                isOutdoor === option.value && styles.chipActive,
+              ]}
+            >
+              <Text style={[styles.chipText, { color: isOutdoor === option.value ? colors.green500 : theme.textPrimary }]}>
+                {option.label}
+              </Text>
+            </AnimatedPressable>
+          ))}
+        </View>
+        <Text style={[styles.rentalProofHint, { color: theme.textSecondary }]}>
+          {isOutdoor ? 'Participanții vor vedea o alertă meteo dacă e prognozată ploaie.' : ''}
+        </Text>
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>REPETĂ SĂPTĂMÂNAL</Text>
+        <View style={styles.rentedRow}>
+          {[0, 4, 8].map((weeks) => (
+            <AnimatedPressable
+              key={weeks}
+              onPress={() => {
+                light();
+                setRepeatWeeks(weeks);
+              }}
+              style={[
+                styles.rentedChip,
+                { backgroundColor: theme.surface, borderColor: repeatWeeks === weeks ? colors.green500 : theme.border },
+                repeatWeeks === weeks && styles.chipActive,
+              ]}
+            >
+              <Text style={[styles.chipText, { color: repeatWeeks === weeks ? colors.green500 : theme.textPrimary }]}>
+                {weeks === 0 ? 'O singură dată' : `${weeks} săptămâni`}
+              </Text>
+            </AnimatedPressable>
+          ))}
+        </View>
 
         <Text style={[styles.label, { color: theme.textSecondary }]}>CINE VEDE EVENIMENTUL</Text>
         <View style={styles.rentedRow}>

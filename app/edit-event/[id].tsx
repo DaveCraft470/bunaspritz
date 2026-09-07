@@ -73,6 +73,7 @@ export default function EditEvent() {
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
   const [approvalMode, setApprovalMode] = useState<'instant' | 'manual'>('instant');
+  const [isOutdoor, setIsOutdoor] = useState(false);
 
   useEffect(() => {
     if (!event) return;
@@ -95,6 +96,7 @@ export default function EditEvent() {
     setSongs(getEventSongs(event.id));
     setVisibility(event.visibility);
     setApprovalMode(event.approvalMode);
+    setIsOutdoor(event.isOutdoor);
   }, [event]);
 
   useEffect(() => {
@@ -290,6 +292,8 @@ export default function EditEvent() {
         rentalProofPath: proofPath,
         visibility,
         approvalMode,
+        isOutdoor,
+        publishAt: currentEvent.publishAt,
       });
       if (!updated) throw new Error('event-update-failed');
       if (oldProofPath && oldProofPath !== proofPath) await removeRentalProof(oldProofPath);
@@ -327,6 +331,7 @@ export default function EditEvent() {
       songs,
       visibility,
       approvalMode,
+      isOutdoor,
     });
     light();
     router.push('/event-preview');

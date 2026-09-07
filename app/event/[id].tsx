@@ -63,6 +63,10 @@ import { getFavoriteCategories, getFavoriteCategoriesFor } from '@/lib/favorites
 import { MeetupPointCard } from '@/components/event/MeetupPointCard';
 import { TravelTimeCard } from '@/components/event/TravelTimeCard';
 import { PhotoAlbum } from '@/components/event/PhotoAlbum';
+import { WeatherCard } from '@/components/event/WeatherCard';
+import { CarpoolSection } from '@/components/event/CarpoolSection';
+import { QrModal } from '@/components/common/QrModal';
+import { buildEventDeepLink, shareEvent } from '@/lib/sharing';
 import { formatDrinkVolume, getEventDrinks } from '@/lib/drinks';
 import { getEventSongs } from '@/lib/music';
 import { MusicCoverPlaceholder } from '@/components/music/MusicCoverPlaceholder';
@@ -123,6 +127,7 @@ export default function EventDetail() {
   const [togglingGoingAlone, setTogglingGoingAlone] = useState(false);
   const [myCategories, setMyCategories] = useState<string[]>([]);
   const [attendeeCategories, setAttendeeCategories] = useState<Record<string, string[]>>({});
+  const [qrModalVisible, setQrModalVisible] = useState(false);
 
   useEffect(() => {
     if (!event || !user) return;
@@ -200,6 +205,13 @@ export default function EventDetail() {
     if (userId === user?.id) return 'Tu';
     if (userId === hostProfile?.id) return hostProfile!.name;
     return attendees.find((a) => a.userId === userId)?.name ?? 'Cineva';
+  }
+
+  function attendeeProfile(userId: string): { name: string; avatarUrl: string | null } {
+    if (userId === user?.id) return { name: 'Tu', avatarUrl: user?.avatarUrl ?? null };
+    if (userId === hostProfile?.id) return { name: hostProfile!.name, avatarUrl: hostProfile!.avatar_url };
+    const found = attendees.find((a) => a.userId === userId);
+    return { name: found?.name ?? 'Cineva', avatarUrl: found?.avatarUrl ?? null };
   }
 
   const friendsParticipating = useMemo(() => {
@@ -512,6 +524,28 @@ export default function EventDetail() {
           </Text>
           <View style={styles.topBarActions}>
             <AnimatedPressable
+              onPress={() => {
+                light();
+                shareEvent(event);
+              }}
+              hitSlop={10}
+              accessibilityLabel="Distribuie evenimentul"
+              style={[styles.backButton, shadows.soft, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            >
+              <Ionicons name="share-outline" size={19} color={theme.textPrimary} />
+            </AnimatedPressable>
+            <AnimatedPressable
+              onPress={() => {
+                light();
+                setQrModalVisible(true);
+              }}
+              hitSlop={10}
+              accessibilityLabel="Arată codul QR"
+              style={[styles.backButton, shadows.soft, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            >
+              <Ionicons name="qr-code-outline" size={19} color={theme.textPrimary} />
+            </AnimatedPressable>
+            <AnimatedPressable
               onPress={handleToggleSave}
               hitSlop={10}
               accessibilityLabel={saved ? t.event.unsaveEvent : t.event.saveEvent}
@@ -808,6 +842,12 @@ export default function EventDetail() {
             <TravelTimeCard eventId={event.id} eventTitle={event.title} destination={{ lat: event.lat, lng: event.lng }} startsAt={event.startsAt} />
           )}
 
+          {!isPast && <WeatherCard event={event} allEvents={events} />}
+
+          {(joined || isHost) && !isPast && (
+            <CarpoolSection eventId={event.id} userId={user!.id} profileLookup={attendeeProfile} />
+          )}
+
           {user && (
             <PhotoAlbum eventId={event.id} canUpload={joined || isHost} isHost={isHost} currentUserId={user.id} />
           )}
@@ -943,6 +983,7 @@ export default function EventDetail() {
         onClose={() => setViewerStories(null)}
         onEventPress={() => setViewerStories(null)}
       />
+      <QrModal visible={qrModalVisible} title={event.title} link={buildEventDeepLink(event.id)} onClose={() => setQrModalVisible(false)} />
       {event && user ? (
         <ReportModal
           visible={reportModalOpen}
