@@ -52,14 +52,40 @@ import {
 } from '@/lib/messaging';
 import {
   DbGroupMessage,
+  DbGroupPoll,
+  MessageReaction,
+  PollResult,
+  closeGroupPoll,
+  createGroupPoll,
+  deleteGroupMessage,
+  editGroupMessage,
+  getGroupLastRead,
   getGroupThread,
+  getPinnedMessages,
+  getPoll,
+  getPollResults,
+  getReactions,
   getSenderProfiles,
+  markGroupRead,
+  pinGroupMessage,
+  reactToMessage,
   sendEventGroupGifMessage,
   sendEventGroupImageMessage,
   sendEventGroupMessage,
   subscribeToEventGroupMessages,
+  subscribeToPollVotes,
+  subscribeToReactions,
+  unpinGroupMessage,
+  voteGroupPoll,
 } from '@/lib/eventMessaging';
 import { GifPickerModal } from '@/components/messaging/GifPickerModal';
+import { MessageActionsSheet, type MessageAction } from '@/components/messaging/MessageActionsSheet';
+import { PollComposerModal } from '@/components/messaging/PollComposerModal';
+import { PollCard } from '@/components/messaging/PollCard';
+import { PinnedMessagesBar } from '@/components/messaging/PinnedMessagesBar';
+import { SharedMediaModal } from '@/components/messaging/SharedMediaModal';
+import { GroupSearchModal } from '@/components/messaging/GroupSearchModal';
+import { SafetyMenu } from '@/components/social/SafetyMenu';
 
 // Sentinel playingMessageId for the not-yet-sent recording preview — no real
 // message has this id, so it can share the shared voicePlayer/playingMessageId
@@ -147,7 +173,9 @@ type DisplayMessage = {
   id: string;
   text: string;
   time: string;
+  createdAt?: string;
   sender: string;
+  senderId?: string;
   senderAvatarUrl?: string | null;
   mine: boolean;
   read: boolean;
@@ -159,7 +187,30 @@ type DisplayMessage = {
   durationMs?: number | null;
   waveform?: number[] | null;
   isSystem?: boolean;
+  replyToId?: string | null;
+  editedAt?: string | null;
+  deletedAt?: string | null;
+  pinnedAt?: string | null;
+  pollId?: string | null;
 };
+
+// One emoji's aggregated reaction count on a message, plus whether the
+// current user is the one behind it (for the tap-to-toggle highlight).
+type ReactionGroup = { emoji: string; count: number; mine: boolean };
+
+function groupReactions(reactions: MessageReaction[], myId: string | undefined): ReactionGroup[] {
+  const byEmoji = new Map<string, ReactionGroup>();
+  reactions.forEach((r) => {
+    const existing = byEmoji.get(r.emoji);
+    if (existing) {
+      existing.count += 1;
+      if (r.user_id === myId) existing.mine = true;
+    } else {
+      byEmoji.set(r.emoji, { emoji: r.emoji, count: 1, mine: r.user_id === myId });
+    }
+  });
+  return [...byEmoji.values()];
+}
 type ActiveChat = { kind: 'group'; id: string } | { kind: 'friend'; id: string };
 
 function formatTime(iso: string) {
@@ -457,6 +508,43 @@ function GroupCard({
   );
 }
 
+// A quoted snippet of the message being replied to — shown inside the reply-
+// er's bubble, and (as a live preview) above the composer while composing.
+function ReplyQuote({ sender, text, mine, onPress }: { sender: string; text: string; mine: boolean; onPress?: () => void }) {
+  const { colors: theme } = useAppTheme();
+  const Wrapper = onPress ? Pressable : View;
+  return (
+    <Wrapper
+      onPress={onPress}
+      style={[
+        styles.replyQuote,
+        { borderLeftColor: mine ? 'rgba(255,255,255,0.6)' : colors.green500, backgroundColor: mine ? 'rgba(255,255,255,0.12)' : 'rgba(37,201,96,0.08)' },
+      ]}
+    >
+      <Text numberOfLines={1} style={[styles.replyQuoteSender, { color: mine ? '#D6FFE2' : colors.green500 }]}>{sender}</Text>
+      <Text numberOfLines={1} style={[styles.replyQuoteText, { color: mine ? 'rgba(255,255,255,0.85)' : theme.textSecondary }]}>{text}</Text>
+    </Wrapper>
+  );
+}
+
+function ReactionChipsRow({ groups, onPress }: { groups: ReactionGroup[]; onPress: (emoji: string) => void }) {
+  const { colors: theme } = useAppTheme();
+  if (!groups.length) return null;
+  return (
+    <View style={styles.reactionsRow}>
+      {groups.map((group) => (
+        <Pressable
+          key={group.emoji}
+          onPress={() => onPress(group.emoji)}
+          style={[styles.reactionChip, { backgroundColor: group.mine ? colors.green100 : theme.surfaceMuted, borderColor: group.mine ? colors.green500 : theme.border }]}
+        >
+          <Text style={styles.reactionChipText}>{group.emoji} {group.count}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 export default function Messages() {
   const insets = useSafeAreaInsets();
   const { colors: theme } = useAppTheme();
@@ -521,6 +609,147 @@ export default function Messages() {
   const restingComposerOffset = insets.bottom + 16;
   const composerOffset = useRef(new Animated.Value(restingComposerOffset)).current;
 
+  // ---- Sprint 2: group chat reactions / reply / edit / delete / pin / -----
+  // ---- polls / search / unread / shared media -----------------------------
+  const [reactionsByMessage, setReactionsByMessage] = useState<Record<string, MessageReaction[]>>({});
+  const [pinnedMessages, setPinnedMessages] = useState<DbGroupMessage[]>([]);
+  const [replyTarget, setReplyTarget] = useState<DbGroupMessage | null>(null);
+  const [editingMessage, setEditingMessage] = useState<DbGroupMessage | null>(null);
+  const [actionSheetMessage, setActionSheetMessage] = useState<DbGroupMessage | null>(null);
+  const [pollComposerVisible, setPollComposerVisible] = useState(false);
+  const [polls, setPolls] = useState<Record<string, DbGroupPoll>>({});
+  const [pollResults, setPollResults] = useState<Record<string, PollResult[]>>({});
+  const [groupOptionsVisible, setGroupOptionsVisible] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [sharedMediaVisible, setSharedMediaVisible] = useState(false);
+  const [unreadDivider, setUnreadDivider] = useState<{ messageId: string; count: number } | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const messagePositionsRef = useRef<Map<string, number>>(new Map());
+
+  function jumpToMessage(messageId: string) {
+    const y = messagePositionsRef.current.get(messageId);
+    if (y !== undefined) {
+      messagesScrollRef.current?.scrollTo({ y: Math.max(0, y - 90), animated: true });
+    }
+    light();
+    setHighlightedMessageId(messageId);
+    setTimeout(() => setHighlightedMessageId((current) => (current === messageId ? null : current)), 1600);
+  }
+
+  function messageById(id: string | null | undefined): DbGroupMessage | undefined {
+    if (!id) return undefined;
+    return groupMessages.find((m) => m.id === id);
+  }
+
+  function senderDisplayName(senderId: string): string {
+    if (senderId === user?.id) return 'Tu';
+    return groupSenderProfiles[senderId]?.name ?? 'Cineva';
+  }
+
+  async function refreshReactions(messageIds: string[]) {
+    const rows = await getReactions(messageIds);
+    const grouped: Record<string, MessageReaction[]> = {};
+    rows.forEach((row) => {
+      (grouped[row.message_id] ??= []).push(row);
+    });
+    setReactionsByMessage(grouped);
+  }
+
+  async function refreshPinned(eventId: string) {
+    setPinnedMessages(await getPinnedMessages(eventId));
+  }
+
+  async function loadPollAndResults(pollId: string) {
+    const [poll, results] = await Promise.all([getPoll(pollId), getPollResults(pollId)]);
+    if (poll) setPolls((current) => ({ ...current, [pollId]: poll }));
+    setPollResults((current) => ({ ...current, [pollId]: results }));
+  }
+
+  function handleLongPressMessage(message: DisplayMessage) {
+    if (message.isSystem || activeChat?.kind !== 'group') return;
+    const source = messageById(message.id);
+    if (!source) return;
+    light();
+    setActionSheetMessage(source);
+  }
+
+  // Optimistic toggle so the tap feels instant; the reactions subscription
+  // (subscribeToReactions) reconciles with the server shortly after.
+  async function toggleReaction(messageId: string, emoji: string) {
+    if (!user) return;
+    setReactionsByMessage((current) => {
+      const existing = current[messageId] ?? [];
+      const mine = existing.find((r) => r.user_id === user.id);
+      let next: MessageReaction[];
+      if (mine && mine.emoji === emoji) {
+        next = existing.filter((r) => r.user_id !== user.id);
+      } else if (mine) {
+        next = existing.map((r) => (r.user_id === user.id ? { ...r, emoji } : r));
+      } else {
+        next = [...existing, { message_id: messageId, user_id: user.id, emoji }];
+      }
+      return { ...current, [messageId]: next };
+    });
+    await reactToMessage(messageId, emoji);
+  }
+
+  function handleReply(message: DbGroupMessage) {
+    setEditingMessage(null);
+    setReplyTarget(message);
+  }
+
+  function handleStartEdit(message: DbGroupMessage) {
+    setReplyTarget(null);
+    setEditingMessage(message);
+    setDraft(message.text);
+  }
+
+  function confirmDeleteMessage(message: DbGroupMessage) {
+    Alert.alert('Ștergi mesajul?', 'Această acțiune nu poate fi anulată.', [
+      { text: 'Anulează', style: 'cancel' },
+      {
+        text: 'Șterge',
+        style: 'destructive',
+        onPress: async () => {
+          const ok = await deleteGroupMessage(message.id);
+          if (ok) {
+            setGroupMessages((current) => current.map((m) => (m.id === message.id ? { ...m, deleted_at: new Date().toISOString() } : m)));
+          } else {
+            showAlert('A apărut o eroare', 'Nu am putut șterge mesajul. Încearcă din nou.');
+          }
+        },
+      },
+    ]);
+  }
+
+  async function handleTogglePin(message: DbGroupMessage) {
+    if (activeChat?.kind !== 'group') return;
+    const ok = message.pinned_at ? await unpinGroupMessage(message.id) : await pinGroupMessage(message.id);
+    if (ok) refreshPinned(activeChat.id);
+  }
+
+  async function handleCreatePoll(question: string, options: string[]) {
+    if (!user || activeChat?.kind !== 'group') return;
+    setPollComposerVisible(false);
+    const sent = await createGroupPoll(activeChat.id, question, options);
+    if (sent) {
+      setGroupMessages((current) => (current.some((m) => m.id === sent.id) ? current : [...current, sent]));
+      if (sent.poll_id) loadPollAndResults(sent.poll_id);
+    } else {
+      showAlert('A apărut o eroare', 'Nu am putut crea sondajul. Încearcă din nou.');
+    }
+  }
+
+  async function handleVotePoll(pollId: string, optionId: string) {
+    const ok = await voteGroupPoll(pollId, optionId);
+    if (ok) loadPollAndResults(pollId);
+  }
+
+  async function handleClosePoll(pollId: string) {
+    const ok = await closeGroupPoll(pollId);
+    if (ok) loadPollAndResults(pollId);
+  }
+
   const activeFriend = activeChat?.kind === 'friend' ? friends.find((f) => f.id === activeChat.id) : undefined;
   const selectedGroup = activeChat?.kind === 'group' ? events.find((e) => e.id === activeChat.id) : undefined;
   const friendBlocked = !!(user && activeFriend) && blockedIds.has(activeFriend.id);
@@ -579,6 +808,13 @@ export default function Messages() {
     voicePlayer.pause();
     setPlayingMessageId(null);
     setRecordedVoice(null);
+    setReplyTarget(null);
+    setEditingMessage(null);
+    setDraft('');
+    setUnreadDivider(null);
+    setPinnedMessages([]);
+    setReactionsByMessage({});
+    messagePositionsRef.current.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChat]);
 
@@ -960,13 +1196,32 @@ export default function Messages() {
     const eventId = activeChat.id;
     let cancelled = false;
 
-    getGroupThread(eventId).then((thread) => {
+    // Snapshot the previous last-read marker *before* overwriting it, so the
+    // unread divider still has something to point at — markGroupRead below
+    // (fired right after, same as friend DMs' "opening a chat marks it
+    // read") would otherwise erase the very timestamp the divider needs.
+    getGroupLastRead(eventId, user.id).then((previousLastRead) => {
       if (cancelled) return;
-      setGroupMessages(thread);
-      getSenderProfiles(thread.map((m) => m.sender_id)).then((profiles) => {
-        if (!cancelled) setGroupSenderProfiles((prev) => ({ ...prev, ...profiles }));
+      getGroupThread(eventId).then((thread) => {
+        if (cancelled) return;
+        setGroupMessages(thread);
+        getSenderProfiles(thread.map((m) => m.sender_id)).then((profiles) => {
+          if (!cancelled) setGroupSenderProfiles((prev) => ({ ...prev, ...profiles }));
+        });
+        refreshReactions(thread.map((m) => m.id));
+        thread.filter((m) => m.poll_id).forEach((m) => loadPollAndResults(m.poll_id!));
+
+        if (previousLastRead) {
+          const unread = thread.filter(
+            (m) => !m.is_system && m.sender_id !== user.id && new Date(m.created_at).getTime() > new Date(previousLastRead).getTime(),
+          );
+          if (unread.length > 0) setUnreadDivider({ messageId: unread[0].id, count: unread.length });
+        }
+        markGroupRead(eventId, user.id);
       });
     });
+
+    refreshPinned(eventId);
 
     const unsubscribe = subscribeToEventGroupMessages(eventId, (message) => {
       // The event_id=eq filter can't exclude your own inserts (unlike the
@@ -977,11 +1232,26 @@ export default function Messages() {
         setGroupSenderProfiles((prev) => ({ ...prev, ...profiles }));
       });
     });
+    const unsubscribeReactions = subscribeToReactions(eventId, () => {
+      setGroupMessages((current) => {
+        refreshReactions(current.map((m) => m.id));
+        return current;
+      });
+    });
+    const unsubscribePolls = subscribeToPollVotes(eventId, () => {
+      setPolls((current) => {
+        Object.keys(current).forEach((pollId) => loadPollAndResults(pollId));
+        return current;
+      });
+    });
 
     return () => {
       cancelled = true;
       unsubscribe();
+      unsubscribeReactions();
+      unsubscribePolls();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, activeChat]);
 
   const displayedMessages: DisplayMessage[] = useMemo(() => {
@@ -990,7 +1260,9 @@ export default function Messages() {
         id: m.id,
         text: m.text,
         time: formatTime(m.created_at),
+        createdAt: m.created_at,
         sender: m.is_system ? '' : m.sender_id === user.id ? 'Tu' : groupSenderProfiles[m.sender_id]?.name ?? '',
+        senderId: m.sender_id,
         senderAvatarUrl: groupSenderProfiles[m.sender_id]?.avatarUrl,
         mine: !m.is_system && m.sender_id === user.id,
         read: false,
@@ -998,6 +1270,11 @@ export default function Messages() {
         mediaType: m.media_type,
         mediaPath: m.media_path,
         mediaUrl: m.media_url,
+        replyToId: m.reply_to_id,
+        editedAt: m.edited_at,
+        deletedAt: m.deleted_at,
+        pinnedAt: m.pinned_at,
+        pollId: m.poll_id,
       }));
     }
     if (activeChat?.kind === 'friend' && user) {
@@ -1071,13 +1348,29 @@ export default function Messages() {
     const text = draft.trim();
     if (text.length > MESSAGE_MAX_LENGTH) return;
     if (!text || !activeChat) return;
+    if (!user) return;
+
+    if (activeChat.kind === 'group' && editingMessage) {
+      light();
+      setDraft('');
+      const messageId = editingMessage.id;
+      setEditingMessage(null);
+      const updated = await editGroupMessage(messageId, text);
+      if (updated) {
+        setGroupMessages((current) => current.map((m) => (m.id === messageId ? updated : m)));
+      } else {
+        showAlert('A apărut o eroare', 'Nu am putut edita mesajul. Încearcă din nou.');
+      }
+      return;
+    }
+
     light();
     setDraft('');
 
-    if (!user) return;
-
     if (activeChat.kind === 'group') {
-      const sent = await sendEventGroupMessage(activeChat.id, user.id, text);
+      const replyToId = replyTarget?.id ?? null;
+      setReplyTarget(null);
+      const sent = await sendEventGroupMessage(activeChat.id, user.id, text, replyToId);
       if (sent) {
         setGroupMessages((current) => (current.some((m) => m.id === sent.id) ? current : [...current, sent]));
       } else {
@@ -1246,9 +1539,30 @@ export default function Messages() {
                   <Text style={[styles.more, { color: theme.textSecondary }]}>•••</Text>
                 </Pressable>
               ) : (
-                <Text style={[styles.more, { color: theme.textSecondary }]}>•••</Text>
+                <Pressable
+                  onPress={() => {
+                    light();
+                    setGroupOptionsVisible(true);
+                  }}
+                  hitSlop={10}
+                  accessibilityLabel="Opțiuni grup"
+                >
+                  <Text style={[styles.more, { color: theme.textSecondary }]}>•••</Text>
+                </Pressable>
               )}
             </View>
+
+            {selectedGroup && (
+              <PinnedMessagesBar
+                pinned={pinnedMessages}
+                senderName={senderDisplayName}
+                canUnpin={!!user && selectedGroup.hostId === user.id}
+                onJump={jumpToMessage}
+                onUnpin={(messageId) => {
+                  unpinGroupMessage(messageId).then(() => refreshPinned(selectedGroup.id));
+                }}
+              />
+            )}
 
             <ScrollView
               ref={messagesScrollRef}
@@ -1256,77 +1570,146 @@ export default function Messages() {
               contentContainerStyle={styles.messagesContent}
               onContentSizeChange={() => messagesScrollRef.current?.scrollToEnd({ animated: true })}
             >
-              {displayedMessages.map((message) =>
-                message.isSystem ? (
-                  <Text key={message.id} style={[styles.systemMessage, { color: theme.textSecondary }]}>
-                    {message.text}
-                  </Text>
-                ) : (
-                <View key={message.id} style={[styles.messageRow, message.mine && styles.messageRowMine]}>
-                  {!message.mine && selectedGroup && (
-                    <Avatar
-                      uri={message.senderAvatarUrl}
-                      name={message.sender}
-                      size={26}
-                      fontSize={11}
-                      color={selectedGroup.color}
-                    />
-                  )}
-                  {!message.mine && !selectedGroup && <View style={styles.dot} />}
-                  <View
-                    style={[
-                      styles.bubble,
-                      message.mine ? styles.mine : [styles.other, { backgroundColor: theme.surfaceMuted }],
-                    ]}
-                  >
-                    {selectedGroup && (
-                      <Text style={[styles.sender, message.mine ? styles.senderMine : { color: theme.accent }]}>
-                        {message.sender}
-                      </Text>
-                    )}
-                    {(message.mediaType === 'image' || message.mediaType === 'gif') && (message.mediaPath || message.mediaUrl) ? (
-                      <ImageBubble
-                        path={message.mediaPath}
-                        url={message.mediaUrl}
-                        viewOnce={!message.mine && !!message.viewOnce}
-                        alreadyViewed={!!message.viewedAt}
-                        onReveal={() => markMessageViewed(message.id)}
-                      />
-                    ) : message.mediaType === 'audio' && message.mediaPath ? (
-                      <VoiceBubble
-                        isPlaying={playingMessageId === message.id}
-                        isMine={message.mine}
-                        durationMs={message.durationMs}
-                        elapsedMs={playingMessageId === message.id ? voicePlayerStatus.currentTime * 1000 : 0}
-                        waveform={message.waveform}
-                        onToggle={() => toggleVoicePlayback(message.id, message.mediaPath!)}
-                      />
-                    ) : (
-                      <Text
-                        style={[
-                          styles.messageText,
-                          message.mine ? styles.messageTextMine : { color: theme.textPrimary },
-                        ]}
-                      >
-                        {message.text}
-                      </Text>
-                    )}
-                    <View style={styles.bubbleFooter}>
-                      <Text style={[styles.time, message.mine ? styles.timeMine : { color: theme.textSecondary }]}>
-                        {message.time}
-                      </Text>
-                      {message.mine && (
-                        <Ionicons
-                          name={message.read ? 'checkmark-done' : 'checkmark'}
-                          size={13}
-                          color={message.read ? colors.white : 'rgba(255,255,255,0.7)'}
+              {displayedMessages.map((message) => {
+                const isUnreadDivider = unreadDivider?.messageId === message.id;
+                const dividerNode = isUnreadDivider ? (
+                  <View style={styles.unreadDivider}>
+                    <View style={[styles.unreadDividerLine, { backgroundColor: theme.border }]} />
+                    <Text style={[styles.unreadDividerText, { color: theme.textSecondary }]}>
+                      {unreadDivider!.count === 1 ? '1 mesaj necitit' : `${unreadDivider!.count} mesaje necitite`}
+                    </Text>
+                    <View style={[styles.unreadDividerLine, { backgroundColor: theme.border }]} />
+                  </View>
+                ) : null;
+
+                if (message.isSystem) {
+                  return (
+                    <View key={message.id} onLayout={(e) => messagePositionsRef.current.set(message.id, e.nativeEvent.layout.y)}>
+                      {dividerNode}
+                      <Text style={[styles.systemMessage, { color: theme.textSecondary }]}>{message.text}</Text>
+                    </View>
+                  );
+                }
+
+                const replyTo = message.replyToId ? displayedMessages.find((m) => m.id === message.replyToId) : undefined;
+                const replyPreviewText = replyTo
+                  ? replyTo.deletedAt
+                    ? 'Mesaj șters'
+                    : replyTo.text ||
+                      (replyTo.mediaType === 'image' ? '📷 Poză' : replyTo.mediaType === 'gif' ? '🎞 GIF' : replyTo.mediaType === 'audio' ? '🎤 Mesaj vocal' : replyTo.pollId ? '📊 Sondaj' : '')
+                  : '';
+                const reactionGroups = groupReactions(reactionsByMessage[message.id] ?? [], user?.id);
+                const poll = message.pollId ? polls[message.pollId] : undefined;
+                const pollResultsForMessage = message.pollId ? pollResults[message.pollId] ?? [] : [];
+                const isHighlighted = highlightedMessageId === message.id;
+
+                return (
+                  <View key={message.id} onLayout={(e) => messagePositionsRef.current.set(message.id, e.nativeEvent.layout.y)}>
+                    {dividerNode}
+                    <Pressable
+                      onLongPress={() => handleLongPressMessage(message)}
+                      style={[styles.messageRow, message.mine && styles.messageRowMine]}
+                    >
+                      {!message.mine && selectedGroup && (
+                        <Avatar
+                          uri={message.senderAvatarUrl}
+                          name={message.sender}
+                          size={26}
+                          fontSize={11}
+                          color={selectedGroup.color}
                         />
                       )}
-                    </View>
+                      {!message.mine && !selectedGroup && <View style={styles.dot} />}
+                      <View
+                        style={[
+                          styles.bubble,
+                          message.mine ? styles.mine : [styles.other, { backgroundColor: theme.surfaceMuted }],
+                          isHighlighted && styles.bubbleHighlighted,
+                        ]}
+                      >
+                        {selectedGroup && (
+                          <Text style={[styles.sender, message.mine ? styles.senderMine : { color: theme.accent }]}>
+                            {message.sender}
+                          </Text>
+                        )}
+                        {message.deletedAt ? (
+                          <Text style={[styles.deletedText, message.mine ? styles.messageTextMine : { color: theme.textSecondary }]}>
+                            🚫 Mesaj șters
+                          </Text>
+                        ) : poll ? (
+                          <PollCard
+                            poll={poll}
+                            results={pollResultsForMessage}
+                            mine={message.mine}
+                            canClose={!!user && (poll.created_by === user.id || selectedGroup?.hostId === user.id)}
+                            onVote={(optionId) => handleVotePoll(poll.id, optionId)}
+                            onClose={() => handleClosePoll(poll.id)}
+                          />
+                        ) : (
+                          <>
+                            {replyTo && (
+                              <ReplyQuote
+                                sender={replyTo.sender || 'Cineva'}
+                                text={replyPreviewText}
+                                mine={message.mine}
+                                onPress={() => jumpToMessage(replyTo.id)}
+                              />
+                            )}
+                            {(message.mediaType === 'image' || message.mediaType === 'gif') && (message.mediaPath || message.mediaUrl) ? (
+                              <ImageBubble
+                                path={message.mediaPath}
+                                url={message.mediaUrl}
+                                viewOnce={!message.mine && !!message.viewOnce}
+                                alreadyViewed={!!message.viewedAt}
+                                onReveal={() => markMessageViewed(message.id)}
+                              />
+                            ) : message.mediaType === 'audio' && message.mediaPath ? (
+                              <VoiceBubble
+                                isPlaying={playingMessageId === message.id}
+                                isMine={message.mine}
+                                durationMs={message.durationMs}
+                                elapsedMs={playingMessageId === message.id ? voicePlayerStatus.currentTime * 1000 : 0}
+                                waveform={message.waveform}
+                                onToggle={() => toggleVoicePlayback(message.id, message.mediaPath!)}
+                              />
+                            ) : (
+                              <Text
+                                style={[
+                                  styles.messageText,
+                                  message.mine ? styles.messageTextMine : { color: theme.textPrimary },
+                                ]}
+                              >
+                                {message.text}
+                              </Text>
+                            )}
+                          </>
+                        )}
+                        <View style={styles.bubbleFooter}>
+                          {message.pinnedAt && <Ionicons name="pin" size={10} color={message.mine ? '#D6FFE2' : theme.accent} />}
+                          {message.editedAt && !message.deletedAt && (
+                            <Text style={[styles.editedLabel, message.mine ? styles.timeMine : { color: theme.textSecondary }]}>editat</Text>
+                          )}
+                          <Text style={[styles.time, message.mine ? styles.timeMine : { color: theme.textSecondary }]}>
+                            {message.time}
+                          </Text>
+                          {message.mine && (
+                            <Ionicons
+                              name={message.read ? 'checkmark-done' : 'checkmark'}
+                              size={13}
+                              color={message.read ? colors.white : 'rgba(255,255,255,0.7)'}
+                            />
+                          )}
+                        </View>
+                      </View>
+                    </Pressable>
+                    {!message.deletedAt && reactionGroups.length > 0 && (
+                      <View style={message.mine ? styles.reactionsRowMine : undefined}>
+                        <ReactionChipsRow groups={reactionGroups} onPress={(emoji) => toggleReaction(message.id, emoji)} />
+                      </View>
+                    )}
                   </View>
-                </View>
-                )
-              )}
+                );
+              })}
             </ScrollView>
 
             {!friendBlocked && draft.length > 0 && (
@@ -1338,6 +1721,47 @@ export default function Messages() {
               >
                 {draft.length}/{MESSAGE_MAX_LENGTH}
               </Text>
+            )}
+
+            {unreadDivider && (
+              <Pressable
+                onPress={() => {
+                  jumpToMessage(unreadDivider.messageId);
+                  setUnreadDivider(null);
+                }}
+                style={[styles.jumpToUnread, { backgroundColor: colors.green500, bottom: insets.bottom + 84 }]}
+              >
+                <Ionicons name="arrow-down" size={13} color={colors.white} />
+                <Text style={styles.jumpToUnreadText}>
+                  {unreadDivider.count === 1 ? '1 mesaj necitit' : `${unreadDivider.count} mesaje necitite`}
+                </Text>
+              </Pressable>
+            )}
+
+            {selectedGroup && (replyTarget || editingMessage) && (
+              <View style={[styles.replyBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <View style={styles.replyBarBody}>
+                  <Text style={[styles.replyBarLabel, { color: colors.green500 }]}>
+                    {editingMessage ? 'Editezi mesajul' : `Răspunzi la ${senderDisplayName(replyTarget!.sender_id)}`}
+                  </Text>
+                  <Text numberOfLines={1} style={[styles.replyBarText, { color: theme.textSecondary }]}>
+                    {editingMessage ? editingMessage.text : replyTarget!.text || '📎 Atașament'}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => {
+                    setReplyTarget(null);
+                    if (editingMessage) {
+                      setEditingMessage(null);
+                      setDraft('');
+                    }
+                  }}
+                  hitSlop={8}
+                  accessibilityLabel="Anulează"
+                >
+                  <Ionicons name="close" size={18} color={theme.textSecondary} />
+                </Pressable>
+              </View>
             )}
 
             {/* marginBottom tracks the keyboard directly (see the effect above)
@@ -1382,11 +1806,19 @@ export default function Messages() {
                   >
                     <Text style={[styles.gifButtonText, { color: theme.accent }]}>GIF</Text>
                   </Pressable>
+                  <Pressable
+                    onPress={() => setPollComposerVisible(true)}
+                    disabled={sendingMedia}
+                    style={[styles.add, { backgroundColor: theme.surfaceMuted, opacity: sendingMedia ? 0.5 : 1 }]}
+                    accessibilityLabel="Creează un sondaj"
+                  >
+                    <Ionicons name="bar-chart-outline" size={17} color={theme.accent} />
+                  </Pressable>
                   <TextInput
                     value={draft}
                     onChangeText={setDraft}
                     onSubmitEditing={sendMessage}
-                    placeholder="Scrie în grup..."
+                    placeholder={editingMessage ? 'Editează mesajul...' : 'Scrie în grup...'}
                     placeholderTextColor={theme.textSecondary}
                     style={[styles.input, { color: theme.textPrimary }]}
                     returnKeyType="send"
@@ -1395,9 +1827,9 @@ export default function Messages() {
                   <Pressable
                     onPress={sendMessage}
                     style={[styles.send, !draft.trim() && styles.sendOff]}
-                    accessibilityLabel="Trimite"
+                    accessibilityLabel={editingMessage ? 'Salvează' : 'Trimite'}
                   >
-                    <Text style={styles.sendText}>↑</Text>
+                    <Text style={styles.sendText}>{editingMessage ? '✓' : '↑'}</Text>
                   </Pressable>
                 </>
               ) : (
@@ -1517,6 +1949,74 @@ export default function Messages() {
       </View>
 
       <GifPickerModal visible={gifPickerVisible} onSelect={handleSelectGif} onClose={() => setGifPickerVisible(false)} />
+
+      {selectedGroup && (
+        <>
+          <MessageActionsSheet
+            visible={!!actionSheetMessage}
+            onClose={() => setActionSheetMessage(null)}
+            onReact={(emoji) => actionSheetMessage && toggleReaction(actionSheetMessage.id, emoji)}
+            actions={
+              actionSheetMessage
+                ? ([
+                    { key: 'reply', label: 'Răspunde', icon: 'arrow-undo-outline', onPress: () => handleReply(actionSheetMessage) },
+                    !actionSheetMessage.deleted_at &&
+                      actionSheetMessage.sender_id === user?.id &&
+                      !actionSheetMessage.media_type &&
+                      !actionSheetMessage.poll_id && {
+                        key: 'edit',
+                        label: 'Editează',
+                        icon: 'create-outline',
+                        onPress: () => handleStartEdit(actionSheetMessage),
+                      },
+                    !actionSheetMessage.deleted_at &&
+                      (actionSheetMessage.sender_id === user?.id || selectedGroup.hostId === user?.id) && {
+                        key: 'delete',
+                        label: 'Șterge',
+                        icon: 'trash-outline',
+                        destructive: true,
+                        onPress: () => confirmDeleteMessage(actionSheetMessage),
+                      },
+                    !actionSheetMessage.deleted_at &&
+                      selectedGroup.hostId === user?.id && {
+                        key: 'pin',
+                        label: actionSheetMessage.pinned_at ? 'Anulează fixarea' : 'Fixează mesajul',
+                        icon: 'pin-outline',
+                        onPress: () => handleTogglePin(actionSheetMessage),
+                      },
+                  ].filter(Boolean) as MessageAction[])
+                : []
+            }
+          />
+
+          <PollComposerModal
+            visible={pollComposerVisible}
+            onClose={() => setPollComposerVisible(false)}
+            onCreate={handleCreatePoll}
+          />
+
+          <SharedMediaModal visible={sharedMediaVisible} eventId={selectedGroup.id} onClose={() => setSharedMediaVisible(false)} />
+
+          <GroupSearchModal
+            visible={searchVisible}
+            messages={groupMessages}
+            senderName={senderDisplayName}
+            onClose={() => setSearchVisible(false)}
+            onJump={jumpToMessage}
+          />
+
+          <SafetyMenu
+            visible={groupOptionsVisible}
+            title={selectedGroup.title}
+            onClose={() => setGroupOptionsVisible(false)}
+            actions={[
+              { key: 'search', label: 'Caută în conversație', icon: 'search-outline', onPress: () => setSearchVisible(true) },
+              { key: 'media', label: 'Poze din grup', icon: 'image-outline', onPress: () => setSharedMediaVisible(true) },
+              { key: 'poll', label: 'Sondaj nou', icon: 'bar-chart-outline', onPress: () => setPollComposerVisible(true) },
+            ]}
+          />
+        </>
+      )}
     </SafeAreaView>
   );
 }
@@ -1630,4 +2130,44 @@ const styles = StyleSheet.create({
   voiceWaveformRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 2, height: 18 },
   voiceWaveformBar: { flex: 1, minWidth: 2, borderRadius: 1 },
   voiceDuration: { fontSize: 12, fontWeight: '700' },
+  bubbleHighlighted: { borderWidth: 2, borderColor: colors.green500 },
+  deletedText: { fontSize: 13, fontStyle: 'italic' },
+  editedLabel: { fontSize: 9, fontStyle: 'italic' },
+  replyQuote: { borderLeftWidth: 3, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, marginBottom: 6 },
+  replyQuoteSender: { fontSize: 10, fontWeight: '800' },
+  replyQuoteText: { fontSize: 11, marginTop: 1 },
+  reactionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 4, marginLeft: 33 },
+  reactionsRowMine: { alignItems: 'flex-end' },
+  reactionChip: { flexDirection: 'row', borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  reactionChipText: { fontSize: 11, fontWeight: '700' },
+  unreadDivider: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 8 },
+  unreadDividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
+  unreadDividerText: { fontSize: 10, fontWeight: '800' },
+  jumpToUnread: {
+    position: 'absolute',
+    right: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    zIndex: 5,
+  },
+  jumpToUnreadText: { color: colors.white, fontSize: 11, fontWeight: '800' },
+  replyBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 6,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.green500,
+  },
+  replyBarBody: { flex: 1, minWidth: 0 },
+  replyBarLabel: { fontSize: 11, fontWeight: '800' },
+  replyBarText: { fontSize: 12, marginTop: 2 },
 });

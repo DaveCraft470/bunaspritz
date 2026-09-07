@@ -15,9 +15,16 @@ export type DbGroupMessage = {
   media_path: string | null;
   media_type: GroupMediaType | null;
   media_url: string | null;
+  reply_to_id: string | null;
+  edited_at: string | null;
+  deleted_at: string | null;
+  pinned_at: string | null;
+  pinned_by: string | null;
+  poll_id: string | null;
 };
 
-const GROUP_MESSAGE_COLUMNS = 'id, event_id, sender_id, text, is_system, created_at, media_path, media_type, media_url';
+const GROUP_MESSAGE_COLUMNS =
+  'id, event_id, sender_id, text, is_system, created_at, media_path, media_type, media_url, reply_to_id, edited_at, deleted_at, pinned_at, pinned_by, poll_id';
 
 export async function getGroupThread(eventId: string): Promise<DbGroupMessage[]> {
   const { data, error } = await supabase
@@ -33,16 +40,164 @@ export async function getGroupThread(eventId: string): Promise<DbGroupMessage[]>
 export async function sendEventGroupMessage(
   eventId: string,
   senderId: string,
-  text: string
+  text: string,
+  replyToId?: string | null
 ): Promise<DbGroupMessage | null> {
   if (text.length > 500) return null;
   const { data, error } = await supabase
     .from('event_group_messages')
-    .insert({ event_id: eventId, sender_id: senderId, text })
+    .insert({ event_id: eventId, sender_id: senderId, text, reply_to_id: replyToId ?? null })
     .select(GROUP_MESSAGE_COLUMNS)
     .single();
 
   if (error) return null;
+  return data;
+}
+
+// ==================================================== edit / delete / pin ==
+export async function editGroupMessage(messageId: string, text: string): Promise<DbGroupMessage | null> {
+  const { data, error } = await supabase.rpc('edit_group_message', { p_message_id: messageId, p_text: text });
+  if (error) return null;
+  return data as unknown as DbGroupMessage;
+}
+
+export async function deleteGroupMessage(messageId: string): Promise<boolean> {
+  const { error } = await supabase.rpc('delete_group_message', { p_message_id: messageId });
+  return !error;
+}
+
+export async function pinGroupMessage(messageId: string): Promise<boolean> {
+  const { error } = await supabase.rpc('pin_group_message', { p_message_id: messageId });
+  return !error;
+}
+
+export async function unpinGroupMessage(messageId: string): Promise<boolean> {
+  const { error } = await supabase.rpc('unpin_group_message', { p_message_id: messageId });
+  return !error;
+}
+
+export async function getPinnedMessages(eventId: string): Promise<DbGroupMessage[]> {
+  const { data, error } = await supabase
+    .from('event_group_messages')
+    .select(GROUP_MESSAGE_COLUMNS)
+    .eq('event_id', eventId)
+    .not('pinned_at', 'is', null)
+    .order('pinned_at', { ascending: false });
+  if (error) return [];
+  return data;
+}
+
+// ============================================================ reactions ====
+export type MessageReaction = { message_id: string; user_id: string; emoji: string };
+
+export async function getReactions(messageIds: string[]): Promise<MessageReaction[]> {
+  if (!messageIds.length) return [];
+  const { data, error } = await supabase.from('message_reactions').select('message_id, user_id, emoji').in('message_id', messageIds);
+  if (error) return [];
+  return data;
+}
+
+// Toggle: tapping the same emoji you already reacted with removes it,
+// tapping a different one swaps it — see react_to_group_message.
+export async function reactToMessage(messageId: string, emoji: string): Promise<boolean> {
+  const { error } = await supabase.rpc('react_to_group_message', { p_message_id: messageId, p_emoji: emoji });
+  return !error;
+}
+
+// No column-level filter is possible (message_reactions has no event_id),
+// but RLS on the table means a caller only ever receives change events for
+// reactions on messages in events they're actually in — see the migration.
+export function subscribeToReactions(eventId: string, onChange: () => void) {
+  const channel = freshChannel(`message-reactions-${eventId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, onChange)
+    .subscribe();
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
+// ================================================================ reads ====
+export async function getGroupLastRead(eventId: string, userId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('event_group_reads')
+    .select('last_read_at')
+    .eq('event_id', eventId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  return data?.last_read_at ?? null;
+}
+
+export async function markGroupRead(eventId: string, userId: string): Promise<void> {
+  await supabase
+    .from('event_group_reads')
+    .upsert({ event_id: eventId, user_id: userId, last_read_at: new Date().toISOString() }, { onConflict: 'event_id,user_id' });
+}
+
+// ================================================================ polls ====
+export type DbGroupPoll = { id: string; event_id: string; created_by: string; question: string; closed_at: string | null; created_at: string };
+export type PollResult = { optionId: string; label: string; position: number; voteCount: number; myVote: boolean };
+
+export async function getPoll(pollId: string): Promise<DbGroupPoll | null> {
+  const { data, error } = await supabase
+    .from('event_group_polls')
+    .select('id, event_id, created_by, question, closed_at, created_at')
+    .eq('id', pollId)
+    .single();
+  if (error) return null;
+  return data;
+}
+
+export async function createGroupPoll(eventId: string, question: string, options: string[]): Promise<DbGroupMessage | null> {
+  const { data, error } = await supabase.rpc('create_group_poll', { p_event_id: eventId, p_question: question, p_options: options });
+  if (error) return null;
+  return data as unknown as DbGroupMessage;
+}
+
+export async function voteGroupPoll(pollId: string, optionId: string): Promise<boolean> {
+  const { error } = await supabase.rpc('vote_group_poll', { p_poll_id: pollId, p_option_id: optionId });
+  return !error;
+}
+
+export async function closeGroupPoll(pollId: string): Promise<boolean> {
+  const { error } = await supabase.rpc('close_group_poll', { p_poll_id: pollId });
+  return !error;
+}
+
+export async function getPollResults(pollId: string): Promise<PollResult[]> {
+  const { data, error } = await supabase.rpc('get_poll_results', { p_poll_id: pollId });
+  if (error || !data) return [];
+  return (data as { option_id: string; label: string; position: number; vote_count: number; my_vote: boolean }[]).map((row) => ({
+    optionId: row.option_id,
+    label: row.label,
+    position: row.position,
+    voteCount: row.vote_count,
+    myVote: row.my_vote,
+  }));
+}
+
+export function subscribeToPollVotes(eventId: string, onChange: () => void) {
+  const channel = freshChannel(`group-poll-votes-${eventId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'event_group_poll_votes' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'event_group_polls' }, onChange)
+    .subscribe();
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
+// ======================================================== shared media =====
+// Independent of whatever's currently loaded in the open thread — used by
+// the "Shared Media" gallery, which a user can open without having scrolled
+// through the whole history first.
+export async function getGroupMedia(eventId: string): Promise<DbGroupMessage[]> {
+  const { data, error } = await supabase
+    .from('event_group_messages')
+    .select(GROUP_MESSAGE_COLUMNS)
+    .eq('event_id', eventId)
+    .in('media_type', ['image', 'gif'])
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
+  if (error) return [];
   return data;
 }
 
