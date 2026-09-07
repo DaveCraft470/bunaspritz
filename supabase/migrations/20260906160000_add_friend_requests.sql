@@ -220,10 +220,19 @@ create policy "message only friends"
 -- follow / friend_prefs / follows: friend_prefs (mute_messages, mute_activity,
 -- hide_activity_from) keys on arbitrary (owner, subject) pairs and is
 -- unaffected by this change — only follows itself goes away.
-drop policy "see follow edges you're part of" on public.follows;
-drop policy "follow as yourself" on public.follows;
-drop policy "unfollow as yourself" on public.follows;
-drop table public.follows;
+--
+-- TODO(phase 1): public.follows can't be dropped yet — is_blocked_by(),
+-- block_user() and unblock_user() (supabase/migrations/20260906140000_
+-- friend_suggestions_and_blocking.sql) still select/delete from it, and
+-- app/friends.tsx + app/messages.tsx call those RPCs directly for real
+-- (non-mock) blocking. Dropping follows here would silently break every
+-- block/unblock call at runtime. Phase 1 must repoint those functions at
+-- friendships/friend_requests (or otherwise stop depending on follows)
+-- before this drop can safely run.
+-- drop policy "see follow edges you're part of" on public.follows;
+-- drop policy "follow as yourself" on public.follows;
+-- drop policy "unfollow as yourself" on public.follows;
+-- drop table public.follows;
 
 -- Live incoming-request badges, matching the existing pattern for
 -- messages/events/profiles.
