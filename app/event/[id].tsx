@@ -29,6 +29,7 @@ import {
   EventAttendee,
   fetchAttendees,
   getEventAttendeeCount,
+  getGoingAlone,
   getJoinRequestStatus,
   getMyAttendance,
   getUserJoinedEventIds,
@@ -36,6 +37,7 @@ import {
   joinEvent,
   leaveEvent,
   requestToJoinEvent,
+  setGoingAlone,
   uploadCheckInPhoto,
   type AttendanceStatus,
   type JoinRequestStatus,
@@ -57,6 +59,7 @@ import { sendEventInvitation } from '@/lib/eventInvitations';
 import { isEventSaved, saveEvent, unsaveEvent } from '@/lib/savedEvents';
 import { recordEventView } from '@/lib/recentActivity';
 import { findConflictingEvent } from '@/lib/eventConflicts';
+import { getFavoriteCategories, getFavoriteCategoriesFor } from '@/lib/favorites';
 import { MeetupPointCard } from '@/components/event/MeetupPointCard';
 import { TravelTimeCard } from '@/components/event/TravelTimeCard';
 import { PhotoAlbum } from '@/components/event/PhotoAlbum';
@@ -116,6 +119,10 @@ export default function EventDetail() {
   const [checkingIn, setCheckingIn] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savingBookmark, setSavingBookmark] = useState(false);
+  const [goingAlone, setGoingAloneState] = useState(false);
+  const [togglingGoingAlone, setTogglingGoingAlone] = useState(false);
+  const [myCategories, setMyCategories] = useState<string[]>([]);
+  const [attendeeCategories, setAttendeeCategories] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     if (!event || !user) return;
@@ -129,8 +136,50 @@ export default function EventDetail() {
     if (event.hostId) getProfile(event.hostId).then(setHostProfile);
     getFriends(user.id).then(setInviteFriends);
     isEventSaved(user.id, event.id).then(setSaved);
+    getGoingAlone(event.id, user.id).then(setGoingAloneState);
     recordEventView(event.id);
   }, [event, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    getFavoriteCategories(user.id).then(setMyCategories);
+  }, [user]);
+
+  useEffect(() => {
+    if (!attendees.length) return;
+    getFavoriteCategoriesFor(attendees.map((a) => a.userId)).then(setAttendeeCategories);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attendees.map((a) => a.userId).join(',')]);
+
+  // "Event Matching": attendees you're not already friends with who share at
+  // least one favorite category with you — a lightweight "people you might
+  // click with here" signal, distinct from friendsParticipating above (which
+  // is about people you already know).
+  const matchedAttendees = useMemo(() => {
+    if (!user || !myCategories.length) return [];
+    const friendIds = new Set(inviteFriends.map((f) => f.id));
+    const myCategorySet = new Set(myCategories);
+    return attendees
+      .filter((a) => a.userId !== user.id && !friendIds.has(a.userId))
+      .map((a) => ({
+        attendee: a,
+        shared: (attendeeCategories[a.userId] ?? []).filter((c) => myCategorySet.has(c)),
+      }))
+      .filter((entry) => entry.shared.length > 0)
+      .sort((left, right) => right.shared.length - left.shared.length)
+      .slice(0, 5);
+  }, [attendees, attendeeCategories, myCategories, inviteFriends, user]);
+
+  async function handleToggleGoingAlone() {
+    if (!event || togglingGoingAlone) return;
+    light();
+    const next = !goingAlone;
+    setGoingAloneState(next);
+    setTogglingGoingAlone(true);
+    const ok = await setGoingAlone(event.id, next);
+    setTogglingGoingAlone(false);
+    if (!ok) setGoingAloneState(!next);
+  }
 
   async function handleToggleSave() {
     if (!event || !user || savingBookmark) return;
@@ -642,6 +691,14 @@ export default function EventDetail() {
               ) : (
                 <Text style={[styles.checkInHint, { color: theme.textPrimary }]}>Participare confirmată ✅</Text>
               )}
+              <AnimatedPressable
+                onPress={handleToggleGoingAlone}
+                disabled={togglingGoingAlone}
+                style={[styles.goingAloneRow, { borderColor: theme.border }]}
+              >
+                <Ionicons name={goingAlone ? 'checkbox' : 'square-outline'} size={18} color={goingAlone ? colors.green500 : theme.textSecondary} />
+                <Text style={[styles.goingAloneText, { color: theme.textPrimary }]}>Merg singur — sunt deschis să cunosc oameni noi</Text>
+              </AnimatedPressable>
             </View>
           )}
 
@@ -694,7 +751,14 @@ export default function EventDetail() {
                     router.push(`/user/${attendee.userId}`);
                   }}
                 >
-                  <Avatar uri={attendee.avatarUrl} name={attendee.name} size={44} fontSize={16} style={styles.attendeeAvatar} />
+                  <View>
+                    <Avatar uri={attendee.avatarUrl} name={attendee.name} size={44} fontSize={16} style={styles.attendeeAvatar} />
+                    {attendee.goingAlone && (
+                      <View style={[styles.aloneBadge, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                        <Text style={styles.aloneBadgeEmoji}>🧍</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text numberOfLines={1} style={[styles.attendeeName, { color: theme.textSecondary }]}>
                     {attendee.name}
                   </Text>
@@ -711,6 +775,30 @@ export default function EventDetail() {
               </AnimatedPressable>
             )}
           </View>
+
+          {matchedAttendees.length > 0 && (
+            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.cardLabel, { color: theme.textSecondary }]}>OAMENI CU CARE AI LUCRURI ÎN COMUN</Text>
+              {matchedAttendees.map(({ attendee, shared }) => (
+                <AnimatedPressable
+                  key={attendee.userId}
+                  onPress={() => {
+                    light();
+                    router.push(`/user/${attendee.userId}`);
+                  }}
+                  style={styles.matchRow}
+                >
+                  <Avatar uri={attendee.avatarUrl} name={attendee.name} size={38} fontSize={15} />
+                  <View style={styles.matchCopy}>
+                    <Text style={[styles.matchName, { color: theme.textPrimary }]} numberOfLines={1}>{attendee.name}</Text>
+                    <Text style={[styles.matchReason, { color: theme.accent }]} numberOfLines={1}>
+                      {shared.length === 1 ? `Vă place amândurora ${shared[0]}` : `${shared.length} interese în comun`}
+                    </Text>
+                  </View>
+                </AnimatedPressable>
+              ))}
+            </View>
+          )}
 
           {(joined || isHost) && (
             <MeetupPointCard eventId={event.id} userId={user!.id} scheme={scheme} canSet={joined || isHost} senderName={attendeeName} />
@@ -993,6 +1081,14 @@ const styles = StyleSheet.create({
   drinkQuantity: { fontSize: 13, fontWeight: '900' },
   songCover: { width: 38, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   moreSongs: { fontSize: 11, fontWeight: '800', marginTop: 2 },
+  matchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  matchCopy: { flex: 1, minWidth: 0 },
+  matchName: { fontSize: 13, fontWeight: '800' },
+  matchReason: { fontSize: 11, fontWeight: '700', marginTop: 1 },
+  goingAloneRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, marginTop: 4 },
+  goingAloneText: { flex: 1, fontSize: 12, fontWeight: '700' },
+  aloneBadge: { position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  aloneBadgeEmoji: { fontSize: 9 },
   attendeeItem: { alignItems: 'center', width: 52 },
   attendeeAvatar: { width: 44, height: 44, borderRadius: 22 },
   attendeeName: { fontSize: 10, marginTop: 4 },

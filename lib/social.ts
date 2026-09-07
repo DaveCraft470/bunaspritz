@@ -113,6 +113,21 @@ export async function getSuggestedFriends(limit = 10): Promise<SuggestedProfile[
 // Fallback when there are no graph-based suggestions yet (new account, no
 // mutual connections, no shared events): a shuffled page of other people
 // with an account, minus anyone already followed/blocked.
+export type CommonEvent = { eventId: string; title: string; startsAt: string | null };
+
+// "You both attended N events" — via the get_common_events() RPC (security
+// definer, see the migration), since RLS otherwise only lets you read your
+// own event_attendees rows directly.
+export async function getCommonEvents(otherId: string): Promise<CommonEvent[]> {
+  const { data, error } = await supabase.rpc('get_common_events', { p_other_id: otherId });
+  if (error || !data) return [];
+  return (data as { event_id: string; title: string; starts_at: string | null }[]).map((row) => ({
+    eventId: row.event_id,
+    title: row.title,
+    startsAt: row.starts_at,
+  }));
+}
+
 export async function getRandomProfiles(excludeId: string, excludeIds: string[], limit = 10): Promise<Profile[]> {
   const { data, error } = await supabase.from('profiles').select(PROFILE_COLUMNS).neq('id', excludeId).limit(50);
   if (error || !data) return [];

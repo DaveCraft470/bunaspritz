@@ -38,6 +38,7 @@ import { type StoryGroup } from '@/components/stories/StoriesRow';
 import { StoryViewer } from '@/components/stories/StoryViewer';
 import { FriendsHubTabs } from '@/components/friends/FriendsHubTabs';
 import { FriendRow } from '@/components/friends/FriendRow';
+import { getActiveGoingOutIds, subscribeToGoingOut } from '@/lib/goingOut';
 
 export default function Friends() {
   const { colors: theme } = useAppTheme();
@@ -59,6 +60,7 @@ export default function Friends() {
   const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false, blocked: false });
   const [refreshing, setRefreshing] = useState(false);
   const [blocked, setBlocked] = useState<Profile[]>([]);
+  const [goingOutIds, setGoingOutIds] = useState<Set<string>>(new Set());
 
   function load() {
     if (!user) return;
@@ -89,6 +91,19 @@ export default function Friends() {
     if (!user) return;
     return subscribeToFriendRequests(user.id, load);
   }, [user]);
+
+  const friendIdsKey = friends.map((f) => f.id).join(',');
+  useEffect(() => {
+    if (!friends.length) {
+      setGoingOutIds(new Set());
+      return;
+    }
+    const friendIds = friends.map((f) => f.id);
+    const refresh = () => getActiveGoingOutIds(friendIds).then(setGoingOutIds);
+    refresh();
+    return subscribeToGoingOut(refresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [friendIdsKey]);
 
   async function onRefresh() {
     if (!user) return;
@@ -321,6 +336,7 @@ export default function Friends() {
             key={friend.id}
             friend={friend}
             stories={friendStories}
+            goingOut={goingOutIds.has(friend.id)}
             onAvatarPress={() => friendStoryGroup && setViewerStories(friendStoryGroup)}
             onProfilePress={() => router.push(`/user/${friend.id}`)}
             onMessagePress={() => router.push({ pathname: '/messages', params: { friendId: friend.id } })}

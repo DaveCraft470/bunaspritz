@@ -35,11 +35,18 @@ Deno.serve(async (req) => {
     attendedEventsByUser.set(row.user_id, set);
   }
 
-  const frequentUserIds = [...attendedEventsByUser.entries()]
+  const frequentAttendeeIds = [...attendedEventsByUser.entries()]
     .filter(([, events]) => events.size >= FREQUENT_ATTENDEE_THRESHOLD)
     .map(([userId]) => userId);
 
-  if (!frequentUserIds.length) return new Response('no frequent attendees yet', { status: 200 });
+  // Follow Organizer: anyone explicitly following the host gets notified
+  // too, regardless of past attendance — that's the whole point of
+  // following someone instead of waiting to become a "frequent attendee".
+  const { data: followRows } = await admin.from('follows').select('follower_id').eq('followee_id', callerId);
+  const followerIds = (followRows ?? []).map((row) => row.follower_id);
+
+  const frequentUserIds = [...new Set([...frequentAttendeeIds, ...followerIds])];
+  if (!frequentUserIds.length) return new Response('no recipients yet', { status: 200 });
 
   // Excluded if THEY muted the host's activity, or the host hides their own
   // activity from THEM specifically — this second check was missing before,

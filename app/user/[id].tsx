@@ -46,6 +46,9 @@ import {
   getReviews,
   submitReview,
 } from '@/lib/reviews';
+import { CommonEvent, getCommonEvents } from '@/lib/social';
+import { followUser, isFollowing, unfollowUser } from '@/lib/follows';
+import { getFavoriteCategories } from '@/lib/favorites';
 
 export default function PublicProfile() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -68,7 +71,22 @@ export default function PublicProfile() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [safetyMenuOpen, setSafetyMenuOpen] = useState(false);
   const [relationshipUpdating, setRelationshipUpdating] = useState(false);
+  const [following, setFollowing] = useState(false);
+  const [followUpdating, setFollowUpdating] = useState(false);
+  const [commonEvents, setCommonEvents] = useState<CommonEvent[]>([]);
+  const [commonCategories, setCommonCategories] = useState<string[]>([]);
   const userIsBlocked = prefs.blocked;
+
+  async function handleToggleFollow() {
+    if (!user || !id || followUpdating) return;
+    light();
+    setFollowUpdating(true);
+    const next = !following;
+    setFollowing(next);
+    const ok = next ? await followUser(user.id, id) : await unfollowUser(user.id, id);
+    setFollowUpdating(false);
+    if (!ok) setFollowing(!next);
+  }
 
   function loadProfile() {
     if (!user || !id) return;
@@ -92,6 +110,14 @@ export default function PublicProfile() {
     getReviews(id).then(setReviews);
     getReviewSummary(id).then(setReviewSummary);
     if (user.id !== id) getReviewableEvents(id).then(setReviewableEvents);
+    if (user.id !== id) {
+      isFollowing(user.id, id).then(setFollowing);
+      getCommonEvents(id).then(setCommonEvents);
+      Promise.all([getFavoriteCategories(user.id), getFavoriteCategories(id)]).then(([mine, theirs]) => {
+        const mineSet = new Set(mine);
+        setCommonCategories(theirs.filter((c) => mineSet.has(c)));
+      });
+    }
   }
 
   useEffect(loadProfile, [user, id]);
@@ -375,6 +401,53 @@ export default function PublicProfile() {
           </Text>
         )}
 
+        {user?.id !== id && !userIsBlocked && (
+          <AnimatedPressable
+            onPress={handleToggleFollow}
+            disabled={followUpdating}
+            style={[
+              styles.followButton,
+              following
+                ? { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1 }
+                : { backgroundColor: colors.green500 },
+            ]}
+          >
+            <Ionicons name={following ? 'checkmark' : 'add'} size={15} color={following ? theme.textPrimary : colors.white} />
+            <Text style={[styles.followButtonText, { color: following ? theme.textPrimary : colors.white }]}>
+              {following ? 'Urmărești' : 'Urmărește'}
+            </Text>
+          </AnimatedPressable>
+        )}
+
+        {(commonCategories.length > 0 || commonEvents.length > 0) && (
+          <View style={styles.commonSection}>
+            {commonCategories.length > 0 && (
+              <View style={[styles.commonCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.commonTitle, { color: theme.textPrimary }]}>Interese în comun</Text>
+                <View style={styles.commonChips}>
+                  {commonCategories.map((category) => (
+                    <View key={category} style={[styles.commonChip, { backgroundColor: theme.surfaceMuted }]}>
+                      <Text style={[styles.commonChipText, { color: theme.textPrimary }]}>{category}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+            {commonEvents.length > 0 && (
+              <View style={[styles.commonCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.commonTitle, { color: theme.textPrimary }]}>
+                  Ați fost împreună la {commonEvents.length} {commonEvents.length === 1 ? 'eveniment' : 'evenimente'}
+                </Text>
+                {commonEvents.slice(0, 3).map((event) => (
+                  <AnimatedPressable key={event.eventId} onPress={() => router.push(`/event/${event.eventId}`)}>
+                    <Text style={[styles.commonEventText, { color: theme.accent }]} numberOfLines={1}>• {event.title}</Text>
+                  </AnimatedPressable>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
         <View style={styles.reviewsSection}>
           <View style={styles.reviewsHeader}>
             <View style={styles.reviewsSummary}>
@@ -538,6 +611,15 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   blockedBannerText: { flex: 1, fontSize: 12, fontWeight: '600', lineHeight: 17 },
+  followButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, alignSelf: 'center', minHeight: 40, borderRadius: 13, paddingHorizontal: 18, marginTop: 12 },
+  followButtonText: { fontSize: 13, fontWeight: '800' },
+  commonSection: { width: '100%', maxWidth: 360, marginTop: 20, gap: 10 },
+  commonCard: { borderRadius: 16, borderWidth: 1, padding: 13, gap: 8 },
+  commonTitle: { fontSize: 13, fontWeight: '800' },
+  commonChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  commonChip: { borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6 },
+  commonChipText: { fontSize: 11, fontWeight: '700' },
+  commonEventText: { fontSize: 12, fontWeight: '700', marginTop: 2 },
   reviewsSection: { width: '100%', maxWidth: 360, marginTop: 26 },
   reviewsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   reviewsSummary: { flexDirection: 'row', alignItems: 'center', gap: 5 },

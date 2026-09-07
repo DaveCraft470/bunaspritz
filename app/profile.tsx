@@ -15,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { getFriends } from '@/lib/friendRequests';
 import { getUserEventStats } from '@/lib/events';
 import { getReviews, getReviewSummary, type Review, type ReviewSummary } from '@/lib/reviews';
+import { useHaptics } from '@/contexts/HapticsContext';
+import { clearGoingOut, getMyGoingOutStatus, setGoingOut } from '@/lib/goingOut';
 
 // Profile design by raulnitu8 — ported from App.tsx's ProfileScreen onto its
 // own Expo Router screen, matching how app/messages.tsx was ported.
@@ -24,11 +26,30 @@ export default function Profile() {
   const { colors: theme } = useAppTheme();
   const { t } = useLanguage();
   const { user, effectiveVerified } = useUser();
+  const { light } = useHaptics();
   const [friendCount, setFriendCount] = useState(0);
   const [eventStats, setEventStats] = useState({ attended: 0, hosted: 0 });
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewSummary, setReviewSummary] = useState<ReviewSummary>({ average: 0, count: 0 });
   const [refreshing, setRefreshing] = useState(false);
+  const [goingOutActive, setGoingOutActive] = useState(false);
+  const [togglingGoingOut, setTogglingGoingOut] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    getMyGoingOutStatus(user.id).then((status) => setGoingOutActive(!!status));
+  }, [user]);
+
+  async function handleToggleGoingOut() {
+    if (!user || togglingGoingOut) return;
+    light();
+    setTogglingGoingOut(true);
+    const next = !goingOutActive;
+    setGoingOutActive(next);
+    const ok = next ? await setGoingOut(user.id) : await clearGoingOut(user.id);
+    setTogglingGoingOut(false);
+    if (!ok) setGoingOutActive(!next);
+  }
 
   // getFriends/getUserEventStats/getReviews/getReviewSummary already resolve
   // to safe defaults (empty list / zero counts) rather than throwing, so
@@ -103,6 +124,22 @@ export default function Profile() {
         {bio ? <Text style={[styles.bio, { color: theme.textSecondary }]}>{bio}</Text> : null}
         <InstagramLink handle={user?.instagramHandle} />
 
+        <Pressable
+          onPress={handleToggleGoingOut}
+          disabled={togglingGoingOut}
+          style={[
+            styles.goingOutPill,
+            goingOutActive
+              ? { backgroundColor: colors.green500 }
+              : { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 },
+          ]}
+        >
+          <Text style={{ fontSize: 14 }}>🎉</Text>
+          <Text style={[styles.goingOutPillText, { color: goingOutActive ? colors.white : theme.textPrimary }]}>
+            {goingOutActive ? 'Ies în seara asta · Anulează' : 'Ies în seara asta'}
+          </Text>
+        </Pressable>
+
         <View style={[styles.statsRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Pressable style={styles.stat} onPress={() => router.push('/friends')}>
             <Text style={[styles.statNumber, { color: theme.textPrimary }]}>{friendCount}</Text>
@@ -126,6 +163,19 @@ export default function Profile() {
             <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>{t.profile.myEvents}</Text>
             <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
               {t.profile.myEventsDetail}
+            </Text>
+          </View>
+          <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => router.push('/favorites')}
+          style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        >
+          <View style={styles.myEventsCopy}>
+            <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>Preferințe</Text>
+            <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
+              Categorii și locații favorite, pentru recomandări mai bune.
             </Text>
           </View>
           <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
@@ -267,6 +317,8 @@ const styles = StyleSheet.create({
   editButton: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 10, borderWidth: 1 },
   editText: { fontSize: 11, fontWeight: '800' },
   bio: { fontSize: 14, lineHeight: 20, marginTop: 20, marginBottom: 18 },
+  goingOutPill: { flexDirection: 'row', alignSelf: 'center', alignItems: 'center', gap: 7, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 16 },
+  goingOutPillText: { fontSize: 13, fontWeight: '800' },
   statsRow: { flexDirection: 'row', marginVertical: 16, borderRadius: 16, borderWidth: 1 },
   stat: { flex: 1, paddingVertical: 14, alignItems: 'center' },
   statNumber: { fontSize: 19, fontWeight: '800' },
