@@ -10,7 +10,8 @@ export type NotificationType =
   | 'event_cancelled'
   | 'message'
   | 'review'
-  | 'system';
+  | 'system'
+  | 'badge_earned';
 
 export type Notification = {
   id: string;

@@ -11,22 +11,19 @@ import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
-import { getFriends } from '@/lib/friendRequests';
-import { getUserEventStats } from '@/lib/events';
-import { BADGES, BadgeStats } from '@/lib/badges';
+import { BADGE_DEFINITIONS, getUserBadges, type EarnedBadge } from '@/lib/badges';
 
 export default function Badges() {
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
-  const { user, effectiveVerified } = useUser();
-  const [stats, setStats] = useState<BadgeStats>({ attended: 0, hosted: 0, friends: 0, verified: false });
+  const { user } = useUser();
+  const [earnedBadges, setEarnedBadges] = useState<EarnedBadge[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     if (!user) return;
-    const [friends, eventStats] = await Promise.all([getFriends(user.id), getUserEventStats(user.id)]);
-    setStats({ attended: eventStats.attended, hosted: eventStats.hosted, friends: friends.length, verified: effectiveVerified });
-  }, [user, effectiveVerified]);
+    setEarnedBadges(await getUserBadges(user.id));
+  }, [user]);
 
   useEffect(() => {
     load();
@@ -38,8 +35,9 @@ export default function Badges() {
     setRefreshing(false);
   }
 
-  const earned = BADGES.filter((badge) => badge.unlocked(stats));
-  const locked = BADGES.filter((badge) => !badge.unlocked(stats));
+  const earnedIds = new Set(earnedBadges.map((badge) => badge.badgeId));
+  const earned = BADGE_DEFINITIONS.filter((badge) => earnedIds.has(badge.id));
+  const locked = BADGE_DEFINITIONS.filter((badge) => !earnedIds.has(badge.id));
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -68,7 +66,7 @@ export default function Badges() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.green500} />}
       >
         <Text style={[styles.summary, { color: theme.textSecondary }]}>
-          Ai obținut {earned.length} din {BADGES.length} trofee.
+          Ai obținut {earned.length} din {BADGE_DEFINITIONS.length} trofee.
         </Text>
 
         {earned.length > 0 && (
@@ -76,8 +74,12 @@ export default function Badges() {
             <Text style={[styles.sectionLabel, { color: theme.textPrimary }]}>Obținute</Text>
             <View style={styles.grid}>
               {earned.map((badge) => (
-                <View
+                <AnimatedPressable
                   key={badge.id}
+                  onPress={() => {
+                    light();
+                    router.push(`/badge/${badge.id}`);
+                  }}
                   style={[styles.card, { backgroundColor: theme.surface, borderColor: colors.green500 }]}
                 >
                   <View style={[styles.iconCircle, { backgroundColor: theme.surfaceMuted }]}>
@@ -88,7 +90,7 @@ export default function Badges() {
                     <Ionicons name="checkmark-circle" size={14} color={colors.green500} />
                     <Text style={[styles.earnedTagText, { color: colors.green500 }]}>Obținut</Text>
                   </View>
-                </View>
+                </AnimatedPressable>
               ))}
             </View>
           </>
@@ -101,34 +103,19 @@ export default function Badges() {
           </Text>
         ) : (
           <View style={{ gap: spacing.md }}>
-            {locked.map((badge) => {
-              const current = Math.min(badge.current(stats), badge.target ?? 1);
-              const target = badge.target ?? 1;
-              const progressPct = Math.round((current / target) * 100);
-              return (
-                <View key={badge.id} style={[styles.lockedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <View style={styles.lockedTop}>
-                    <View style={[styles.iconCircle, styles.iconCircleLocked, { backgroundColor: theme.surfaceMuted }]}>
-                      <Text style={[styles.emoji, styles.emojiLocked]}>{badge.emoji}</Text>
-                    </View>
-                    <View style={styles.lockedCopy}>
-                      <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>{badge.title}</Text>
-                      <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>{badge.howTo}</Text>
-                    </View>
+            {locked.map((badge) => (
+              <View key={badge.id} style={[styles.lockedCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <View style={styles.lockedTop}>
+                  <View style={[styles.iconCircle, styles.iconCircleLocked, { backgroundColor: theme.surfaceMuted }]}>
+                    <Text style={[styles.emoji, styles.emojiLocked]}>{badge.emoji}</Text>
                   </View>
-                  {badge.target !== null && (
-                    <View style={styles.progressRow}>
-                      <View style={[styles.progressTrack, { backgroundColor: theme.surfaceMuted }]}>
-                        <View style={[styles.progressFill, { width: `${progressPct}%`, backgroundColor: colors.green500 }]} />
-                      </View>
-                      <Text style={[styles.progressText, { color: theme.textSecondary }]}>
-                        {current}/{target}
-                      </Text>
-                    </View>
-                  )}
+                  <View style={styles.lockedCopy}>
+                    <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>{badge.title}</Text>
+                    <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>{badge.howTo}</Text>
+                  </View>
                 </View>
-              );
-            })}
+              </View>
+            ))}
           </View>
         )}
       </ScrollView>
@@ -178,8 +165,4 @@ const styles = StyleSheet.create({
   lockedTop: { flexDirection: 'row', gap: spacing.md },
   lockedCopy: { flex: 1, justifyContent: 'center' },
   rowDetail: { fontSize: 12, marginTop: 3, lineHeight: 16 },
-  progressRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
-  progressTrack: { flex: 1, height: 6, borderRadius: 3, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 3 },
-  progressText: { fontSize: 11, fontWeight: '700' },
 });

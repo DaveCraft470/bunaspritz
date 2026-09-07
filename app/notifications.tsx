@@ -31,6 +31,7 @@ const notificationIcons: Record<Notification['type'], keyof typeof Ionicons.glyp
   message: 'chatbubble-ellipses-outline',
   review: 'star-outline',
   system: 'information-circle-outline',
+  badge_earned: 'trophy-outline',
 };
 
 function formatDate(iso: string, locale: string) {
@@ -101,6 +102,8 @@ export default function Notifications() {
     markRead(notification.id);
     if (notification.type === 'message') {
       router.push('/messages');
+    } else if (notification.type === 'badge_earned') {
+      router.push(`/badge/${notification.targetId}`);
     } else if (notification.type.startsWith('event_') || notification.type === 'system') {
       // 'system' covers join-request/join-response notifications, whose
       // target is always the event, not a user.

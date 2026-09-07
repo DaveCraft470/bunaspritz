@@ -1,99 +1,95 @@
-// Trophy definitions computed client-side from stats the app already tracks
-// (profile.tsx already loads friend count, event stats and verification
-// status for its own cards) — no new backend table needed just to render a
-// progress bar over numbers that already exist.
-export type BadgeStats = { attended: number; hosted: number; friends: number; verified: boolean };
+import { supabase } from '@/lib/supabase';
 
-export type Badge = {
+// The 9 confirmed Trofee — criteria and copy fixed by the user. Award-
+// checking itself is entirely server-side (see award_badges_for_user() in
+// the add_badges migration), triggered off the underlying state change
+// (check-in, review, event creation, verification) rather than any client
+// call site, so this file is purely the display catalog + a reader.
+export type BadgeDefinition = {
   id: string;
   emoji: string;
   title: string;
+  description: string;
   howTo: string;
-  target: number | null; // null = boolean unlock (no progress bar), e.g. verification
-  current: (stats: BadgeStats) => number;
-  unlocked: (stats: BadgeStats) => boolean;
 };
 
-export const BADGES: Badge[] = [
+export const BADGE_DEFINITIONS: BadgeDefinition[] = [
   {
-    id: 'verified',
-    emoji: '🛡️',
-    title: 'Verificat',
-    howTo: 'Verifică-ți identitatea și vârsta din Setări → Verificare identitate.',
-    target: null,
-    current: (s) => (s.verified ? 1 : 0),
-    unlocked: (s) => s.verified,
-  },
-  {
-    id: 'first-event',
-    emoji: '🎉',
-    title: 'Prima ieșire',
+    id: 'primul_pahar',
+    emoji: '🥂',
+    title: 'Primul Pahar',
+    description: 'Ai participat la primul tău eveniment Spritz.',
     howTo: 'Participă și confirmă prezența (check-in) la primul tău eveniment Spritz.',
-    target: 1,
-    current: (s) => s.attended,
-    unlocked: (s) => s.attended >= 1,
   },
   {
-    id: 'regular',
-    emoji: '🍹',
-    title: 'Client fidel',
-    howTo: 'Confirmă prezența la 5 evenimente Spritz.',
-    target: 5,
-    current: (s) => s.attended,
-    unlocked: (s) => s.attended >= 5,
+    id: 'certified_spritzer_minus15',
+    emoji: '🍸',
+    title: 'Certified Spritzer -15',
+    description: 'Ai mers la primul tău spritz.',
+    howTo: 'Mergi la primul tău spritz.',
   },
   {
-    id: 'legend',
+    id: 'pierdut_prin_oras',
+    emoji: '🗺️',
+    title: 'Pierdut prin Oraș',
+    description: 'Ai confirmat prezența la evenimente în 5 locații diferite.',
+    howTo: 'Confirmă prezența (check-in) la evenimente în 5 locații diferite.',
+  },
+  {
+    id: 'inspector_de_spritz',
+    emoji: '🕵️',
+    title: 'Inspector de Spritz',
+    description: 'Ai confirmat prezența la evenimente în 10 locații diferite.',
+    howTo: 'Confirmă prezența (check-in) la evenimente în 10 locații diferite.',
+  },
+  {
+    id: 'good_vibes',
+    emoji: '✨',
+    title: 'Good vibes',
+    description: 'Ai primit 10 recenzii pozitive.',
+    howTo: 'Primește 10 recenzii pozitive (4 stele sau mai mult) de la alți participanți.',
+  },
+  {
+    id: 'main_character',
+    emoji: '🎬',
+    title: 'Main Character',
+    description: 'Ai fost personajul principal al unui spritz.',
+    howTo: 'Primește recenzii pozitive de la 5 persoane sau mai multe de la același eveniment.',
+  },
+  {
+    id: 'project_x',
+    emoji: '🚀',
+    title: 'project X',
+    description: 'Ai găzduit primul tău eveniment.',
+    howTo: 'Organizează primul tău eveniment.',
+  },
+  {
+    id: 'spritz_boss',
     emoji: '👑',
-    title: 'Legendă Spritz',
-    howTo: 'Confirmă prezența la 15 evenimente Spritz.',
-    target: 15,
-    current: (s) => s.attended,
-    unlocked: (s) => s.attended >= 15,
+    title: 'Spritz Boss',
+    description: 'Ai găzduit 10 evenimente.',
+    howTo: 'Găzduiește 10 evenimente.',
   },
   {
-    id: 'host',
-    emoji: '🎪',
-    title: 'Prima gazdă',
-    howTo: 'Organizează primul tău eveniment din butonul „Adaugă eveniment nou”.',
-    target: 1,
-    current: (s) => s.hosted,
-    unlocked: (s) => s.hosted >= 1,
-  },
-  {
-    id: 'super-host',
-    emoji: '🌟',
-    title: 'Gazdă de nota 10',
-    howTo: 'Organizează 5 evenimente.',
-    target: 5,
-    current: (s) => s.hosted,
-    unlocked: (s) => s.hosted >= 5,
-  },
-  {
-    id: 'friendly',
-    emoji: '🤝',
-    title: 'Sociabil',
-    howTo: 'Adaugă 3 prieteni din tab-ul Prieteni.',
-    target: 3,
-    current: (s) => s.friends,
-    unlocked: (s) => s.friends >= 3,
-  },
-  {
-    id: 'popular',
-    emoji: '🦋',
-    title: 'Fluture social',
-    howTo: 'Ajunge la 10 prieteni.',
-    target: 10,
-    current: (s) => s.friends,
-    unlocked: (s) => s.friends >= 10,
-  },
-  {
-    id: 'networker',
-    emoji: '🌐',
-    title: 'Regele rețelei',
-    howTo: 'Ajunge la 25 de prieteni.',
-    target: 25,
-    current: (s) => s.friends,
-    unlocked: (s) => s.friends >= 25,
+    id: 'identity_verified',
+    emoji: '🛡️',
+    title: 'Identity Verified',
+    description: 'Identitatea ta a fost verificată.',
+    howTo: 'Verifică-ți identitatea și vârsta din Setări → Verificare identitate.',
   },
 ];
+
+export function getBadgeDefinition(badgeId: string): BadgeDefinition | undefined {
+  return BADGE_DEFINITIONS.find((badge) => badge.id === badgeId);
+}
+
+export type EarnedBadge = {
+  badgeId: string;
+  earnedAt: string;
+  eventId: string | null;
+};
+
+export async function getUserBadges(userId: string): Promise<EarnedBadge[]> {
+  const { data } = await supabase.from('user_badges').select('badge_id, earned_at, event_id').eq('user_id', userId);
+  return (data ?? []).map((row) => ({ badgeId: row.badge_id, earnedAt: row.earned_at, eventId: row.event_id }));
+}
