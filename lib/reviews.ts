@@ -15,26 +15,6 @@ export type ReviewSummary = { average: number; count: number };
 
 export type ReviewableEvent = { eventId: string; title: string };
 
-export type GivenReview = {
-  id: string;
-  eventId: string;
-  subjectId: string;
-  subjectName: string;
-  subjectUsername: string;
-  rating: number;
-  comment: string;
-  createdAt: string;
-};
-
-export type PendingReview = {
-  eventId: string;
-  eventTitle: string;
-  subjectId: string;
-  subjectName: string;
-  subjectUsername: string;
-  subjectAvatarUrl: string | null;
-};
-
 type ReviewRow = {
   id: string;
   event_id: string;
@@ -79,64 +59,6 @@ export async function getReviewableEvents(subjectId: string): Promise<Reviewable
   const { data, error } = await supabase.rpc('reviewable_events', { p_subject_id: subjectId });
   if (error || !data) return [];
   return data.map((row: { event_id: string; title: string }) => ({ eventId: row.event_id, title: row.title }));
-}
-
-type GivenReviewRow = {
-  id: string;
-  event_id: string;
-  subject_id: string;
-  rating: number;
-  comment: string;
-  created_at: string;
-  profiles: { name: string; username: string } | null;
-};
-
-// Reviews the caller has given to others ("Trimise").
-export async function getReviewsGiven(reviewerId: string): Promise<GivenReview[]> {
-  const { data, error } = await supabase
-    .from('reviews')
-    .select('id, event_id, subject_id, rating, comment, created_at, profiles!reviews_subject_id_fkey(name, username)')
-    .eq('reviewer_id', reviewerId)
-    .order('created_at', { ascending: false });
-
-  if (error || !data) return [];
-  return (data as unknown as GivenReviewRow[]).map((row) => ({
-    id: row.id,
-    eventId: row.event_id,
-    subjectId: row.subject_id,
-    subjectName: row.profiles?.name ?? '',
-    subjectUsername: row.profiles?.username ?? '',
-    rating: row.rating,
-    comment: row.comment,
-    createdAt: row.created_at,
-  }));
-}
-
-// Every (event, co-attendee) pair the caller can currently review, across
-// all of their events — the "De acordat" queue. See reviewable_pending_for_me
-// in supabase/migrations for the exact eligibility rules (shared attendance,
-// past the time gate, not already reviewed or dismissed).
-export async function getReviewablePending(): Promise<PendingReview[]> {
-  const { data, error } = await supabase.rpc('reviewable_pending_for_me');
-  if (error || !data) return [];
-  return (data as any[]).map((row) => ({
-    eventId: row.event_id,
-    eventTitle: row.event_title,
-    subjectId: row.subject_id,
-    subjectName: row.subject_name ?? '',
-    subjectUsername: row.subject_username ?? '',
-    subjectAvatarUrl: row.subject_avatar_url,
-  }));
-}
-
-// Dismissing a pending review just hides it from the queue — it's not a
-// review (no rating recorded) and doesn't block reviewing the same person
-// from a different shared event later.
-export async function dismissReviewable(reviewerId: string, eventId: string, subjectId: string): Promise<boolean> {
-  const { error } = await supabase
-    .from('review_dismissals')
-    .insert({ reviewer_id: reviewerId, event_id: eventId, subject_id: subjectId });
-  return !error;
 }
 
 export async function submitReview(

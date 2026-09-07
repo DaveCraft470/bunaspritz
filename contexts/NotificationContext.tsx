@@ -4,26 +4,18 @@ import { useUser } from '@/contexts/UserContext';
 import { supabase } from '@/lib/supabase';
 import { freshChannel } from '@/lib/realtime';
 import { getHostJoinRequests } from '@/lib/events';
-import { getReviewablePending } from '@/lib/reviews';
 import {
   getNotifications,
-  getNotificationById,
-  getRealNotifications,
   getUnreadNotificationCount,
-  getUnreadRealNotificationCount,
   markAllNotificationsRead,
-  markAllRealNotificationsRead,
   markNotificationRead,
-  markRealNotificationRead,
   subscribeToNotifications,
-  subscribeToRealNotifications,
   type Notification,
 } from '@/lib/notifications';
 
 type NotificationContextValue = {
   notifications: Notification[];
   unreadCount: number;
-  pendingReviewCount: number;
   markRead: (notificationId: string) => void;
   markAllRead: () => void;
 };
@@ -34,34 +26,8 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   const { user } = useUser();
   const [version, setVersion] = useState(0);
   const [joinRequestCount, setJoinRequestCount] = useState(0);
-  const [pendingReviewCount, setPendingReviewCount] = useState(0);
-  const [realNotifications, setRealNotifications] = useState<Notification[]>([]);
-  const [realUnreadCount, setRealUnreadCount] = useState(0);
 
-  // event_invite has no backend (see lib/eventInvitations.ts) — that's the
-  // only type still served by the local array. Every other type now has a
-  // real, persisted row inserted by its notify-* edge function.
   useEffect(() => subscribeToNotifications(() => setVersion((current) => current + 1)), []);
-
-  const refreshRealNotifications = useCallback(async () => {
-    if (!user) {
-      setRealNotifications([]);
-      setRealUnreadCount(0);
-      return;
-    }
-    const [list, count] = await Promise.all([getRealNotifications(user.id), getUnreadRealNotificationCount()]);
-    setRealNotifications(list);
-    setRealUnreadCount(count);
-  }, [user]);
-
-  useEffect(() => {
-    refreshRealNotifications();
-  }, [refreshRealNotifications]);
-
-  useEffect(() => {
-    if (!user) return;
-    return subscribeToRealNotifications(user.id, refreshRealNotifications);
-  }, [user, refreshRealNotifications]);
 
   const refreshJoinRequestCount = useCallback(async () => {
     if (!user) {
@@ -74,18 +40,6 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     refreshJoinRequestCount();
   }, [refreshJoinRequestCount]);
-
-  const refreshPendingReviewCount = useCallback(async () => {
-    if (!user) {
-      setPendingReviewCount(0);
-      return;
-    }
-    setPendingReviewCount((await getReviewablePending()).length);
-  }, [user]);
-
-  useEffect(() => {
-    refreshPendingReviewCount();
-  }, [refreshPendingReviewCount]);
 
   // A nudge to recount, not the source of truth itself — any insert, accept,
   // or reject this user's RLS policies let them see on event_join_requests
@@ -104,28 +58,13 @@ export function NotificationProvider({ children }: PropsWithChildren) {
 
   const value = useMemo<NotificationContextValue>(() => {
     const recipientId = user?.id ?? '';
-    const localInvites = recipientId ? getNotifications(recipientId).filter((n) => n.type === 'event_invite') : [];
-    const localUnread = localInvites.filter((n) => !n.readAt).length;
-
     return {
-      notifications: [...realNotifications, ...localInvites].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-      unreadCount: realUnreadCount + localUnread + joinRequestCount + pendingReviewCount,
-      pendingReviewCount,
-      markRead: (notificationId) => {
-        if (!recipientId) return;
-        if (getNotificationById(notificationId)) {
-          markNotificationRead(recipientId, notificationId);
-        } else {
-          markRealNotificationRead(notificationId).then(refreshRealNotifications);
-        }
-      },
-      markAllRead: () => {
-        if (!recipientId) return;
-        markAllNotificationsRead(recipientId);
-        markAllRealNotificationsRead().then(refreshRealNotifications);
-      },
+      notifications: recipientId ? getNotifications(recipientId) : [],
+      unreadCount: (recipientId ? getUnreadNotificationCount(recipientId) : 0) + joinRequestCount,
+      markRead: (notificationId) => recipientId && markNotificationRead(recipientId, notificationId),
+      markAllRead: () => recipientId && markAllNotificationsRead(recipientId),
     };
-  }, [user?.id, version, joinRequestCount, pendingReviewCount, realNotifications, realUnreadCount, refreshRealNotifications]);
+  }, [user?.id, version, joinRequestCount]);
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;
 }

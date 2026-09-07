@@ -28,6 +28,7 @@ export async function sendEventGroupMessage(
   senderId: string,
   text: string
 ): Promise<DbGroupMessage | null> {
+  if (text.length > 500) return null;
   const { data, error } = await supabase
     .from('event_group_messages')
     .insert({ event_id: eventId, sender_id: senderId, text })

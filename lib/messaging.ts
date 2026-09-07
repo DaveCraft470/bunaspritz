@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { freshChannel } from '@/lib/realtime';
+import { createNotification } from '@/lib/notifications';
 
 const MEDIA_BUCKET = 'message-media';
 // Fetched once per bubble mount and cached in component state (see
@@ -92,6 +93,7 @@ export async function markThreadRead(myId: string, friendId: string): Promise<vo
 }
 
 export async function sendDirectMessage(myId: string, friendId: string, text: string): Promise<DbMessage | null> {
+  if (text.length > 500) return null;
   const { data, error } = await supabase
     .from('messages')
     .insert({ sender_id: myId, recipient_id: friendId, text })
@@ -101,8 +103,15 @@ export async function sendDirectMessage(myId: string, friendId: string, text: st
   if (error) return null;
 
   // Best-effort — a failed push shouldn't undo an already-sent message.
-  // notify-message inserts the real notifications row itself.
   supabase.functions.invoke('notify-message', { body: { messageId: data.id } }).catch(() => {});
+  createNotification({
+    type: 'message',
+    actorId: myId,
+    recipientId: friendId,
+    targetId: friendId,
+    title: 'Mesaj nou',
+    body: 'Ai primit un mesaj nou.',
+  });
 
   return data;
 }
@@ -154,8 +163,15 @@ export async function sendMediaMessage(
     return null;
   }
 
-  // notify-message inserts the real notifications row itself.
   supabase.functions.invoke('notify-message', { body: { messageId: data.id } }).catch(() => {});
+  createNotification({
+    type: 'message',
+    actorId: myId,
+    recipientId: friendId,
+    targetId: friendId,
+    title: 'Mesaj nou',
+    body: 'Ai primit un mesaj nou.',
+  });
 
   return data;
 }

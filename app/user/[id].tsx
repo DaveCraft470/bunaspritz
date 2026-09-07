@@ -35,6 +35,7 @@ import {
   getIncomingFriendRequests,
   rejectFriendRequest,
   sendFriendRequest,
+  getLocalProfile,
   type RelationshipStatus,
 } from '@/lib/friendRequests';
 import {
@@ -76,18 +77,18 @@ export default function PublicProfile() {
     setProfileError(false);
     getProfile(id)
       .then((result) => {
-        setProfile(result);
+        const resolvedProfile = result ?? getLocalProfile(id);
+        setProfile(resolvedProfile);
         setProfileLoading(false);
-        if (!result) setProfileError(true);
+        if (!resolvedProfile) setProfileError(true);
       })
       .catch(() => {
         setProfileLoading(false);
         setProfileError(true);
       });
     getFriendRequestStatus(user.id, id).then(setRelationship);
-    getIncomingFriendRequests(user.id).then((incoming) => {
-      setRequestId(incoming.find((request) => request.senderId === id)?.id ?? null);
-    });
+    const incoming = getIncomingFriendRequests(user.id).find((request) => request.senderId === id);
+    setRequestId(incoming?.id ?? null);
     getFriendPrefs(user.id, id).then(setPrefs);
     getReviews(id).then(setReviews);
     getReviewSummary(id).then(setReviewSummary);
@@ -103,15 +104,14 @@ export default function PublicProfile() {
       const result = await getProfile(id);
       setProfile(result);
       setProfileError(!result);
-      const [relationshipStatus, incoming, friendPrefs, reviewsList, summary] = await Promise.all([
+      const [relationshipStatus, friendPrefs, reviewsList, summary] = await Promise.all([
         getFriendRequestStatus(user.id, id),
-        getIncomingFriendRequests(user.id),
         getFriendPrefs(user.id, id),
         getReviews(id),
         getReviewSummary(id),
       ]);
       setRelationship(relationshipStatus);
-      setRequestId(incoming.find((request) => request.senderId === id)?.id ?? null);
+      setRequestId(getIncomingFriendRequests(user.id).find((request) => request.senderId === id)?.id ?? null);
       setPrefs(friendPrefs);
       setReviews(reviewsList);
       setReviewSummary(summary);
@@ -139,18 +139,16 @@ export default function PublicProfile() {
     light();
     setRelationshipUpdating(true);
     const currentRequestId = requestId;
-    let result: { ok: true; request?: unknown } | { ok: false; error: string };
-    if (action === 'send') {
-      result = await sendFriendRequest(user.id, id);
-    } else if (!currentRequestId) {
-      result = { ok: false, error: 'Cererea nu mai este disponibilă.' };
-    } else if (action === 'cancel') {
-      result = await cancelFriendRequest(user.id, currentRequestId);
-    } else if (action === 'accept') {
-      result = await acceptFriendRequest(user.id, currentRequestId);
-    } else {
-      result = await rejectFriendRequest(user.id, currentRequestId);
-    }
+    const result =
+      action === 'send'
+        ? await sendFriendRequest(user.id, id)
+        : !currentRequestId
+          ? { ok: false as const, error: 'Cererea nu mai este disponibilă.' }
+          : action === 'cancel'
+            ? cancelFriendRequest(user.id, currentRequestId)
+            : action === 'accept'
+              ? acceptFriendRequest(user.id, currentRequestId)
+              : rejectFriendRequest(user.id, currentRequestId);
 
     if (result.ok) {
       setRelationship(action === 'send' ? 'outgoing_pending' : action === 'accept' ? 'friends' : 'none');
@@ -400,7 +398,7 @@ export default function PublicProfile() {
           </View>
 
           {reviews.length === 0 ? (
-            <Text style={[styles.reviewsEmpty, { color: theme.textSecondary }]}>Încă nu a primit niciun review.</Text>
+            <Text style={[styles.reviewsEmpty, { color: theme.textSecondary }]}>Niciun review încă.</Text>
           ) : (
             reviews.map((review) => (
               <View key={review.id} style={[styles.reviewCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>

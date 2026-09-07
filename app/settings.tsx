@@ -1,4 +1,4 @@
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { StyleSheet, Switch, Text, View, ScrollView } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -66,24 +66,28 @@ export default function Settings() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
       <StatusBar style={theme.statusBar} />
 
-      <View style={styles.topBar}>
-        <AnimatedPressable
-          onPress={() => {
-            light();
-            router.back();
-          }}
-          hitSlop={10}
-          accessibilityLabel={t.common.back}
-          style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
-        >
-          <GlassSurface />
-          <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
-        </AnimatedPressable>
-        <Text style={[styles.title, { color: theme.textPrimary }]}>{t.settings.title}</Text>
-        <View style={styles.backButton} />
-      </View>
-
-      <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.topBar}>
+          <AnimatedPressable
+            onPress={() => {
+              light();
+              router.back();
+            }}
+            hitSlop={10}
+            accessibilityLabel={t.common.back}
+            style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
+          >
+            <GlassSurface />
+            <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
+          </AnimatedPressable>
+          <Text style={[styles.title, { color: theme.textPrimary }]}>{t.settings.title}</Text>
+          <View style={styles.backButton} />
+        </View>
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
         <View style={styles.row}>
           <View style={styles.rowText}>
             <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>{t.settings.language}</Text>
@@ -287,6 +291,7 @@ export default function Settings() {
         </View>
         <Ionicons name="log-out-outline" size={18} color={DANGER_COLOR} />
       </AnimatedPressable>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -345,4 +350,10 @@ const styles = StyleSheet.create({
     borderRadius: 9,
   },
   langOptionText: { fontSize: 13, fontWeight: '700' },
+  scrollView: {
+    flexGrow: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: spacing.lg,
+  },
 });

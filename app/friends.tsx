@@ -20,7 +20,7 @@ import { FriendPrefsModal } from '@/components/social/FriendPrefsModal';
 import { ReportModal } from '@/components/social/ReportModal';
 import { SafetyMenu } from '@/components/social/SafetyMenu';
 import { USER_REPORT_REASONS } from '@/lib/reports';
-import { FriendPrefs, Profile, blockUser, getBlockedProfiles, getFriendPrefs, setFriendPrefs, unblockUser } from '@/lib/social';
+import { FriendPrefs, Profile, blockUser, getBlockedProfiles, getFriendPrefs, setFriendPrefs, unblockUser, unfollow } from '@/lib/social';
 import {
   acceptFriendRequest,
   cancelFriendRequest,
@@ -85,10 +85,7 @@ export default function Friends() {
   }
 
   useEffect(load, [user]);
-  useEffect(() => {
-    if (!user) return;
-    return subscribeToFriendRequests(user.id, load);
-  }, [user]);
+  useEffect(() => subscribeToFriendRequests(load), [user]);
 
   async function onRefresh() {
     if (!user) return;
@@ -146,8 +143,11 @@ export default function Friends() {
             showAlert('A apărut o eroare', 'Nu am putut bloca acest cont. Încearcă din nou.');
             return;
           }
-          // block_user() already cancels pending requests and deletes the
-          // friendships row server-side — no separate unfriend() call needed.
+          // getFriends() also reads the in-memory friend-request store — if
+          // an accepted request is left there, the next load() would put
+          // this person right back in the friends list even though the DB
+          // side (follows/friend_prefs) is already severed.
+          removeFriend(user.id, friend.id);
           setFriends((current) => current.filter((f) => f.id !== friend.id));
           setBlocked((current) => [...current, friend]);
           setMenuFor(null);
@@ -184,7 +184,8 @@ export default function Friends() {
         style: 'destructive',
         onPress: async () => {
           if (!user) return;
-          const ok = await removeFriend(user.id, friend.id);
+          const localRemoved = removeFriend(user.id, friend.id);
+          const ok = localRemoved || (await unfollow(user.id, friend.id));
           if (!ok) {
             showAlert(t.friends.genericErrorTitle, t.friends.errorRemovingFriend);
             return;
@@ -257,14 +258,8 @@ export default function Friends() {
                   theme={theme}
                   primaryLabel={t.friends.accept}
                   secondaryLabel={t.friends.decline}
-                  onPrimary={async () => {
-                    const result = await acceptFriendRequest(user!.id, request.id);
-                    if (result.ok) load();
-                  }}
-                  onSecondary={async () => {
-                    const result = await rejectFriendRequest(user!.id, request.id);
-                    if (result.ok) load();
-                  }}
+                  onPrimary={() => acceptFriendRequest(user!.id, request.id)}
+                  onSecondary={() => rejectFriendRequest(user!.id, request.id)}
                 />
               );
             })}
@@ -286,10 +281,7 @@ export default function Friends() {
                   secondaryLabel={t.friends.cancelRequest}
                   primaryDisabled
                   onPrimary={() => {}}
-                  onSecondary={async () => {
-                    const result = await cancelFriendRequest(user!.id, request.id);
-                    if (result.ok) load();
-                  }}
+                  onSecondary={() => cancelFriendRequest(user!.id, request.id)}
                 />
               );
             })}

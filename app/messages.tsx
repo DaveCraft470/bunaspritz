@@ -58,7 +58,7 @@ import {
 // Sentinel playingMessageId for the not-yet-sent recording preview — no real
 // message has this id, so it can share the shared voicePlayer/playingMessageId
 // state with the sent-message bubbles without colliding.
-const MESSAGE_MAX_LENGTH = 1000;
+const MESSAGE_MAX_LENGTH = 500;
 
 const VOICE_PREVIEW_ID = '__voice-preview__';
 
@@ -931,6 +931,7 @@ export default function Messages() {
 
   async function sendMessage() {
     const text = draft.trim();
+    if (text.length > MESSAGE_MAX_LENGTH) return;
     if (!text || !activeChat) return;
     light();
     setDraft('');

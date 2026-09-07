@@ -227,7 +227,7 @@ export default function Discover() {
         ) : (
           <View style={styles.state}>
             <Text style={[styles.stateTitle, { color: theme.textPrimary }]}>{t.discover.noEventsFound}</Text>
-            {filters.query && <Text style={[styles.stateText, { color: theme.textSecondary }]}>{t.discover.tryAnotherSearchTerm}</Text>}
+            {Boolean(filters.query) && <Text style={[styles.stateText, { color: theme.textSecondary }]}>{t.discover.tryAnotherSearchTerm}</Text>}
             <AnimatedPressable onPress={() => setFilters(DEFAULT_DISCOVERY_FILTERS)} style={[styles.retryButton, { borderColor: theme.border }]}>
               <Text style={[styles.retryText, { color: theme.textPrimary }]}>{t.discover.resetFiltersButton}</Text>
             </AnimatedPressable>

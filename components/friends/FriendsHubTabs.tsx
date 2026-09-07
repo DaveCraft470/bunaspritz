@@ -50,6 +50,23 @@ export function FriendsHubTabs({ active }: { active: HubTab }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flexDirection: 'row', marginHorizontal: spacing.lg, marginBottom: spacing.md, padding: 4, borderWidth: 1, borderRadius: 16 },
-  tab: { flex: 1, minHeight: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  container: {
+    width: '90%',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+    padding: 4,
+    borderWidth: 1,
+    borderRadius: 16,
+  },
+  tab: {
+    flex: 1,
+    minWidth: 48,
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    marginHorizontal: 2,
+  },
 });
