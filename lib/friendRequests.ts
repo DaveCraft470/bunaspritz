@@ -1,5 +1,6 @@
-import { getFollowStatus, getMutualFriends, getProfiles, type Profile } from '@/lib/social';
-import { createNotification } from '@/lib/notifications';
+import { supabase } from '@/lib/supabase';
+import { freshChannel } from '@/lib/realtime';
+import { getProfiles, type Profile } from '@/lib/social';
 
 export type FriendRequestStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled';
 
@@ -15,260 +16,186 @@ export type RelationshipStatus = 'none' | 'outgoing_pending' | 'incoming_pending
 
 type OperationResult = { ok: true; request?: FriendRequest } | { ok: false; error: string };
 
-type Listener = () => void;
+type DbFriendRequest = {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  status: FriendRequestStatus;
+  created_at: string;
+  updated_at: string;
+};
 
-const requests: FriendRequest[] = [];
-const listeners = new Set<Listener>();
-const localProfiles = new Map<string, Profile>();
-
-function emit() {
-  listeners.forEach((listener) => listener());
-}
-
-export function subscribeToFriendRequests(listener: Listener) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
+function fromDb(row: DbFriendRequest): FriendRequest {
+  return {
+    id: row.id,
+    senderId: row.sender_id,
+    receiverId: row.receiver_id,
+    createdAt: row.created_at,
+    status: row.status,
   };
 }
 
-export function getLocalProfile(id: string): Profile | null {
-  return localProfiles.get(id) ?? null;
-}
-
-function getPairRequest(myId: string, otherId: string) {
-  return requests.find(
-    (request) =>
-      request.status === 'pending' &&
-      ((request.senderId === myId && request.receiverId === otherId) ||
-        (request.senderId === otherId && request.receiverId === myId)),
-  );
-}
-
-function getAcceptedPairRequest(myId: string, otherId: string) {
-  return requests.find(
-    (request) =>
-      request.status === 'accepted' &&
-      ((request.senderId === myId && request.receiverId === otherId) ||
-        (request.senderId === otherId && request.receiverId === myId)),
-  );
+function pairFilter(myId: string, otherId: string) {
+  return `and(sender_id.eq.${myId},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${myId})`;
 }
 
 export async function getFriendRequestStatus(myId: string, otherId: string): Promise<RelationshipStatus> {
   if (!myId || !otherId || myId === otherId) return 'none';
-  if (getAcceptedPairRequest(myId, otherId)) return 'friends';
 
-  const pending = getPairRequest(myId, otherId);
-  if (pending) return pending.senderId === myId ? 'outgoing_pending' : 'incoming_pending';
+  const { data: friends } = await supabase.rpc('are_friends', { a: myId, b: otherId });
+  if (friends) return 'friends';
 
-  // Legacy compatibility: existing mutual follows remain message-capable friends
-  // until the backend has a real friendship table and its RLS policy is migrated.
-  const followStatus = await getFollowStatus(myId, otherId);
-  return followStatus.mutual ? 'friends' : 'none';
+  const { data: pending } = await supabase
+    .from('friend_requests')
+    .select('sender_id, receiver_id')
+    .or(pairFilter(myId, otherId))
+    .eq('status', 'pending')
+    .limit(1);
+
+  const row = pending?.[0];
+  if (!row) return 'none';
+  return row.sender_id === myId ? 'outgoing_pending' : 'incoming_pending';
+}
+
+// Batched version of getFriendRequestStatus for a list of people (e.g. search
+// results) — 2 queries total instead of one round-trip per person.
+export async function getFriendRequestStatuses(
+  myId: string,
+  otherIds: string[],
+): Promise<Record<string, RelationshipStatus>> {
+  const result: Record<string, RelationshipStatus> = {};
+  if (!otherIds.length) return result;
+  otherIds.forEach((id) => (result[id] = 'none'));
+
+  const [{ data: friendships }, { data: pendingRequests }] = await Promise.all([
+    supabase.from('friendships').select('user_a, user_b'),
+    supabase
+      .from('friend_requests')
+      .select('sender_id, receiver_id')
+      .eq('status', 'pending')
+      .or(`sender_id.eq.${myId},receiver_id.eq.${myId}`),
+  ]);
+
+  const friendIds = new Set(
+    (friendships ?? [])
+      .filter((row) => row.user_a === myId || row.user_b === myId)
+      .map((row) => (row.user_a === myId ? row.user_b : row.user_a)),
+  );
+  (pendingRequests ?? []).forEach((row) => {
+    const otherId = row.sender_id === myId ? row.receiver_id : row.sender_id;
+    if (!(otherId in result)) return;
+    result[otherId] = row.sender_id === myId ? 'outgoing_pending' : 'incoming_pending';
+  });
+  otherIds.forEach((id) => {
+    if (friendIds.has(id)) result[id] = 'friends';
+  });
+
+  return result;
 }
 
 export async function sendFriendRequest(senderId: string, receiverId: string): Promise<OperationResult> {
   if (!senderId || !receiverId || senderId === receiverId) {
     return { ok: false, error: 'Nu poți trimite o cerere către propriul profil.' };
   }
-  if (getAcceptedPairRequest(senderId, receiverId)) return { ok: false, error: 'Sunteți deja prieteni.' };
 
-  const existing = getPairRequest(senderId, receiverId);
-  if (existing) {
-    return {
-      ok: false,
-      error: existing.senderId === senderId ? 'Cererea a fost deja trimisă.' : 'Ai deja o cerere primită de la această persoană.',
-    };
+  const { data, error } = await supabase.rpc('send_friend_request', { p_receiver_id: receiverId });
+  if (error || !data) {
+    const message = error?.message.includes('already friends')
+      ? 'Sunteți deja prieteni.'
+      : 'Nu am putut trimite cererea. Încearcă din nou.';
+    return { ok: false, error: message };
   }
 
-  const request: FriendRequest = {
-    id: `friend-request-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    senderId,
-    receiverId,
-    createdAt: new Date().toISOString(),
-    status: 'pending',
-  };
-  requests.push(request);
-  emit();
-  createNotification({
-    type: 'friend_request',
-    actorId: senderId,
-    recipientId: receiverId,
-    targetId: senderId,
-    title: 'Cerere nouă de prietenie',
-    body: 'Cineva vrea să fie prieten cu tine.',
-  });
+  const request = fromDb(data as DbFriendRequest);
+  // notify-friend-request inserts the real notifications row itself (it
+  // inspects the friend_requests row to pick "new request" vs "accepted"
+  // copy) — no client-side notification write needed here.
+  supabase.functions.invoke('notify-friend-request', { body: { receiverId } }).catch(() => {});
+
   return { ok: true, request };
 }
 
-export function acceptFriendRequest(myId: string, requestId: string): OperationResult {
-  const request = requests.find((item) => item.id === requestId && item.receiverId === myId && item.status === 'pending');
-  if (!request) return { ok: false, error: 'Cererea nu mai este disponibilă.' };
+export async function acceptFriendRequest(myId: string, requestId: string): Promise<OperationResult> {
+  const { data, error } = await supabase.rpc('accept_friend_request', { p_request_id: requestId });
+  if (error || !data) return { ok: false, error: 'Cererea nu mai este disponibilă.' };
 
-  request.status = 'accepted';
-  emit();
-  createNotification({
-    type: 'friend_request_accepted',
-    actorId: myId,
-    recipientId: request.senderId,
-    targetId: myId,
-    title: 'Cererea de prietenie a fost acceptată',
-    body: 'Acum sunteți prieteni.',
-  });
+  const request = fromDb(data as DbFriendRequest);
+  // The original sender is the one who should be told their request was
+  // accepted — notify-friend-request looks up the row itself, picks the
+  // right copy based on its current status, and inserts the real
+  // notifications row (no client-side write needed here).
+  supabase.functions.invoke('notify-friend-request', { body: { receiverId: request.senderId } }).catch(() => {});
+
   return { ok: true, request };
 }
 
-export function rejectFriendRequest(myId: string, requestId: string): OperationResult {
-  const request = requests.find((item) => item.id === requestId && item.receiverId === myId && item.status === 'pending');
-  if (!request) return { ok: false, error: 'Cererea nu mai este disponibilă.' };
-  request.status = 'rejected';
-  emit();
-  return { ok: true, request };
+export async function rejectFriendRequest(myId: string, requestId: string): Promise<OperationResult> {
+  const { data, error } = await supabase.rpc('reject_friend_request', { p_request_id: requestId });
+  if (error || !data) return { ok: false, error: 'Cererea nu mai este disponibilă.' };
+  return { ok: true, request: fromDb(data as DbFriendRequest) };
 }
 
-export function cancelFriendRequest(myId: string, requestId: string): OperationResult {
-  const request = requests.find((item) => item.id === requestId && item.senderId === myId && item.status === 'pending');
-  if (!request) return { ok: false, error: 'Cererea nu mai este disponibilă.' };
-  request.status = 'cancelled';
-  emit();
-  return { ok: true, request };
+export async function cancelFriendRequest(myId: string, requestId: string): Promise<OperationResult> {
+  const { data, error } = await supabase.rpc('cancel_friend_request', { p_request_id: requestId });
+  if (error || !data) return { ok: false, error: 'Cererea nu mai este disponibilă.' };
+  return { ok: true, request: fromDb(data as DbFriendRequest) };
 }
 
-export function removeFriend(myId: string, otherId: string): boolean {
-  const request = getAcceptedPairRequest(myId, otherId);
-  if (!request) return false;
-  request.status = 'rejected';
-  emit();
-  return true;
+export async function removeFriend(myId: string, otherId: string): Promise<boolean> {
+  const { error } = await supabase.rpc('unfriend', { p_other_id: otherId });
+  return !error;
 }
 
-export function getIncomingFriendRequests(myId: string): FriendRequest[] {
-  return requests.filter((request) => request.receiverId === myId && request.status === 'pending');
+export async function getIncomingFriendRequests(myId: string): Promise<FriendRequest[]> {
+  const { data } = await supabase
+    .from('friend_requests')
+    .select('*')
+    .eq('receiver_id', myId)
+    .eq('status', 'pending');
+  return (data ?? []).map(fromDb);
 }
 
-export function getOutgoingFriendRequests(myId: string): FriendRequest[] {
-  return requests.filter((request) => request.senderId === myId && request.status === 'pending');
+export async function getOutgoingFriendRequests(myId: string): Promise<FriendRequest[]> {
+  const { data } = await supabase
+    .from('friend_requests')
+    .select('*')
+    .eq('sender_id', myId)
+    .eq('status', 'pending');
+  return (data ?? []).map(fromDb);
 }
 
 export async function getFriends(myId: string): Promise<Profile[]> {
-  const localFriendIds = requests
-    .filter(
-      (request) =>
-        request.status === 'accepted' && (request.senderId === myId || request.receiverId === myId),
-    )
-    .map((request) => (request.senderId === myId ? request.receiverId : request.senderId));
-  const legacyFriends = await getMutualFriends(myId);
-  const legacyIds = legacyFriends.map((profile) => profile.id);
-  const ids = [...new Set([...localFriendIds, ...legacyIds])];
+  const { data } = await supabase.from('friendships').select('user_a, user_b').or(`user_a.eq.${myId},user_b.eq.${myId}`);
+  const ids = (data ?? []).map((row) => (row.user_a === myId ? row.user_b : row.user_a));
   if (!ids.length) return [];
-
-  const remoteProfiles = await getProfiles(ids);
-  const remoteById = new Map(remoteProfiles.map((profile) => [profile.id, profile]));
-  return ids.map((id) => remoteById.get(id) ?? localProfiles.get(id)).filter((profile): profile is Profile => !!profile);
+  return getProfiles(ids);
 }
 
 export async function getRequestProfiles(requestsForUser: FriendRequest[]): Promise<Map<string, Profile>> {
   const ids = [...new Set(requestsForUser.flatMap((request) => [request.senderId, request.receiverId]))];
   if (!ids.length) return new Map();
   const remoteProfiles = await getProfiles(ids);
-  const profiles = new Map(remoteProfiles.map((profile) => [profile.id, profile]));
-  ids.forEach((id) => {
-    const local = localProfiles.get(id);
-    if (local) profiles.set(id, local);
-  });
-  return profiles;
+  return new Map(remoteProfiles.map((profile) => [profile.id, profile]));
 }
 
-export function registerDevProfile(profile: Profile) {
-  localProfiles.set(profile.id, profile);
-}
+// Realtime updates for both directions — a friend_requests row can change
+// because the current user sent it or received it, and postgres_changes only
+// supports one `filter` per `.on()` call, so this registers two.
+export function subscribeToFriendRequests(myId: string, listener: () => void) {
+  const channel = freshChannel(`friend-requests-${myId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'friend_requests', filter: `receiver_id=eq.${myId}` },
+      listener,
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'friend_requests', filter: `sender_id=eq.${myId}` },
+      listener,
+    )
+    .subscribe();
 
-export function ensureDevPeer(myId: string): Profile {
-  const id = `dev-peer-${myId}`;
-  const existing = localProfiles.get(id);
-  if (existing) return existing;
-  const profile: Profile = {
-    id,
-    name: 'Profil de test',
-    username: 'profil_test',
-    bio: 'Profil local pentru testarea cererilor și notificărilor.',
-    avatar_url: null,
-    instagram_handle: null,
-    verified: false,
+  return () => {
+    supabase.removeChannel(channel);
   };
-  localProfiles.set(id, profile);
-  return profile;
-}
-
-export function simulateIncomingFriendRequest(myId: string): FriendRequest {
-  const peer = ensureDevPeer(myId);
-  const existing = requests.find(
-    (request) => request.senderId === peer.id && request.receiverId === myId && request.status === 'pending',
-  );
-  if (existing) return existing;
-  const request: FriendRequest = {
-    id: `dev-request-${Date.now()}`,
-    senderId: peer.id,
-    receiverId: myId,
-    createdAt: new Date().toISOString(),
-    status: 'pending',
-  };
-  requests.push(request);
-  emit();
-  createNotification({
-    type: 'friend_request',
-    actorId: peer.id,
-    recipientId: myId,
-    targetId: peer.id,
-    title: 'Cerere nouă de prietenie',
-    body: 'Profilul de test vrea să fie prieten cu tine.',
-  });
-  return request;
-}
-
-export function simulateOutgoingFriendRequest(myId: string): FriendRequest {
-  const peer = ensureDevPeer(myId);
-  const existing = requests.find(
-    (request) => request.senderId === myId && request.receiverId === peer.id && request.status === 'pending',
-  );
-  if (existing) return existing;
-  const request: FriendRequest = {
-    id: `dev-request-${Date.now()}`,
-    senderId: myId,
-    receiverId: peer.id,
-    createdAt: new Date().toISOString(),
-    status: 'pending',
-  };
-  requests.push(request);
-  emit();
-  return request;
-}
-
-export function simulateAcceptedFriendRequest(myId: string): FriendRequest {
-  const peer = ensureDevPeer(myId);
-  const existing = requests.find(
-    (request) =>
-      ((request.senderId === peer.id && request.receiverId === myId) ||
-        (request.senderId === myId && request.receiverId === peer.id)) &&
-      request.status === 'accepted',
-  );
-  if (existing) return existing;
-  const request: FriendRequest = {
-    id: `dev-request-${Date.now()}`,
-    senderId: peer.id,
-    receiverId: myId,
-    createdAt: new Date().toISOString(),
-    status: 'accepted',
-  };
-  requests.push(request);
-  emit();
-  createNotification({
-    type: 'friend_request_accepted',
-    actorId: peer.id,
-    recipientId: myId,
-    targetId: peer.id,
-    title: 'Cererea de prietenie a fost acceptată',
-    body: 'Acum sunteți prieteni.',
-  });
-  return request;
 }

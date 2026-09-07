@@ -40,76 +40,6 @@ export async function getProfiles(ids: string[]): Promise<Profile[]> {
   return data;
 }
 
-export type FollowStatus = { iFollow: boolean; followsMe: boolean; mutual: boolean };
-
-export async function getFollowStatus(myId: string, otherId: string): Promise<FollowStatus> {
-  const { data } = await supabase
-    .from('follows')
-    .select('follower_id, followee_id')
-    .or(`and(follower_id.eq.${myId},followee_id.eq.${otherId}),and(follower_id.eq.${otherId},followee_id.eq.${myId})`);
-
-  const iFollow = !!data?.some((row) => row.follower_id === myId);
-  const followsMe = !!data?.some((row) => row.follower_id === otherId);
-  return { iFollow, followsMe, mutual: iFollow && followsMe };
-}
-
-// Same result as calling getFollowStatus once per id, but as 2 queries
-// total instead of up to 2*N — search.tsx was firing one getFollowStatus
-// per search result (up to 20 individual round-trips per debounced
-// keystroke).
-export async function getFollowStatuses(myId: string, otherIds: string[]): Promise<Record<string, FollowStatus>> {
-  const result: Record<string, FollowStatus> = {};
-  if (!otherIds.length) return result;
-
-  const [{ data: following }, { data: followers }] = await Promise.all([
-    supabase.from('follows').select('followee_id').eq('follower_id', myId).in('followee_id', otherIds),
-    supabase.from('follows').select('follower_id').eq('followee_id', myId).in('follower_id', otherIds),
-  ]);
-
-  const iFollowSet = new Set((following ?? []).map((row) => row.followee_id));
-  const followsMeSet = new Set((followers ?? []).map((row) => row.follower_id));
-
-  for (const id of otherIds) {
-    const iFollow = iFollowSet.has(id);
-    const followsMe = followsMeSet.has(id);
-    result[id] = { iFollow, followsMe, mutual: iFollow && followsMe };
-  }
-  return result;
-}
-
-export async function follow(myId: string, otherId: string): Promise<boolean> {
-  const { error } = await supabase.from('follows').insert({ follower_id: myId, followee_id: otherId });
-  if (error) return false;
-
-  // Best-effort — a failed push shouldn't undo an already-recorded follow.
-  supabase.functions.invoke('notify-follow', { body: { followeeId: otherId } }).catch(() => {});
-
-  return true;
-}
-
-export async function unfollow(myId: string, otherId: string): Promise<boolean> {
-  const { error } = await supabase.from('follows').delete().eq('follower_id', myId).eq('followee_id', otherId);
-  return !error;
-}
-
-// Everyone you follow who also follows you back.
-export async function getMutualFriends(myId: string): Promise<Profile[]> {
-  const { data: following } = await supabase.from('follows').select('followee_id').eq('follower_id', myId);
-  const followingIds = (following ?? []).map((row) => row.followee_id);
-  if (!followingIds.length) return [];
-
-  const { data: mutualEdges } = await supabase
-    .from('follows')
-    .select('follower_id')
-    .eq('followee_id', myId)
-    .in('follower_id', followingIds);
-  const mutualIds = (mutualEdges ?? []).map((row) => row.follower_id);
-  if (!mutualIds.length) return [];
-
-  const { data: profiles } = await supabase.from('profiles').select(PROFILE_COLUMNS).in('id', mutualIds);
-  return profiles ?? [];
-}
-
 export type FriendPrefs = {
   mute_messages: boolean;
   mute_activity: boolean;
@@ -138,10 +68,10 @@ export async function setFriendPrefs(ownerId: string, subjectId: string, patch: 
   return !error;
 }
 
-// Blocking has to sever the follow edge in both directions, which the
-// blocker can't do unilaterally under normal RLS (you can only delete your
-// own follow row). block_user()/unblock_user() run server-side to do that;
-// see supabase/migrations for the exact mechanics.
+// Blocking has to sever any friendship/pending request in both directions,
+// which the blocker can't do unilaterally under normal RLS. block_user()/
+// unblock_user() run server-side to do that; see supabase/migrations for the
+// exact mechanics.
 export async function blockUser(subjectId: string): Promise<boolean> {
   const { error } = await supabase.rpc('block_user', { p_subject: subjectId });
   return !error;
@@ -156,11 +86,6 @@ export async function getBlockedProfiles(ownerId: string): Promise<Profile[]> {
   const { data } = await supabase.from('friend_prefs').select('subject_id').eq('owner_id', ownerId).eq('blocked', true);
   const ids = (data ?? []).map((row) => row.subject_id);
   return getProfiles(ids);
-}
-
-export async function getFollowingIds(myId: string): Promise<string[]> {
-  const { data } = await supabase.from('follows').select('followee_id').eq('follower_id', myId);
-  return (data ?? []).map((row) => row.followee_id);
 }
 
 // Blocked either direction — someone who blocked me can't be followed

@@ -16,12 +16,7 @@ import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { getProfile, type Profile } from '@/lib/social';
-import {
-  ensureDevPeer,
-  simulateAcceptedFriendRequest,
-  simulateIncomingFriendRequest,
-  simulateOutgoingFriendRequest,
-} from '@/lib/friendRequests';
+import { ensureDevPeer } from '@/lib/devFixtures';
 import { simulateNotification, type Notification } from '@/lib/notifications';
 import { acceptEventInvitation, declineEventInvitation, getEventInvitation, simulateEventInvitation } from '@/lib/eventInvitations';
 import { getHostJoinRequests, respondToJoinRequest, type HostJoinRequest } from '@/lib/events';
@@ -35,6 +30,7 @@ const notificationIcons: Record<Notification['type'], keyof typeof Ionicons.glyp
   event_cancelled: 'close-circle-outline',
   message: 'chatbubble-ellipses-outline',
   review: 'star-outline',
+  system: 'information-circle-outline',
 };
 
 function formatDate(iso: string, locale: string) {
@@ -47,7 +43,7 @@ export default function Notifications() {
   const { t, locale } = useLanguage();
   const { user } = useUser();
   const { events } = useEvents();
-  const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
+  const { notifications, unreadCount, pendingReviewCount, markRead, markAllRead } = useNotifications();
   const [actors, setActors] = useState<Record<string, Profile>>({});
   const [joinRequests, setJoinRequests] = useState<HostJoinRequest[]>([]);
   const [joinRequestsLoading, setJoinRequestsLoading] = useState(false);
@@ -105,7 +101,9 @@ export default function Notifications() {
     markRead(notification.id);
     if (notification.type === 'message') {
       router.push('/messages');
-    } else if (notification.type.startsWith('event_')) {
+    } else if (notification.type.startsWith('event_') || notification.type === 'system') {
+      // 'system' covers join-request/join-response notifications, whose
+      // target is always the event, not a user.
       router.push(`/event/${notification.targetId}`);
     } else {
       router.push(`/user/${notification.targetId}`);
@@ -162,6 +160,26 @@ export default function Notifications() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {pendingReviewCount > 0 && (
+          <AnimatedPressable
+            onPress={() => {
+              light();
+              router.push('/reviews');
+            }}
+            style={[styles.notificationRow, { backgroundColor: theme.surface, borderColor: colors.green400 }]}
+          >
+            <Ionicons name="star-outline" size={22} color="#F5B301" />
+            <View style={styles.notificationCopy}>
+              <Text style={[styles.notificationTitle, { color: theme.textPrimary }]}>Recenzii de acordat</Text>
+              <Text style={[styles.notificationBody, { color: theme.textSecondary }]}>
+                {pendingReviewCount === 1
+                  ? 'O persoană așteaptă recenzia ta.'
+                  : `${pendingReviewCount} persoane așteaptă recenzia ta.`}
+              </Text>
+            </View>
+          </AnimatedPressable>
+        )}
+
         {joinRequestsLoading && joinRequests.length === 0 && (
           <ActivityIndicator color={colors.green500} style={styles.joinRequestsLoader} />
         )}
@@ -273,9 +291,6 @@ export default function Notifications() {
             <Text style={[styles.devTitle, { color: theme.textPrimary }]}>{t.notifications.devToolsTitle}</Text>
             <Text style={[styles.devHint, { color: theme.textSecondary }]}>{t.notifications.devToolsHint}</Text>
             <View style={styles.devGrid}>
-              <DevButton label={t.notifications.devIncomingRequest} onPress={() => runDev(() => simulateIncomingFriendRequest(user.id))} theme={theme} />
-              <DevButton label={t.notifications.devOutgoingRequest} onPress={() => runDev(() => simulateOutgoingFriendRequest(user.id))} theme={theme} />
-              <DevButton label={t.notifications.devAcceptedRequest} onPress={() => runDev(() => simulateAcceptedFriendRequest(user.id))} theme={theme} />
               <DevButton
                 label={t.notifications.devTestNotification}
                 onPress={() => runDev(() => simulateNotification(user.id, ensureDevPeer(user.id).id, user.id))}

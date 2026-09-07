@@ -18,6 +18,7 @@ import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { getUserJoinedEventIds } from '@/lib/events';
 import { getRecommendedEvents, RecommendedEvent } from '@/lib/recommendations';
 import { useUser } from '@/contexts/UserContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import { useStories } from '@/contexts/StoriesContext';
 import { type StoryGroup } from '@/components/stories/StoriesRow';
 import { StoryViewer } from '@/components/stories/StoryViewer';
@@ -232,6 +233,7 @@ export default function Home() {
   const { showingMap, setShowingMap } = useHomeView();
   const { user, effectiveVerified } = useUser();
   const { light } = useHaptics();
+  const { unreadCount } = useNotifications();
   const { mapStories, getEventStories } = useStories();
   const storyEventIds = useMemo(
     () => new Set(mapStories.map((story) => story.eventId).filter((eventId): eventId is string => !!eventId)),
@@ -287,6 +289,21 @@ export default function Home() {
             if (stories.length) setViewerStories({ userId: eventId, label: 'Stories', stories });
           }}
         />
+        <AnimatedPressable
+          onPress={() => {
+            light();
+            router.push('/notifications');
+          }}
+          style={styles.notificationBell}
+          accessibilityLabel={t.notifications.title}
+        >
+          <Ionicons name="notifications-outline" size={20} color={colors.green700} />
+          {unreadCount > 0 && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+            </View>
+          )}
+        </AnimatedPressable>
         <AnimatedPressable
           onPress={() => router.push('/discover')}
           style={styles.exploreButton}
@@ -384,9 +401,35 @@ const styles = StyleSheet.create({
   recommendationsList: { gap: spacing.sm },
   recommendationItem: { width: 300 },
   recommendationsStatus: { color: colors.white, fontSize: 13, paddingVertical: 8 },
-  exploreButton: {
+  notificationBell: {
     position: 'absolute',
     top: 112,
+    right: spacing.lg,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FBFEFC',
+    borderColor: '#EAF7EF',
+    borderWidth: 1,
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    backgroundColor: colors.green500,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationBadgeText: { color: colors.white, fontSize: 9, fontWeight: '800' },
+  exploreButton: {
+    position: 'absolute',
+    top: 164,
     right: spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
