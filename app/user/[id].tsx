@@ -19,13 +19,14 @@ import { ReviewModal } from '@/components/social/ReviewModal';
 import { ReportModal } from '@/components/social/ReportModal';
 import { SafetyMenu } from '@/components/social/SafetyMenu';
 import { USER_REPORT_REASONS } from '@/lib/reports';
-import { blockUser, unblockUser, useBlocks } from '@/lib/blocks';
 import {
   FriendPrefs,
   Profile,
+  blockUser,
   getFriendPrefs,
   getProfile,
   setFriendPrefs,
+  unblockUser,
 } from '@/lib/social';
 import {
   acceptFriendRequest,
@@ -68,8 +69,7 @@ export default function PublicProfile() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [safetyMenuOpen, setSafetyMenuOpen] = useState(false);
   const [relationshipUpdating, setRelationshipUpdating] = useState(false);
-  const blocksState = useBlocks();
-  const userIsBlocked = !!(user && id) && blocksState.some((block) => block.blockerId === user.id && block.blockedId === id);
+  const userIsBlocked = prefs.blocked;
 
   function loadProfile() {
     if (!user || !id) return;
@@ -175,15 +175,26 @@ export default function PublicProfile() {
     if (!user || !id || !profile) return;
     light();
     if (userIsBlocked) {
-      unblockUser(user.id, id);
-      showAlert('Deblocat', `Ai deblocat @${profile.username}.`);
+      unblockUser(id).then((ok) => {
+        if (!ok) {
+          showAlert('A apărut o eroare', 'Nu am putut debloca acest cont. Încearcă din nou.');
+          return;
+        }
+        setPrefs((current) => ({ ...current, blocked: false }));
+        showAlert('Deblocat', `Ai deblocat @${profile.username}.`);
+      });
       return;
     }
     const title = `Blochezi @${profile.username}?`;
     const message =
       'Nu vă veți mai putea trimite mesaje sau cereri de prietenie. Poți debloca oricând din acest profil.';
-    const doBlock = () => {
-      blockUser(user.id, id, `@${profile.username}`);
+    const doBlock = async () => {
+      const ok = await blockUser(id);
+      if (!ok) {
+        showAlert('A apărut o eroare', 'Nu am putut bloca acest cont. Încearcă din nou.');
+        return;
+      }
+      setPrefs((current) => ({ ...current, blocked: true }));
       showAlert('Utilizator blocat', `${profile.name} a fost blocat.`);
     };
     if (Platform.OS === 'web') {
