@@ -6,7 +6,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
-import { VERIFICATION_REQUIRED } from '@/constants/featureFlags';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useLanguage, type Language } from '@/contexts/LanguageContext';
@@ -87,6 +86,7 @@ export default function Settings() {
           <Text style={[styles.title, { color: theme.textPrimary }]}>{t.settings.title}</Text>
           <View style={styles.backButton} />
         </View>
+        <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t.settings.sectionAppearance}</Text>
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
         <View style={styles.row}>
           <View style={styles.rowText}>
@@ -164,12 +164,13 @@ export default function Settings() {
         </View>
       </View>
 
+      <Text style={[styles.sectionLabel, styles.sectionLabelSpaced, { color: theme.textSecondary }]}>{t.settings.sectionNotifications}</Text>
       <AnimatedPressable
         onPress={() => {
           light();
           router.push('/notifications');
         }}
-        style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        style={[styles.card, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
       >
         <View style={styles.rowText}>
           <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>{t.settings.notifications}</Text>
@@ -201,6 +202,7 @@ export default function Settings() {
         </View>
       </View>
 
+      <Text style={[styles.sectionLabel, styles.sectionLabelSpaced, { color: theme.textSecondary }]}>{t.settings.sectionAccount}</Text>
       <AnimatedPressable
         onPress={() => {
           light();
@@ -208,12 +210,12 @@ export default function Settings() {
             router.push({ pathname: '/verification', params: { returnTo: '/settings' } });
           }
         }}
-        style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        style={[styles.card, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
       >
         <View style={styles.rowText}>
-          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Verificare identitate</Text>
+          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>{t.settings.verifyIdentity}</Text>
           <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
-            {effectiveVerified ? 'Contul tău a trecut de verificarea 18+.' : 'Verifică-ți identitatea și vârsta (18+).'}
+            {effectiveVerified ? t.settings.verifyIdentityDoneDetail : t.settings.verifyIdentityPendingDetail}
           </Text>
         </View>
         {effectiveVerified ? (
@@ -223,52 +225,13 @@ export default function Settings() {
         )}
       </AnimatedPressable>
 
-      <AnimatedPressable
-        onPress={() => {
-          light();
-          if (VERIFICATION_REQUIRED && !effectiveVerified) {
-            router.push({ pathname: '/verification', params: { returnTo: '/new-event' } });
-            return;
-          }
-          router.push('/new-event');
-        }}
-        style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
-      >
-        <View style={styles.rowText}>
-          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>{t.settings.addEvent}</Text>
-          <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
-            {!VERIFICATION_REQUIRED || effectiveVerified
-              ? t.settings.addEventDetail
-              : t.settings.addEventVerifyDetail}
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
-      </AnimatedPressable>
-
-      {isAdminAccessEnabled(user) && (
-        <AnimatedPressable
-          onPress={() => {
-            light();
-            router.push('/admin');
-          }}
-          style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        >
-          <View style={styles.rowText}>
-            <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>{t.settings.adminPanel}</Text>
-            <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
-              {t.settings.adminPanelDetail}
-            </Text>
-          </View>
-          <Ionicons name="shield-checkmark-outline" size={18} color={theme.accent} />
-        </AnimatedPressable>
-      )}
-
+      <Text style={[styles.sectionLabel, styles.sectionLabelSpaced, { color: theme.textSecondary }]}>{t.settings.sectionOrganizer}</Text>
       <AnimatedPressable
         onPress={() => {
           light();
           router.push('/organizer');
         }}
-        style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        style={[styles.card, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
       >
         <View style={styles.rowText}>
           <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>{t.settings.organizerMode}</Text>
@@ -279,9 +242,31 @@ export default function Settings() {
         <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
       </AnimatedPressable>
 
+      {isAdminAccessEnabled(user) && (
+        <>
+          <Text style={[styles.sectionLabel, styles.sectionLabelSpaced, { color: theme.textSecondary }]}>{t.settings.sectionAdmin}</Text>
+          <AnimatedPressable
+            onPress={() => {
+              light();
+              router.push('/admin');
+            }}
+            style={[styles.card, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          >
+            <View style={styles.rowText}>
+              <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>{t.settings.adminPanel}</Text>
+              <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>
+                {t.settings.adminPanelDetail}
+              </Text>
+            </View>
+            <Ionicons name="shield-checkmark-outline" size={18} color={theme.accent} />
+          </AnimatedPressable>
+        </>
+      )}
+
+      <Text style={[styles.sectionLabel, styles.sectionLabelSpaced, { color: theme.textSecondary }]}>{t.settings.sectionSignOut}</Text>
       <AnimatedPressable
         onPress={handleSignOut}
-        style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        style={[styles.card, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
       >
         <View style={styles.rowText}>
           <Text style={[styles.rowLabel, { color: DANGER_COLOR }]}>{t.settings.signOut}</Text>
@@ -316,6 +301,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: { fontSize: 18, fontWeight: '800' },
+  sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase', marginLeft: spacing.xs, marginBottom: spacing.xs },
+  sectionLabelSpaced: { marginTop: spacing.lg },
   card: {
     marginHorizontal: spacing.lg,
     borderRadius: 18,
