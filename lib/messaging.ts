@@ -20,7 +20,7 @@ export class MediaTooLargeError extends Error {
   }
 }
 
-export type MediaType = 'image' | 'audio';
+export type MediaType = 'image' | 'audio' | 'gif';
 
 export type DbMessage = {
   id: string;
@@ -30,16 +30,21 @@ export type DbMessage = {
   created_at: string;
   read_at: string | null;
   media_path: string | null;
+  // Remote CDN URL (currently only Giphy GIFs) — mutually exclusive with
+  // media_path, which points at a private Storage object instead.
+  media_url: string | null;
   media_type: MediaType | null;
   duration_ms: number | null;
   // Normalized (0-1) amplitude samples captured live while recording, for
   // rendering a real static waveform in the bubble instead of a plain bar.
   // Null for messages sent before this existed, or non-audio messages.
   waveform: number[] | null;
+  view_once: boolean;
+  viewed_at: string | null;
 };
 
 const MESSAGE_COLUMNS =
-  'id, sender_id, recipient_id, text, created_at, read_at, media_path, media_type, duration_ms, waveform';
+  'id, sender_id, recipient_id, text, created_at, read_at, media_path, media_url, media_type, duration_ms, waveform, view_once, viewed_at';
 
 function threadFilter(myId: string, friendId: string) {
   return `and(sender_id.eq.${myId},recipient_id.eq.${friendId}),and(sender_id.eq.${friendId},recipient_id.eq.${myId})`;
@@ -120,7 +125,8 @@ export async function sendMediaMessage(
   extension: string,
   contentType: string,
   durationMs?: number,
-  waveform?: number[]
+  waveform?: number[],
+  viewOnce?: boolean
 ): Promise<DbMessage | null> {
   // expo-file-system's File class is a no-op stub on the web build (it only
   // warns "not supported on web"), and audioRecorder.uri there is a blob:
@@ -146,6 +152,7 @@ export async function sendMediaMessage(
       media_type: mediaType,
       duration_ms: mediaType === 'audio' ? durationMs ?? null : null,
       waveform: mediaType === 'audio' ? waveform ?? null : null,
+      view_once: mediaType === 'image' ? !!viewOnce : false,
     })
     .select(MESSAGE_COLUMNS)
     .single();
@@ -159,6 +166,29 @@ export async function sendMediaMessage(
   supabase.functions.invoke('notify-message', { body: { messageId: data.id } }).catch(() => {});
 
   return data;
+}
+
+// GIFs are a remote CDN URL (Giphy), never uploaded to the message-media
+// bucket — no local file, no signed URL, just an insert.
+export async function sendGifMessage(myId: string, friendId: string, gifUrl: string): Promise<DbMessage | null> {
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({ sender_id: myId, recipient_id: friendId, text: '', media_url: gifUrl, media_type: 'gif' })
+    .select(MESSAGE_COLUMNS)
+    .single();
+
+  if (error) return null;
+
+  supabase.functions.invoke('notify-message', { body: { messageId: data.id } }).catch(() => {});
+
+  return data;
+}
+
+// Client-enforced only (not cryptographically unrecoverable) — same
+// trade-off as any other "disappearing" chat feature. Marks the photo
+// viewed so ImageBubble hides it on every subsequent render.
+export async function markMessageViewed(messageId: string): Promise<void> {
+  await supabase.from('messages').update({ viewed_at: new Date().toISOString() }).eq('id', messageId).is('viewed_at', null);
 }
 
 export async function getSignedMediaUrl(path: string): Promise<string | null> {

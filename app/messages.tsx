@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Image,
   Keyboard,
@@ -41,8 +42,10 @@ import {
   getSignedMediaUrl,
   getThread,
   getUnreadCount,
+  markMessageViewed,
   markThreadRead,
   sendDirectMessage,
+  sendGifMessage,
   sendMediaMessage,
   subscribeToIncoming,
   subscribeToReadReceipts,
@@ -51,9 +54,12 @@ import {
   DbGroupMessage,
   getGroupThread,
   getSenderProfiles,
+  sendEventGroupGifMessage,
+  sendEventGroupImageMessage,
   sendEventGroupMessage,
   subscribeToEventGroupMessages,
 } from '@/lib/eventMessaging';
+import { GifPickerModal } from '@/components/messaging/GifPickerModal';
 
 // Sentinel playingMessageId for the not-yet-sent recording preview — no real
 // message has this id, so it can share the shared voicePlayer/playingMessageId
@@ -142,10 +148,14 @@ type DisplayMessage = {
   text: string;
   time: string;
   sender: string;
+  senderAvatarUrl?: string | null;
   mine: boolean;
   read: boolean;
   mediaType?: MediaType | null;
   mediaPath?: string | null;
+  mediaUrl?: string | null;
+  viewOnce?: boolean;
+  viewedAt?: string | null;
   durationMs?: number | null;
   waveform?: number[] | null;
   isSystem?: boolean;
@@ -159,7 +169,8 @@ function formatTime(iso: string) {
 // What the chat-list row shows for a thread's last message — media has no
 // text (see lib/messaging.sendMediaMessage), so it needs its own preview.
 function messagePreview(message: DbMessage): string {
-  if (message.media_type === 'image') return '📷 Poză';
+  if (message.media_type === 'image') return message.view_once ? '👁 Poză (vizualizare unică)' : '📷 Poză';
+  if (message.media_type === 'gif') return '🎞 GIF';
   if (message.media_type === 'audio') return '🎤 Mesaj vocal';
   return message.text;
 }
@@ -171,28 +182,72 @@ function formatDuration(ms: number | null | undefined) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
-// One bubble's photo, resolved from a signed URL on demand — the DB only
-// stores the private bucket path (see messages.media_path).
-function ImageBubble({ path }: { path: string }) {
+// One bubble's photo/GIF. A private Storage attachment (path) is resolved
+// to a signed URL on demand; a GIF (url) is already a public CDN link and
+// needs no resolution. View-once is client-enforced only — hidden until
+// tapped, then hidden again on any later render once viewed_at is set.
+function ImageBubble({
+  path,
+  url,
+  viewOnce,
+  alreadyViewed,
+  onReveal,
+}: {
+  path?: string | null;
+  url?: string | null;
+  viewOnce?: boolean;
+  alreadyViewed?: boolean;
+  onReveal?: () => void;
+}) {
   const { colors: theme } = useAppTheme();
-  const [url, setUrl] = useState<string | null>(null);
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(url ?? null);
   // Bumped to force a fresh signed URL if the current one fails to load —
   // e.g. a thread left open past the 1-hour signed-URL TTL. Without this,
   // an expired URL just showed a permanently broken image.
   const [retryCount, setRetryCount] = useState(0);
+  const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
+    if (url) {
+      setResolvedUrl(url);
+      return;
+    }
+    if (!path) return;
     let cancelled = false;
-    setUrl(null);
+    setResolvedUrl(null);
     getSignedMediaUrl(path).then((signed) => {
-      if (!cancelled) setUrl(signed);
+      if (!cancelled) setResolvedUrl(signed);
     });
     return () => {
       cancelled = true;
     };
-  }, [path, retryCount]);
+  }, [path, url, retryCount]);
 
-  if (!url) {
+  if (viewOnce && alreadyViewed && !revealed) {
+    return (
+      <View style={[styles.imageBubble, styles.imageBubbleLoading, { backgroundColor: theme.surfaceMuted }]}>
+        <Ionicons name="eye-off-outline" size={20} color={theme.textSecondary} />
+        <Text style={[styles.viewOnceLabel, { color: theme.textSecondary }]}>Vizualizat</Text>
+      </View>
+    );
+  }
+
+  if (viewOnce && !alreadyViewed && !revealed) {
+    return (
+      <Pressable
+        onPress={() => {
+          setRevealed(true);
+          onReveal?.();
+        }}
+        style={[styles.imageBubble, styles.imageBubbleLoading, { backgroundColor: theme.surfaceMuted }]}
+      >
+        <Ionicons name="eye-outline" size={22} color={theme.textSecondary} />
+        <Text style={[styles.viewOnceLabel, { color: theme.textSecondary }]}>Atinge pentru a vedea</Text>
+      </Pressable>
+    );
+  }
+
+  if (!resolvedUrl) {
     return (
       <View style={[styles.imageBubble, styles.imageBubbleLoading, { backgroundColor: theme.surfaceMuted }]}>
         <ActivityIndicator color={theme.textSecondary} />
@@ -202,7 +257,7 @@ function ImageBubble({ path }: { path: string }) {
 
   return (
     <Image
-      source={{ uri: url }}
+      source={{ uri: resolvedUrl }}
       style={styles.imageBubble}
       resizeMode="cover"
       onError={() => setRetryCount((n) => (n < 1 ? n + 1 : n))}
@@ -454,6 +509,7 @@ export default function Messages() {
   const [friendMessages, setFriendMessages] = useState<DbMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [sendingMedia, setSendingMedia] = useState(false);
+  const [gifPickerVisible, setGifPickerVisible] = useState(false);
   const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
   // A stopped-but-unsent recording, waiting for the user to preview-listen
   // to it and either send or discard it. Reuses the same voicePlayer/
@@ -704,24 +760,23 @@ export default function Messages() {
     }
   }
 
-  async function pickAndSendImage() {
-    if (!user || !activeFriend || sendingMedia) return;
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      alertPermissionDenied(permission.canAskAgain, 'Activează accesul la poze din Setările telefonului ca să poți trimite fotografii.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
-    if (result.canceled || !result.assets[0]) return;
-
-    const asset = result.assets[0];
+  async function sendPickedImage(asset: ImagePicker.ImagePickerAsset, viewOnce: boolean) {
+    if (!user || !activeFriend) return;
     const { extension, contentType } = extensionAndTypeForImage(asset);
-
     light();
     setSendingMedia(true);
     try {
-      const sent = await sendMediaMessage(user.id, activeFriend.id, asset.uri, 'image', extension, contentType);
+      const sent = await sendMediaMessage(
+        user.id,
+        activeFriend.id,
+        asset.uri,
+        'image',
+        extension,
+        contentType,
+        undefined,
+        undefined,
+        viewOnce
+      );
       if (sent) {
         setFriendMessages((current) => [...current, sent]);
         setFriendLast((current) => ({ ...current, [activeFriend.id]: sent }));
@@ -736,6 +791,82 @@ export default function Messages() {
       }
     } finally {
       setSendingMedia(false);
+    }
+  }
+
+  async function sendPickedGroupImage(asset: ImagePicker.ImagePickerAsset) {
+    if (!user || activeChat?.kind !== 'group') return;
+    const { extension, contentType } = extensionAndTypeForImage(asset);
+    light();
+    setSendingMedia(true);
+    try {
+      const sent = await sendEventGroupImageMessage(activeChat.id, user.id, asset.uri, extension, contentType);
+      if (sent) {
+        setGroupMessages((current) => (current.some((m) => m.id === sent.id) ? current : [...current, sent]));
+      } else {
+        showAlert('A apărut o eroare', 'Nu am putut trimite fotografia. Încearcă din nou.');
+      }
+    } finally {
+      setSendingMedia(false);
+    }
+  }
+
+  async function pickAndSendImage() {
+    if (!user || !activeChat || sendingMedia) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      alertPermissionDenied(permission.canAskAgain, 'Activează accesul la poze din Setările telefonului ca să poți trimite fotografii.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+
+    if (activeChat.kind === 'group') {
+      sendPickedGroupImage(asset);
+      return;
+    }
+
+    // View-once only makes sense 1:1 — "viewed by whom" is ambiguous in a
+    // group, so the group composer never offers this choice.
+    //
+    // Alert.alert is a no-op stub on react-native-web (see lib/alert.ts) —
+    // a 3-button Alert here would silently swallow every DM photo send on
+    // web. window.confirm is the real cross-browser 2-choice primitive.
+    if (Platform.OS === 'web') {
+      sendPickedImage(asset, window.confirm('Trimite ca vizualizare unică (dispare după ce e văzută)?'));
+      return;
+    }
+
+    Alert.alert('Cum trimiți poza?', undefined, [
+      { text: 'Anulează', style: 'cancel' },
+      { text: 'Trimite normal', onPress: () => sendPickedImage(asset, false) },
+      { text: 'Vizualizare unică', onPress: () => sendPickedImage(asset, true) },
+    ]);
+  }
+
+  async function handleSelectGif(gifUrl: string) {
+    if (!user || !activeChat) return;
+    setGifPickerVisible(false);
+    light();
+
+    if (activeChat.kind === 'group') {
+      const sent = await sendEventGroupGifMessage(activeChat.id, user.id, gifUrl);
+      if (sent) {
+        setGroupMessages((current) => (current.some((m) => m.id === sent.id) ? current : [...current, sent]));
+      } else {
+        showAlert('A apărut o eroare', 'Nu am putut trimite GIF-ul. Încearcă din nou.');
+      }
+      return;
+    }
+
+    const sent = await sendGifMessage(user.id, activeChat.id, gifUrl);
+    if (sent) {
+      setFriendMessages((current) => [...current, sent]);
+      setFriendLast((current) => ({ ...current, [activeChat.id]: sent }));
+    } else {
+      showAlert('A apărut o eroare', 'Nu am putut trimite GIF-ul. Încearcă din nou.');
     }
   }
 
@@ -860,9 +991,13 @@ export default function Messages() {
         text: m.text,
         time: formatTime(m.created_at),
         sender: m.is_system ? '' : m.sender_id === user.id ? 'Tu' : groupSenderProfiles[m.sender_id]?.name ?? '',
+        senderAvatarUrl: groupSenderProfiles[m.sender_id]?.avatarUrl,
         mine: !m.is_system && m.sender_id === user.id,
         read: false,
         isSystem: m.is_system,
+        mediaType: m.media_type,
+        mediaPath: m.media_path,
+        mediaUrl: m.media_url,
       }));
     }
     if (activeChat?.kind === 'friend' && user) {
@@ -875,6 +1010,9 @@ export default function Messages() {
         read: !!m.read_at,
         mediaType: m.media_type,
         mediaPath: m.media_path,
+        mediaUrl: m.media_url,
+        viewOnce: m.view_once,
+        viewedAt: m.viewed_at,
         durationMs: m.duration_ms,
         waveform: m.waveform,
       }));
@@ -1126,7 +1264,13 @@ export default function Messages() {
                 ) : (
                 <View key={message.id} style={[styles.messageRow, message.mine && styles.messageRowMine]}>
                   {!message.mine && selectedGroup && (
-                    <Avatar name={message.sender} size={26} fontSize={11} color={selectedGroup.color} />
+                    <Avatar
+                      uri={message.senderAvatarUrl}
+                      name={message.sender}
+                      size={26}
+                      fontSize={11}
+                      color={selectedGroup.color}
+                    />
                   )}
                   {!message.mine && !selectedGroup && <View style={styles.dot} />}
                   <View
@@ -1140,8 +1284,14 @@ export default function Messages() {
                         {message.sender}
                       </Text>
                     )}
-                    {message.mediaType === 'image' && message.mediaPath ? (
-                      <ImageBubble path={message.mediaPath} />
+                    {(message.mediaType === 'image' || message.mediaType === 'gif') && (message.mediaPath || message.mediaUrl) ? (
+                      <ImageBubble
+                        path={message.mediaPath}
+                        url={message.mediaUrl}
+                        viewOnce={!message.mine && !!message.viewOnce}
+                        alreadyViewed={!!message.viewedAt}
+                        onReveal={() => markMessageViewed(message.id)}
+                      />
                     ) : message.mediaType === 'audio' && message.mediaPath ? (
                       <VoiceBubble
                         isPlaying={playingMessageId === message.id}
@@ -1179,6 +1329,17 @@ export default function Messages() {
               )}
             </ScrollView>
 
+            {!friendBlocked && draft.length > 0 && (
+              <Text
+                style={[
+                  styles.charCounter,
+                  { color: draft.length >= MESSAGE_MAX_LENGTH ? '#E5484D' : theme.textSecondary },
+                ]}
+              >
+                {draft.length}/{MESSAGE_MAX_LENGTH}
+              </Text>
+            )}
+
             {/* marginBottom tracks the keyboard directly (see the effect above)
                 instead of KeyboardAvoidingView, which overshot on Android. */}
             {friendBlocked ? (
@@ -1202,9 +1363,25 @@ export default function Messages() {
               ]}
             >
               {selectedGroup ? (
-                // Photo/voice attachments are DM-only (sendMediaMessage takes a
-                // single recipient, not an event) — group composer stays text-only.
+                // Voice notes stay DM-only (sendMediaMessage takes a single
+                // recipient, not an event) — group gets photo + GIF, no mic.
                 <>
+                  <Pressable
+                    onPress={pickAndSendImage}
+                    disabled={sendingMedia}
+                    style={[styles.add, { backgroundColor: theme.surfaceMuted, opacity: sendingMedia ? 0.5 : 1 }]}
+                    accessibilityLabel="Trimite o poză"
+                  >
+                    <Text style={[styles.addText, { color: theme.accent }]}>+</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setGifPickerVisible(true)}
+                    disabled={sendingMedia}
+                    style={[styles.gifButton, { backgroundColor: theme.surfaceMuted, opacity: sendingMedia ? 0.5 : 1 }]}
+                    accessibilityLabel="Trimite un GIF"
+                  >
+                    <Text style={[styles.gifButtonText, { color: theme.accent }]}>GIF</Text>
+                  </Pressable>
                   <TextInput
                     value={draft}
                     onChangeText={setDraft}
@@ -1235,14 +1412,24 @@ export default function Messages() {
                   <Ionicons name="trash" size={16} color={theme.textSecondary} />
                 </Pressable>
               ) : (
-                <Pressable
-                  onPress={pickAndSendImage}
-                  disabled={sendingMedia || recorderState.isRecording}
-                  style={[styles.add, { backgroundColor: theme.surfaceMuted, opacity: sendingMedia ? 0.5 : 1 }]}
-                  accessibilityLabel="Trimite o poză"
-                >
-                  <Text style={[styles.addText, { color: theme.accent }]}>+</Text>
-                </Pressable>
+                <>
+                  <Pressable
+                    onPress={pickAndSendImage}
+                    disabled={sendingMedia || recorderState.isRecording}
+                    style={[styles.add, { backgroundColor: theme.surfaceMuted, opacity: sendingMedia ? 0.5 : 1 }]}
+                    accessibilityLabel="Trimite o poză"
+                  >
+                    <Text style={[styles.addText, { color: theme.accent }]}>+</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setGifPickerVisible(true)}
+                    disabled={sendingMedia || recorderState.isRecording}
+                    style={[styles.gifButton, { backgroundColor: theme.surfaceMuted, opacity: sendingMedia ? 0.5 : 1 }]}
+                    accessibilityLabel="Trimite un GIF"
+                  >
+                    <Text style={[styles.gifButtonText, { color: theme.accent }]}>GIF</Text>
+                  </Pressable>
+                </>
               )}
               {recorderState.isRecording ? (
                 <View style={styles.recordingRow}>
@@ -1328,6 +1515,8 @@ export default function Messages() {
           </>
         )}
       </View>
+
+      <GifPickerModal visible={gifPickerVisible} onSelect={handleSelectGif} onClose={() => setGifPickerVisible(false)} />
     </SafeAreaView>
   );
 }
@@ -1414,6 +1603,9 @@ const styles = StyleSheet.create({
   blockedComposerText: { flex: 1, fontSize: 12, fontWeight: '600', lineHeight: 16 },
   add: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   addText: { fontSize: 25, fontWeight: '300', marginTop: -2 },
+  gifButton: { height: 34, paddingHorizontal: 9, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  gifButtonText: { fontSize: 11, fontWeight: '800' },
+  charCounter: { alignSelf: 'flex-end', marginHorizontal: 22, marginBottom: 4, fontSize: 10, fontWeight: '700' },
   input: { flex: 1, fontSize: 15, paddingVertical: 8 },
   // minWidth: 0 matters specifically on web — react-native-web's flex
   // children default to a CSS min-width of "auto" (their content size), not
@@ -1431,7 +1623,8 @@ const styles = StyleSheet.create({
   voiceActive: { backgroundColor: '#E5484D' },
   discard: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   imageBubble: { width: 200, height: 200, borderRadius: 14 },
-  imageBubbleLoading: { alignItems: 'center', justifyContent: 'center' },
+  imageBubbleLoading: { alignItems: 'center', justifyContent: 'center', gap: 6 },
+  viewOnceLabel: { fontSize: 10, fontWeight: '700' },
   voiceBubbleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4, minWidth: 160 },
   // minWidth: 0 matters on web — see the composer waveform's identical note.
   voiceWaveformRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 2, height: 18 },

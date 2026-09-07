@@ -1,6 +1,10 @@
 import { supabase } from '@/lib/supabase';
 import { freshChannel } from '@/lib/realtime';
 
+const MEDIA_BUCKET = 'message-media';
+
+export type GroupMediaType = 'image' | 'gif';
+
 export type DbGroupMessage = {
   id: string;
   event_id: string;
@@ -8,9 +12,12 @@ export type DbGroupMessage = {
   text: string;
   is_system: boolean;
   created_at: string;
+  media_path: string | null;
+  media_type: GroupMediaType | null;
+  media_url: string | null;
 };
 
-const GROUP_MESSAGE_COLUMNS = 'id, event_id, sender_id, text, is_system, created_at';
+const GROUP_MESSAGE_COLUMNS = 'id, event_id, sender_id, text, is_system, created_at, media_path, media_type, media_url';
 
 export async function getGroupThread(eventId: string): Promise<DbGroupMessage[]> {
   const { data, error } = await supabase
@@ -38,6 +45,51 @@ export async function sendEventGroupMessage(
   if (error) return null;
   return data;
 }
+
+// Group photos reuse the message-media bucket, uploaded under the sender's
+// own folder (same "upload your own message media" storage policy as DMs)
+// but with their own read policy since they never appear in the messages
+// table (see the add_chat_media_and_view_once migration).
+export async function sendEventGroupImageMessage(
+  eventId: string,
+  senderId: string,
+  localUri: string,
+  extension: string,
+  contentType: string
+): Promise<DbGroupMessage | null> {
+  const bytes = await (await fetch(localUri)).arrayBuffer();
+  if (bytes.byteLength === 0) return null;
+
+  const path = `${senderId}/${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
+  const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET).upload(path, bytes, { contentType });
+  if (uploadError) return null;
+
+  const { data, error } = await supabase
+    .from('event_group_messages')
+    .insert({ event_id: eventId, sender_id: senderId, text: '', media_path: path, media_type: 'image' })
+    .select(GROUP_MESSAGE_COLUMNS)
+    .single();
+
+  if (error) {
+    await supabase.storage.from(MEDIA_BUCKET).remove([path]);
+    return null;
+  }
+  return data;
+}
+
+export async function sendEventGroupGifMessage(eventId: string, senderId: string, gifUrl: string): Promise<DbGroupMessage | null> {
+  const { data, error } = await supabase
+    .from('event_group_messages')
+    .insert({ event_id: eventId, sender_id: senderId, text: '', media_url: gifUrl, media_type: 'gif' })
+    .select(GROUP_MESSAGE_COLUMNS)
+    .single();
+
+  if (error) return null;
+  return data;
+}
+
+// Group photos live in the same message-media bucket as DM photos — reuse
+// lib/messaging's getSignedMediaUrl rather than duplicating the signing call.
 
 // Group-chat senders are whoever's in the event, not just your mutual
 // friends — read straight from profiles (readable by any signed-in user)
