@@ -11,6 +11,7 @@ import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useEvents } from '@/contexts/EventsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { SpritzEvent } from '@/constants/events';
 import { addMonths, dateKey, formatMonth, isSameDay, startOfDay } from '@/lib/calendar';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
@@ -25,9 +26,10 @@ import { useHomeView } from '@/contexts/HomeViewContext';
 function PublicEventRow({ event }: { event: SpritzEvent }) {
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
+  const { t, locale } = useLanguage();
   const startsAt = event.startsAt ? new Date(event.startsAt) : null;
-  const entryFee = event.entryFeeRon === null ? null : event.entryFeeRon === 0 ? 'Gratis' : `${event.entryFeeRon} RON`;
-  const participants = event.maxParticipants ? `Maxim ${event.maxParticipants} participanți` : null;
+  const entryFee = event.entryFeeRon === null ? null : event.entryFeeRon === 0 ? t.home.free : `${event.entryFeeRon} RON`;
+  const participants = event.maxParticipants ? t.home.maxParticipants(event.maxParticipants) : null;
 
   return (
     <AnimatedPressable
@@ -45,7 +47,7 @@ function PublicEventRow({ event }: { event: SpritzEvent }) {
           {event.title}
         </Text>
         <Text style={[styles.eventMeta, { color: theme.textSecondary }]}>
-          {startsAt ? startsAt.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }) : 'Oră în curs de stabilire'}
+          {startsAt ? startsAt.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) : t.home.timeTbd}
           {event.genre ? ` · ${event.genre}` : ''}
         </Text>
         {(entryFee || participants) && (
@@ -62,6 +64,7 @@ function PublicEventRow({ event }: { event: SpritzEvent }) {
 function RecommendationRow({ recommendation }: { recommendation: RecommendedEvent }) {
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
+  const { locale } = useLanguage();
   const startsAt = new Date(recommendation.event.startsAt!);
 
   return (
@@ -80,8 +83,8 @@ function RecommendationRow({ recommendation }: { recommendation: RecommendedEven
           {recommendation.event.title}
         </Text>
         <Text style={[styles.eventMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-          {startsAt.toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })} ·{' '}
-          {startsAt.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+          {startsAt.toLocaleDateString(locale, { day: 'numeric', month: 'short' })} ·{' '}
+          {startsAt.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
           {recommendation.event.genre ? ` · ${recommendation.event.genre}` : ''}
         </Text>
         <Text style={[styles.recommendationReason, { color: colors.green500 }]}>{recommendation.reason}</Text>
@@ -95,6 +98,8 @@ function PublicCalendar({ onShowMap }: { onShowMap: () => void }) {
   const { colors: theme } = useAppTheme();
   const { events } = useEvents();
   const { light } = useHaptics();
+  const { effectiveVerified } = useUser();
+  const { t, locale } = useLanguage();
   const daysRef = useRef<ScrollView>(null);
   const datedEvents = useMemo(() => events.filter((event) => event.startsAt != null), [events]);
   const DAY_ITEM_WIDTH = 62;
@@ -143,18 +148,33 @@ function PublicCalendar({ onShowMap }: { onShowMap: () => void }) {
     <SafeAreaView style={[styles.calendarSafeArea, { backgroundColor: theme.page }]}>
       <StatusBar style={theme.statusBar} />
       <View style={styles.calendarTopBar}>
-        <Text style={[styles.calendarTitle, { color: theme.textPrimary }]}>Calendar public</Text>
-        <AnimatedPressable
-          onPress={() => {
-            light();
-            onShowMap();
-          }}
-          hitSlop={10}
-          accessibilityLabel="Arată harta"
-          style={[styles.modeButton, shadows.soft, { borderColor: glassButton.border }]}
-        >
-          <Ionicons name="map-outline" size={20} color={glassButton.icon} />
-        </AnimatedPressable>
+        <Text style={[styles.calendarTitle, { color: theme.textPrimary }]}>{t.home.publicCalendar}</Text>
+        <View style={styles.calendarTopBarActions}>
+          {effectiveVerified && (
+            <AnimatedPressable
+              onPress={() => {
+                light();
+                router.push('/new-event');
+              }}
+              hitSlop={10}
+              accessibilityLabel="Adaugă eveniment"
+              style={[styles.modeButton, shadows.soft, { borderColor: glassButton.border }]}
+            >
+              <Ionicons name="add" size={22} color={glassButton.icon} />
+            </AnimatedPressable>
+          )}
+          <AnimatedPressable
+            onPress={() => {
+              light();
+              onShowMap();
+            }}
+            hitSlop={10}
+            accessibilityLabel={t.home.showMap}
+            style={[styles.modeButton, shadows.soft, { borderColor: glassButton.border }]}
+          >
+            <Ionicons name="map-outline" size={20} color={glassButton.icon} />
+          </AnimatedPressable>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.calendarContent} showsVerticalScrollIndicator={false}>
@@ -184,7 +204,7 @@ function PublicCalendar({ onShowMap }: { onShowMap: () => void }) {
                 >
                   <Text style={[styles.dayNumber, { color: selected ? colors.white : theme.textPrimary }]}>{date.getDate()}</Text>
                   <Text style={[styles.dayWeekday, { color: selected ? colors.white : theme.textSecondary }]}>
-                    {date.toLocaleDateString('ro-RO', { weekday: 'short' }).replace('.', '')}
+                    {date.toLocaleDateString(locale, { weekday: 'short' }).replace('.', '')}
                   </Text>
                   {eventDates.has(key) && <View style={[styles.eventDot, { backgroundColor: selected ? colors.white : colors.green500 }]} />}
                   {today && !selected && <View style={[styles.todayIndicator, { backgroundColor: colors.green500 }]} />}
@@ -195,12 +215,12 @@ function PublicCalendar({ onShowMap }: { onShowMap: () => void }) {
         </View>
 
         <Text style={[styles.selectedDateTitle, { color: theme.textPrimary }]}>
-          {selectedDate.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })}
+          {selectedDate.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })}
         </Text>
         {selectedEvents.length ? (
           selectedEvents.map((event) => <PublicEventRow key={event.id} event={event} />)
         ) : (
-          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Nu există evenimente în această zi.</Text>
+          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{t.home.noEventsThisDay}</Text>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -208,8 +228,10 @@ function PublicCalendar({ onShowMap }: { onShowMap: () => void }) {
 }
 
 export default function Home() {
+  const { t } = useLanguage();
   const { showingMap, setShowingMap } = useHomeView();
-  const { user } = useUser();
+  const { user, effectiveVerified } = useUser();
+  const { light } = useHaptics();
   const { mapStories, getEventStories } = useStories();
   const storyEventIds = useMemo(
     () => new Set(mapStories.map((story) => story.eventId).filter((eventId): eventId is string => !!eventId)),
@@ -268,17 +290,29 @@ export default function Home() {
         <AnimatedPressable
           onPress={() => router.push('/discover')}
           style={styles.exploreButton}
-          accessibilityLabel="Explorează evenimente"
+          accessibilityLabel={t.home.exploreEvents}
         >
           <Ionicons name="compass-outline" size={18} color={colors.green700} />
-          <Text style={styles.exploreButtonText}>Explorează</Text>
+          <Text style={styles.exploreButtonText}>{t.home.explore}</Text>
         </AnimatedPressable>
+        {effectiveVerified && (
+          <AnimatedPressable
+            onPress={() => {
+              light();
+              router.push('/new-event');
+            }}
+            style={styles.addEventFab}
+            accessibilityLabel="Adaugă eveniment"
+          >
+            <Ionicons name="add" size={26} color={colors.white} />
+          </AnimatedPressable>
+        )}
         {(eventsLoading || joinedLoading || joinedError || recommendations.length > 0) && (
           <View style={styles.recommendationsPanel}>
             {eventsLoading || joinedLoading ? (
-              <Text style={styles.recommendationsStatus}>Se încarcă recomandările...</Text>
+              <Text style={styles.recommendationsStatus}>{t.home.loadingRecommendations}</Text>
             ) : joinedError ? (
-              <Text style={styles.recommendationsStatus}>Recomandările nu sunt disponibile momentan.</Text>
+              <Text style={styles.recommendationsStatus}>{t.home.recommendationsUnavailable}</Text>
             ) : (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recommendationsList}>
                 {recommendations.map((recommendation) => (
@@ -323,6 +357,7 @@ const styles = StyleSheet.create({
   },
   calendarSafeArea: { flex: 1 },
   calendarTopBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },
+  calendarTopBarActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   calendarTitle: { fontSize: 22, fontWeight: '800' },
   modeButton: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   calendarContent: { paddingHorizontal: spacing.lg, paddingBottom: 120 },
@@ -364,4 +399,20 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   exploreButtonText: { color: colors.green700, fontSize: 12, fontWeight: '800' },
+  addEventFab: {
+    position: 'absolute',
+    top: 112,
+    left: spacing.lg,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.green500,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
 });

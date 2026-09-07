@@ -9,6 +9,7 @@ import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useEvents } from '@/contexts/EventsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { SpritzEvent } from '@/constants/events';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
@@ -20,6 +21,7 @@ function eventDate(event: SpritzEvent) {
 
 function EventRow({ event, onPress }: { event: SpritzEvent; onPress: () => void }) {
   const { colors: theme } = useAppTheme();
+  const { t, locale } = useLanguage();
   const date = eventDate(event);
 
   return (
@@ -35,7 +37,7 @@ function EventRow({ event, onPress }: { event: SpritzEvent; onPress: () => void 
           {event.title}
         </Text>
         <Text style={[styles.eventTime, { color: theme.textSecondary }]}>
-          {date ? date.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }) : 'Oră în curs de stabilire'}
+          {date ? date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) : t.home.timeTbd}
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
@@ -75,6 +77,7 @@ function DayCell({
 
 export default function OrganizerCalendar() {
   const { colors: theme } = useAppTheme();
+  const { t, locale } = useLanguage();
   const { events, loading: eventsLoading, error: eventsError, refresh } = useEvents();
   const { user } = useUser();
   const { light } = useHaptics();
@@ -131,25 +134,25 @@ export default function OrganizerCalendar() {
             router.back();
           }}
           hitSlop={10}
-          accessibilityLabel="Înapoi"
+          accessibilityLabel={t.common.back}
           style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
         >
           <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
         </AnimatedPressable>
-        <Text style={[styles.title, { color: theme.textPrimary }]}>Calendar organizator</Text>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>{t.organizer.organizerCalendar}</Text>
         <View style={styles.backButton} />
       </View>
 
       {eventsLoading ? (
         <View style={styles.state}>
           <ActivityIndicator color={colors.green500} />
-          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Se încarcă evenimentele...</Text>
+          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{t.organizer.loadingEvents}</Text>
         </View>
       ) : eventsError ? (
         <View style={styles.state}>
-          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Nu am putut încărca evenimentele.</Text>
+          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{t.organizer.couldNotLoadEvents}</Text>
           <AnimatedPressable onPress={() => void refresh()} style={[styles.retryButton, { borderColor: theme.border }]}>
-            <Text style={[styles.retryText, { color: theme.textPrimary }]}>Reîncearcă</Text>
+            <Text style={[styles.retryText, { color: theme.textPrimary }]}>{t.organizer.retry}</Text>
           </AnimatedPressable>
         </View>
       ) : (
@@ -165,7 +168,7 @@ export default function OrganizerCalendar() {
             </AnimatedPressable>
           </View>
           <View style={styles.weekdayRow}>
-            {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((day, index) => (
+            {t.organizerCalendar.weekdayInitials.map((day, index) => (
               <Text key={`${day}-${index}`} style={[styles.weekday, { color: theme.textSecondary }]}>{day}</Text>
             ))}
           </View>
@@ -196,14 +199,14 @@ export default function OrganizerCalendar() {
         </View>
 
         <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-          {selectedDate.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })}
+          {selectedDate.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })}
         </Text>
         {selectedEvents.length ? (
           selectedEvents.map((event) => (
             <EventRow key={event.id} event={event} onPress={() => router.push(`/event/${event.id}`)} />
           ))
         ) : (
-          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Nu există evenimente în această zi.</Text>
+          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{t.home.noEventsThisDay}</Text>
         )}
       </ScrollView>
       )}

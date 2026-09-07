@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
@@ -24,14 +24,15 @@ import { useAppTheme } from '@/contexts/ThemeContext';
 import { useNavVisibility } from '@/contexts/NavVisibilityContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
+import { useEvents } from '@/contexts/EventsContext';
 import { Avatar } from '@/components/common/Avatar';
 import { FriendsHubTabs } from '@/components/friends/FriendsHubTabs';
-import { Profile } from '@/lib/social';
-import { isBlocked, useBlocks } from '@/lib/blocks';
+import { Profile, getBlockedIds } from '@/lib/social';
 import { getFriends } from '@/lib/friendRequests';
 import { extensionAndTypeForImage } from '@/lib/media';
 import { alertPermissionDenied } from '@/lib/permissions';
 import { showAlert } from '@/lib/alert';
+import { getUserJoinedEventIds } from '@/lib/events';
 import {
   DbMessage,
   MediaTooLargeError,
@@ -46,6 +47,13 @@ import {
   subscribeToIncoming,
   subscribeToReadReceipts,
 } from '@/lib/messaging';
+import {
+  DbGroupMessage,
+  getGroupThread,
+  getSenderProfiles,
+  sendEventGroupMessage,
+  subscribeToEventGroupMessages,
+} from '@/lib/eventMessaging';
 
 // Sentinel playingMessageId for the not-yet-sent recording preview — no real
 // message has this id, so it can share the shared voicePlayer/playingMessageId
@@ -125,8 +133,9 @@ function unlockWebAudioPlayback() {
 
 // Chat list / message bubble design by nituraul8 — ported from App.tsx onto
 // its own Expo Router screen so it lives alongside the rest of the app.
-// The 3 group chats below stay mock/decorative; real 1:1 friend DMs are a
-// separate, backend-backed capability added alongside them.
+// Group chats are backed by event_group_messages (see lib/eventMessaging.ts)
+// — one per event, membership == event_attendees — alongside the separate
+// 1:1 friend DM capability.
 
 type DisplayMessage = {
   id: string;
@@ -139,6 +148,7 @@ type DisplayMessage = {
   mediaPath?: string | null;
   durationMs?: number | null;
   waveform?: number[] | null;
+  isSystem?: boolean;
 };
 type ActiveChat = { kind: 'group'; id: string } | { kind: 'friend'; id: string };
 
@@ -298,16 +308,10 @@ function formatListTimestamp(iso: string) {
   return date.toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-const chats = [
-  { id: 'brasov', title: 'Brașov azi', detail: '12 persoane active', emoji: '⛰️', color: '#25D960', time: 'Azi' },
-  { id: 'gasca', title: 'Gașca de sâmbătă', detail: 'Vlad: Ne vedem la 8?', emoji: '🍹', color: '#08B94C', time: 'Azi' },
-  { id: 'poiana', title: 'Poiana Brașov', detail: 'Ioana: Vin și eu!', emoji: '❄️', color: '#74EB99', time: 'Azi' },
-];
-
-// Shared chat-list row — same shape for the mock group chats and the real
-// friend DMs, matching the reference design: avatar, name + timestamp on
-// top, preview (with a read-receipt tick when it's your own last message)
-// and an unread badge on the bottom line.
+// Shared chat-list row for friend DMs (event groups use GroupCard instead),
+// matching the reference design: avatar, name + timestamp on top, preview
+// (with a read-receipt tick when it's your own last message) and an unread
+// badge on the bottom line.
 function ChatListRow({
   avatarNode,
   avatarColor,
@@ -367,7 +371,8 @@ function ChatListRow({
 
 // Groups get a bigger, distinct "communities" style card in a horizontal
 // row up top — individual friend DMs stay the compact WhatsApp-style row
-// (ChatListRow) they already had, per the requested distinction.
+// (ChatListRow) they already had, per the requested distinction. One card
+// per event the user is in (joined or hosting) — see joinedEventIds below.
 function GroupCard({
   emoji,
   color,
@@ -386,9 +391,6 @@ function GroupCard({
     <Pressable onPress={onPress} style={styles.groupCard}>
       <View style={[styles.groupCardAvatar, { backgroundColor: color }]}>
         <Text style={styles.groupCardEmoji}>{emoji}</Text>
-        <View style={styles.groupCardDemoBadge}>
-          <Text style={styles.groupCardDemoBadgeText}>PREVIEW</Text>
-        </View>
       </View>
       <Text numberOfLines={1} style={[styles.groupCardTitle, { color: theme.textPrimary }]}>
         {title}
@@ -400,19 +402,13 @@ function GroupCard({
   );
 }
 
-const starterMessages: DisplayMessage[] = [
-  { id: '1', sender: 'Mara', text: 'Ce faceți diseară? ✨', time: '18:41', mine: false, read: false },
-  { id: '2', sender: 'Vlad', text: 'Mergem la un spriț în centru?', time: '18:42', mine: false, read: false },
-  { id: '3', sender: 'Tu', text: 'Eu sunt pentru! Unde ne vedem?', time: '18:43', mine: true, read: true },
-  { id: '4', sender: 'Ioana', text: 'La Republicii, pe la 20:00?', time: '18:44', mine: false, read: false },
-];
-
 export default function Messages() {
   const insets = useSafeAreaInsets();
   const { colors: theme } = useAppTheme();
   const { setHidden } = useNavVisibility();
   const { light } = useHaptics();
   const { user } = useUser();
+  const { events } = useEvents();
   const { friendId } = useLocalSearchParams<{ friendId?: string }>();
 
   // null = showing the list; a chat only opens once the user taps it, or
@@ -426,8 +422,30 @@ export default function Messages() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [friendId]);
-  const [groupMessages, setGroupMessages] = useState<DisplayMessage[]>(starterMessages);
+
+  // Every event the user is in (joined or hosting — createEvent already
+  // inserts the host into event_attendees) doubles as a group chat: the
+  // group "exists" the moment the event does, no separate join step.
+  const [joinedEventIds, setJoinedEventIds] = useState<Set<string>>(new Set());
+  const loadJoinedEvents = useCallback(async () => {
+    if (!user) return;
+    try {
+      setJoinedEventIds(new Set(await getUserJoinedEventIds(user.id)));
+    } catch {
+      // Best-effort — the groups row just stays empty/stale until the next focus.
+    }
+  }, [user]);
+  useFocusEffect(
+    useCallback(() => {
+      loadJoinedEvents();
+    }, [loadJoinedEvents])
+  );
+  const groupEvents = useMemo(() => events.filter((event) => joinedEventIds.has(event.id)), [events, joinedEventIds]);
+
+  const [groupMessages, setGroupMessages] = useState<DbGroupMessage[]>([]);
+  const [groupSenderProfiles, setGroupSenderProfiles] = useState<Record<string, { name: string; avatarUrl: string | null }>>({});
   const [friends, setFriends] = useState<Profile[]>([]);
+  const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
   const [friendsLoading, setFriendsLoading] = useState(true);
   const [friendsError, setFriendsError] = useState(false);
   const [friendsReloadKey, setFriendsReloadKey] = useState(0);
@@ -448,12 +466,9 @@ export default function Messages() {
   const composerOffset = useRef(new Animated.Value(restingComposerOffset)).current;
 
   const activeFriend = activeChat?.kind === 'friend' ? friends.find((f) => f.id === activeChat.id) : undefined;
-  const selectedGroup = activeChat?.kind === 'group' ? chats.find((c) => c.id === activeChat.id) : undefined;
-  const blocksState = useBlocks();
-  const friendBlocked = !!(user && activeFriend) && isBlocked(user.id, activeFriend.id);
-  const visibleFriends = user ? friends.filter((friend) => !isBlocked(user.id, friend.id)) : friends;
-  // Referenced only to subscribe to block-store changes above.
-  void blocksState;
+  const selectedGroup = activeChat?.kind === 'group' ? events.find((e) => e.id === activeChat.id) : undefined;
+  const friendBlocked = !!(user && activeFriend) && blockedIds.has(activeFriend.id);
+  const visibleFriends = friends.filter((friend) => !blockedIds.has(friend.id));
 
   // One shared player for every voice bubble in the thread — swapping its
   // source on tap instead of mounting a player per bubble.
@@ -733,6 +748,9 @@ export default function Messages() {
     }
     setFriendsLoading(true);
     setFriendsError(false);
+    getBlockedIds(user.id)
+      .then((ids) => setBlockedIds(new Set(ids)))
+      .catch(() => {});
     getFriends(user.id)
       .then(async (list) => {
         setFriends(list);
@@ -800,8 +818,53 @@ export default function Messages() {
     });
   }, [user]);
 
+  // Load an event group's full thread whenever it's opened, and resolve
+  // sender names/avatars from profiles (not visible_event_attendees — that
+  // view drops anyone who's hidden their activity from the viewer, which
+  // would render their messages with a blank name). Subscribed per-event
+  // (unlike the friend-DM subscription, which is per-user) since group
+  // membership is scoped to the event, not the viewer's own inbox.
+  useEffect(() => {
+    if (!user || activeChat?.kind !== 'group') return;
+    const eventId = activeChat.id;
+    let cancelled = false;
+
+    getGroupThread(eventId).then((thread) => {
+      if (cancelled) return;
+      setGroupMessages(thread);
+      getSenderProfiles(thread.map((m) => m.sender_id)).then((profiles) => {
+        if (!cancelled) setGroupSenderProfiles((prev) => ({ ...prev, ...profiles }));
+      });
+    });
+
+    const unsubscribe = subscribeToEventGroupMessages(eventId, (message) => {
+      // The event_id=eq filter can't exclude your own inserts (unlike the
+      // friend-DM subscription's recipient_id filter) — dedupe against the
+      // optimistic append already done in sendMessage below.
+      setGroupMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
+      getSenderProfiles([message.sender_id]).then((profiles) => {
+        setGroupSenderProfiles((prev) => ({ ...prev, ...profiles }));
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [user, activeChat]);
+
   const displayedMessages: DisplayMessage[] = useMemo(() => {
-    if (activeChat?.kind === 'group') return groupMessages;
+    if (activeChat?.kind === 'group' && user) {
+      return groupMessages.map((m) => ({
+        id: m.id,
+        text: m.text,
+        time: formatTime(m.created_at),
+        sender: m.is_system ? '' : m.sender_id === user.id ? 'Tu' : groupSenderProfiles[m.sender_id]?.name ?? '',
+        mine: !m.is_system && m.sender_id === user.id,
+        read: false,
+        isSystem: m.is_system,
+      }));
+    }
     if (activeChat?.kind === 'friend' && user) {
       return friendMessages.map((m) => ({
         id: m.id,
@@ -817,7 +880,7 @@ export default function Messages() {
       }));
     }
     return [];
-  }, [activeChat, groupMessages, friendMessages, user, activeFriend]);
+  }, [activeChat, groupMessages, groupSenderProfiles, friendMessages, user, activeFriend]);
 
   // Track the keyboard ourselves instead of KeyboardAvoidingView — it kept
   // over-shooting (resize windowSoftInputMode plus its own height-shrinking
@@ -872,12 +935,19 @@ export default function Messages() {
     light();
     setDraft('');
 
+    if (!user) return;
+
     if (activeChat.kind === 'group') {
-      setGroupMessages((current) => [...current, { id: String(Date.now()), sender: 'Tu', text, time: 'Acum', mine: true, read: false }]);
+      const sent = await sendEventGroupMessage(activeChat.id, user.id, text);
+      if (sent) {
+        setGroupMessages((current) => (current.some((m) => m.id === sent.id) ? current : [...current, sent]));
+      } else {
+        setDraft(text);
+        showAlert('A apărut o eroare', 'Nu am putut trimite mesajul. Încearcă din nou.');
+      }
       return;
     }
 
-    if (!user) return;
     const sent = await sendDirectMessage(user.id, activeChat.id, text);
     if (sent) {
       setFriendMessages((current) => [...current, sent]);
@@ -920,25 +990,27 @@ export default function Messages() {
               contentContainerStyle={{ paddingBottom: insets.bottom + 116 }}
               showsVerticalScrollIndicator={false}
             >
-              <View style={styles.groupsSection}>
-                <Text style={[styles.sectionLabel, styles.groupsSectionLabel, { color: theme.textSecondary }]}>GRUPURI</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupsRow}>
-                  {chats.map((chat) => (
-                    <GroupCard
-                      key={chat.id}
-                      emoji={chat.emoji}
-                      color={chat.color}
-                      title={chat.title}
-                      detail={chat.detail}
-                      onPress={() => {
-                        light();
-                        setHidden(true);
-                        setActiveChat({ kind: 'group', id: chat.id });
-                      }}
-                    />
-                  ))}
-                </ScrollView>
-              </View>
+              {groupEvents.length > 0 && (
+                <View style={styles.groupsSection}>
+                  <Text style={[styles.sectionLabel, styles.groupsSectionLabel, { color: theme.textSecondary }]}>GRUPURI</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupsRow}>
+                    {groupEvents.map((event) => (
+                      <GroupCard
+                        key={event.id}
+                        emoji={event.emoji}
+                        color={event.color}
+                        title={event.title}
+                        detail={event.hostId === user?.id ? 'Găzduiești' : 'Participi'}
+                        onPress={() => {
+                          light();
+                          setHidden(true);
+                          setActiveChat({ kind: 'group', id: event.id });
+                        }}
+                      />
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
 
               {friendsLoading && (
                 <View style={styles.listState}>
@@ -1017,7 +1089,11 @@ export default function Messages() {
                 <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
                   {selectedGroup ? selectedGroup.title : activeFriend?.name}
                 </Text>
-                {selectedGroup && <Text style={[styles.online, { color: theme.accent }]}>● activi acum în Brașov</Text>}
+                {selectedGroup && (
+                  <Text numberOfLines={1} style={[styles.online, { color: theme.textSecondary }]}>
+                    {selectedGroup.detail || 'Chat de grup'}
+                  </Text>
+                )}
               </View>
               {activeFriend ? (
                 <Pressable
@@ -1041,8 +1117,12 @@ export default function Messages() {
               contentContainerStyle={styles.messagesContent}
               onContentSizeChange={() => messagesScrollRef.current?.scrollToEnd({ animated: true })}
             >
-              {selectedGroup && <Text style={[styles.today, { color: theme.textSecondary }]}>ASTĂZI</Text>}
-              {displayedMessages.map((message) => (
+              {displayedMessages.map((message) =>
+                message.isSystem ? (
+                  <Text key={message.id} style={[styles.systemMessage, { color: theme.textSecondary }]}>
+                    {message.text}
+                  </Text>
+                ) : (
                 <View key={message.id} style={[styles.messageRow, message.mine && styles.messageRowMine]}>
                   {!message.mine && <View style={styles.dot} />}
                   <View
@@ -1091,7 +1171,8 @@ export default function Messages() {
                     </View>
                   </View>
                 </View>
-              ))}
+                )
+              )}
             </ScrollView>
 
             {/* marginBottom tracks the keyboard directly (see the effect above)
@@ -1116,6 +1197,30 @@ export default function Messages() {
                 { marginBottom: composerOffset, backgroundColor: theme.surface, borderColor: theme.border },
               ]}
             >
+              {selectedGroup ? (
+                // Photo/voice attachments are DM-only (sendMediaMessage takes a
+                // single recipient, not an event) — group composer stays text-only.
+                <>
+                  <TextInput
+                    value={draft}
+                    onChangeText={setDraft}
+                    onSubmitEditing={sendMessage}
+                    placeholder="Scrie în grup..."
+                    placeholderTextColor={theme.textSecondary}
+                    style={[styles.input, { color: theme.textPrimary }]}
+                    returnKeyType="send"
+                    maxLength={MESSAGE_MAX_LENGTH}
+                  />
+                  <Pressable
+                    onPress={sendMessage}
+                    style={[styles.send, !draft.trim() && styles.sendOff]}
+                    accessibilityLabel="Trimite"
+                  >
+                    <Text style={styles.sendText}>↑</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
               {recordedVoice && !recorderState.isRecording ? (
                 <Pressable
                   onPress={discardRecordedVoice}
@@ -1212,6 +1317,8 @@ export default function Messages() {
               >
                 <Text style={styles.sendText}>↑</Text>
               </Pressable>
+                </>
+              )}
             </Animated.View>
             )}
           </>
@@ -1243,16 +1350,6 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   groupCardEmoji: { fontSize: 32 },
-  groupCardDemoBadge: {
-    position: 'absolute',
-    bottom: -6,
-    alignSelf: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  groupCardDemoBadgeText: { color: '#FFFFFF', fontSize: 8, fontWeight: '900', letterSpacing: 0.4 },
   groupCardTitle: { fontSize: 12, fontWeight: '800', textAlign: 'center', marginTop: 4 },
   groupCardDetail: { fontSize: 10, textAlign: 'center', marginTop: 2 },
   friendsSection: { paddingHorizontal: 18, paddingTop: 22 },
@@ -1294,7 +1391,7 @@ const styles = StyleSheet.create({
   more: { marginLeft: 'auto', fontSize: 18, letterSpacing: 1 },
   messages: { flex: 1 },
   messagesContent: { paddingHorizontal: 22, paddingTop: 20, paddingBottom: 16, gap: 12 },
-  today: { fontSize: 10, fontWeight: '800', letterSpacing: 1.2, alignSelf: 'center', marginBottom: 4 },
+  systemMessage: { fontSize: 11, fontWeight: '700', textAlign: 'center', marginVertical: 4 },
   messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 7 },
   messageRowMine: { justifyContent: 'flex-end' },
   dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#25D960', marginBottom: 12 },

@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { useEvents } from '@/contexts/EventsContext';
 import { useStories } from '@/contexts/StoriesContext';
@@ -19,6 +20,7 @@ import type { StoryVisibility } from '@/lib/stories';
 export default function NewStory() {
   const { colors: theme } = useAppTheme();
   const { light, medium } = useHaptics();
+  const { t } = useLanguage();
   const { user } = useUser();
   const { events } = useEvents();
   const { create } = useStories();
@@ -31,7 +33,7 @@ export default function NewStory() {
   async function pickMedia() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permisiune necesară', 'Activează accesul la poze pentru a adăuga un Story.');
+      Alert.alert(t.newStory.permissionRequiredTitle, t.newStory.permissionRequiredMessage);
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
@@ -45,7 +47,7 @@ export default function NewStory() {
     if (!user || !mediaUri || posting) return;
     const selectedEvent = eventId ? events.find((event) => event.id === eventId) : undefined;
     if (eventId && !selectedEvent) {
-      Alert.alert('Eveniment indisponibil', 'Alege un eveniment valid sau elimină asocierea.');
+      Alert.alert(t.newStory.unavailableEventTitle, t.newStory.unavailableEventMessage);
       return;
     }
     setPosting(true);
@@ -60,7 +62,7 @@ export default function NewStory() {
     });
     setPosting(false);
     if (!story) {
-      Alert.alert('Nu am putut publica', 'Alege o imagine înainte să postezi.');
+      Alert.alert(t.newStory.couldNotPublishTitle, t.newStory.couldNotPublishMessage);
       return;
     }
     medium();
@@ -75,50 +77,50 @@ export default function NewStory() {
           <GlassSurface />
           <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
         </AnimatedPressable>
-        <Text style={[styles.title, { color: theme.textPrimary }]}>Adaugă Story</Text>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>{t.newStory.title}</Text>
         <View style={styles.backButton} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <AnimatedPressable onPress={pickMedia} style={[styles.mediaCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+        <AnimatedPressable onPress={pickMedia} style={[styles.mediaCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           {mediaUri ? <Image source={{ uri: mediaUri }} style={styles.preview} resizeMode="cover" /> : (
             <View style={styles.mediaEmpty}>
               <Ionicons name="image-outline" size={34} color={theme.accent} />
-              <Text style={[styles.mediaTitle, { color: theme.textPrimary }]}>Alege o imagine</Text>
-              <Text style={[styles.mediaHint, { color: theme.textSecondary }]}>Imaginea este păstrată local pentru această versiune.</Text>
+              <Text style={[styles.mediaTitle, { color: theme.textPrimary }]}>{t.newStory.chooseImage}</Text>
+              <Text style={[styles.mediaHint, { color: theme.textSecondary }]}>{t.newStory.imageStoredLocallyHint}</Text>
             </View>
           )}
         </AnimatedPressable>
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>TEXT OPȚIONAL</Text>
-        <TextInput value={text} onChangeText={setText} maxLength={180} multiline placeholder="Spune ceva despre momentul tău..." placeholderTextColor={theme.textSecondary} style={[styles.textInput, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]} />
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newStory.optionalTextLabel}</Text>
+        <TextInput value={text} onChangeText={setText} maxLength={180} multiline placeholder={t.newStory.textPlaceholder} placeholderTextColor={theme.textSecondary} style={[styles.textInput, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]} />
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>VIZIBILITATE</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newStory.visibilityLabel}</Text>
         <View style={styles.visibilityRow}>
           {([
-            ['public', '🌍 Public'],
-            ['friends', '👥 Prieteni'],
+            ['public', t.newStory.visibilityPublic],
+            ['friends', t.newStory.visibilityFriends],
           ] as const).map(([value, label]) => (
-            <AnimatedPressable key={value} onPress={() => setVisibility(value)} style={[styles.visibilityButton, { backgroundColor: visibility === value ? colors.green500 : theme.surface, borderColor: visibility === value ? colors.green500 : theme.border }]}> 
+            <AnimatedPressable key={value} onPress={() => setVisibility(value)} style={[styles.visibilityButton, { backgroundColor: visibility === value ? colors.green500 : theme.surface, borderColor: visibility === value ? colors.green500 : theme.border }]}>
               <Text style={[styles.visibilityText, { color: visibility === value ? colors.white : theme.textPrimary }]}>{label}</Text>
             </AnimatedPressable>
           ))}
         </View>
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>ASOCIAZĂ UN EVENIMENT (OPȚIONAL)</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newStory.linkEventLabel}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.eventsRow}>
-          <AnimatedPressable onPress={() => setEventId(undefined)} style={[styles.eventChip, { borderColor: !eventId ? colors.green500 : theme.border, backgroundColor: !eventId ? theme.surfaceMuted : theme.surface }]}> 
-            <Text style={[styles.eventChipText, { color: theme.textPrimary }]}>Fără asociere</Text>
+          <AnimatedPressable onPress={() => setEventId(undefined)} style={[styles.eventChip, { borderColor: !eventId ? colors.green500 : theme.border, backgroundColor: !eventId ? theme.surfaceMuted : theme.surface }]}>
+            <Text style={[styles.eventChipText, { color: theme.textPrimary }]}>{t.newStory.noAssociation}</Text>
           </AnimatedPressable>
           {events.slice(0, 12).map((event) => (
-            <AnimatedPressable key={event.id} onPress={() => setEventId(event.id)} style={[styles.eventChip, { borderColor: eventId === event.id ? colors.green500 : theme.border, backgroundColor: eventId === event.id ? theme.surfaceMuted : theme.surface }]}> 
+            <AnimatedPressable key={event.id} onPress={() => setEventId(event.id)} style={[styles.eventChip, { borderColor: eventId === event.id ? colors.green500 : theme.border, backgroundColor: eventId === event.id ? theme.surfaceMuted : theme.surface }]}>
               <Text numberOfLines={1} style={[styles.eventChipText, { color: theme.textPrimary }]}>{event.emoji} {event.title}</Text>
             </AnimatedPressable>
           ))}
         </ScrollView>
 
-        <AnimatedPressable onPress={post} disabled={!mediaUri || posting} style={[styles.postButton, { backgroundColor: colors.green500, opacity: !mediaUri || posting ? 0.55 : 1 }]}> 
-          <Text style={styles.postText}>{posting ? 'Se postează...' : 'Postează Story'}</Text>
+        <AnimatedPressable onPress={post} disabled={!mediaUri || posting} style={[styles.postButton, { backgroundColor: colors.green500, opacity: !mediaUri || posting ? 0.55 : 1 }]}>
+          <Text style={styles.postText}>{posting ? t.newStory.posting : t.newStory.postStory}</Text>
         </AnimatedPressable>
       </ScrollView>
     </SafeAreaView>

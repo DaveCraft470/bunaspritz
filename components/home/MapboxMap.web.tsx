@@ -11,9 +11,20 @@ import {
   OPENFREEMAP_STYLE_URL,
 } from '@/constants/mapbox';
 import type { SpritzEvent } from '@/constants/events';
+import { EASTER_EGG_PINS } from '@/constants/easterEggs';
+import { showAlert } from '@/lib/alert';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { isMapboxKnownDead, loadMapboxGl, loadMapLibreGl, markMapboxDead } from '@/lib/mapboxGlWeb';
 import { FakeMapBackdrop } from './FakeMapBackdrop';
+
+// Same formatting as MapboxMap.tsx (native) — kept separate since the two
+// files don't share a module otherwise.
+function formatEasterEggDate(happensAt: string) {
+  const date = new Date(happensAt);
+  const datePart = date.toLocaleDateString('ro-RO', { day: 'numeric', month: 'long', year: 'numeric' });
+  const timePart = date.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' });
+  return `${datePart} · ${timePart}`;
+}
 
 type Provider = 'mapbox' | 'maplibre';
 
@@ -95,6 +106,18 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
     });
     const marker = new gl.Marker({ element: el, anchor: 'bottom' }).setLngLat([ev.lng, ev.lat]).addTo(map);
     eventMarkersRef.current.set(ev.id, marker);
+  }
+
+  function addEasterEggPin(map: any, egg: (typeof EASTER_EGG_PINS)[number]) {
+    const gl = (window as any).mapboxgl || (window as any).maplibregl;
+    const el = document.createElement('div');
+    el.className = 'spritz-event-pin';
+    el.style.background = egg.color;
+    el.innerHTML = `<span>${egg.emoji}</span>`;
+    el.addEventListener('click', () => {
+      showAlert(egg.title, formatEasterEggDate(egg.happensAt));
+    });
+    new gl.Marker({ element: el, anchor: 'bottom' }).setLngLat([egg.lng, egg.lat]).addTo(map);
   }
 
   function ensureUserMarker(map: any, lng: number, lat: number) {
@@ -188,6 +211,7 @@ export const MapboxMap = forwardRef<MapboxMapHandle, MapboxMapProps>(function Ma
           clearTimeout(timeoutTimer);
           knownEventCountRef.current = eventsRef.current.length;
           for (const pin of toPinData(eventsRef.current)) addEventPin(map, pin);
+          for (const egg of EASTER_EGG_PINS) addEasterEggPin(map, egg);
           setReady(true);
           onReady?.();
         });

@@ -18,6 +18,7 @@ import { alertPermissionDenied } from '@/lib/permissions';
 import { showAlert } from '@/lib/alert';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { LocationPickerModal } from '@/components/event/LocationPickerModal';
@@ -38,11 +39,11 @@ const EMOJI_CHOICES = ['🎉', '🍻', '🎷', '🎸', '🌮', '🎲', '🥾', '
 const COLOR_CHOICES = ['#FF9F5A', '#5FD98A', '#5AA9E6', '#FFD25A', '#FF6B81', '#B388FF', '#4ED9C9'];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = [0, 15, 30, 45];
-const MONTHS = ['IANUARIE', 'FEBRUARIE', 'MARTIE', 'APRILIE', 'MAI', 'IUNIE', 'IULIE', 'AUGUST', 'SEPTEMBRIE', 'OCTOMBRIE', 'NOIEMBRIE', 'DECEMBRIE'];
 
 export default function NewEvent() {
   const { publish } = useLocalSearchParams<{ publish?: string }>();
   const { colors: theme, scheme } = useAppTheme();
+  const { t, locale } = useLanguage();
   const insets = useSafeAreaInsets();
   const { addEvent } = useEvents();
   const { user, effectiveVerified } = useUser();
@@ -78,6 +79,8 @@ export default function NewEvent() {
   const [rentalProofAsset, setRentalProofAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [drinks, setDrinks] = useState<EventDrink[]>([]);
   const [songs, setSongs] = useState<SongCatalogItem[]>([]);
+  const [visibility, setVisibility] = useState<'public' | 'private'>('public');
+  const [approvalMode, setApprovalMode] = useState<'instant' | 'manual'>('instant');
 
   useEffect(() => {
     const draft = getEventPreviewDraft();
@@ -95,6 +98,8 @@ export default function NewEvent() {
       setRentalProofAsset(draft.rentalProofAsset ?? null);
       setDrinks(draft.drinks ?? []);
       setSongs(draft.songs ?? []);
+      setVisibility(draft.visibility);
+      setApprovalMode(draft.approvalMode);
       if (draft.startsAt) {
         const date = new Date(draft.startsAt);
         setSelectedDate(startOfDay(date));
@@ -164,13 +169,13 @@ export default function NewEvent() {
         const value = date.getFullYear() * 12 + date.getMonth();
         const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
         return {
-          label: MONTHS[date.getMonth()],
+          label: t.newEvent.months[date.getMonth()],
           value,
           disabled: !Array.from({ length: daysInMonth }, (_, day) => isDateBetween(new Date(date.getFullYear(), date.getMonth(), day + 1), today, latestDate)).some(Boolean),
         };
       });
     },
-    [selectedDate, today, latestDate]
+    [selectedDate, today, latestDate, t]
   );
 
   function selectDatePart(part: 'day' | 'month', value: number) {
@@ -185,7 +190,7 @@ export default function NewEvent() {
   async function handlePickRentalProof() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      alertPermissionDenied(permission.canAskAgain, 'Activează accesul la poze din Setările telefonului ca să atașezi o dovadă.');
+      alertPermissionDenied(permission.canAskAgain, t.newEvent.photoPermissionDeniedProof);
       return;
     }
 
@@ -199,20 +204,20 @@ export default function NewEvent() {
   async function handlePublish() {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
-      showAlert('Mai e nevoie de un nume', 'Dă-i evenimentului un titlu înainte să-l publici.');
+      showAlert(t.newEvent.errorNoTitleTitle, t.newEvent.errorNoTitleMessage);
       return;
     }
     if (!user || publishingRef.current) return;
 
     if (!isSelectedDateValid()) {
-      showAlert('Data invalidă', 'Alege o dată între azi și peste o lună.');
+      showAlert(t.newEvent.errorInvalidDateTitle, t.newEvent.errorInvalidDateMessage);
       return;
     }
 
     // The default hour/minute (now + 1h, capped at 23:00) can land in the
     // past when the event is created late at night.
     if (buildStartsAt().getTime() < Date.now()) {
-      showAlert('Ora aleasă a trecut deja', 'Alege o oră care nu a trecut încă.');
+      showAlert(t.newEvent.errorPastTimeTitle, t.newEvent.errorPastTimeMessage);
       return;
     }
 
@@ -226,15 +231,15 @@ export default function NewEvent() {
     // left empty" via the NaN-skipping checks below — tell the user instead
     // of quietly discarding what they typed.
     if (parsedEntryFee !== null && Number.isNaN(parsedEntryFee)) {
-      showAlert('Preț invalid', 'Introdu un preț valid pentru intrare sau lasă câmpul gol.');
+      showAlert(t.newEvent.errorInvalidPriceTitle, t.newEvent.errorInvalidEntryPriceMessage);
       return;
     }
     if (parsedDrinksPrice !== null && Number.isNaN(parsedDrinksPrice)) {
-      showAlert('Preț invalid', 'Introdu un preț valid pentru băuturi sau lasă câmpul gol.');
+      showAlert(t.newEvent.errorInvalidPriceTitle, t.newEvent.errorInvalidDrinksPriceMessage);
       return;
     }
     if (parsedMaxParticipants !== null && Number.isNaN(parsedMaxParticipants)) {
-      showAlert('Număr invalid', 'Introdu un număr valid de participanți sau lasă câmpul gol.');
+      showAlert(t.newEvent.errorInvalidNumberTitle, t.newEvent.errorInvalidParticipantsMessage);
       return;
     }
 
@@ -243,11 +248,11 @@ export default function NewEvent() {
     // used to only surface that as the generic "couldn't publish" error
     // after a round-trip — catch it here with a specific message instead.
     if (parsedEntryFee !== null && parsedEntryFee < 0) {
-      showAlert('Preț invalid', 'Prețul intrării nu poate fi negativ.');
+      showAlert(t.newEvent.errorInvalidPriceTitle, t.newEvent.errorNegativeEntryPrice);
       return;
     }
     if (parsedDrinksPrice !== null && parsedDrinksPrice < 0) {
-      showAlert('Preț invalid', 'Prețul băuturilor nu poate fi negativ.');
+      showAlert(t.newEvent.errorInvalidPriceTitle, t.newEvent.errorNegativeDrinksPrice);
       return;
     }
 
@@ -263,12 +268,12 @@ export default function NewEvent() {
 
       const created = await createEvent(user.id, {
         title: trimmedTitle,
-        detail: detail.trim() || 'Detalii în curând',
+        detail: detail.trim() || t.newEvent.defaultDetail,
         emoji,
         color,
         lng: finalCoords.lng,
         lat: finalCoords.lat,
-        genre: genre.trim() || 'Surpriză',
+        genre: genre.trim() || t.newEvent.defaultGenre,
         startsAt: buildStartsAt().toISOString(),
         entryFeeRon: parsedEntryFee !== null && !Number.isNaN(parsedEntryFee) ? parsedEntryFee : null,
         drinksPriceRon: parsedDrinksPrice !== null && !Number.isNaN(parsedDrinksPrice) ? parsedDrinksPrice : null,
@@ -278,6 +283,8 @@ export default function NewEvent() {
             : null,
         locationIsRented,
         rentalProofPath,
+        visibility,
+        approvalMode,
       });
 
       if (!created) {
@@ -285,7 +292,7 @@ export default function NewEvent() {
         // clean it up rather than leaving an orphaned file, same as
         // sendMediaMessage does for message media.
         if (rentalProofPath) removeRentalProof(rentalProofPath).catch(() => {});
-        showAlert('A apărut o eroare', 'Nu am putut publica evenimentul. Încearcă din nou.');
+        showAlert(t.newEvent.genericErrorTitle, t.newEvent.errorPublishFailed);
         return;
       }
 
@@ -314,6 +321,8 @@ export default function NewEvent() {
       locationIsRented, rentalProofAttached: !!rentalProofAsset, rentalProofAsset,
       drinks,
       songs,
+      visibility,
+      approvalMode,
     });
     light();
     router.push('/event-preview');
@@ -338,13 +347,13 @@ export default function NewEvent() {
             router.back();
           }}
           hitSlop={10}
-          accessibilityLabel="Înapoi"
+          accessibilityLabel={t.common.back}
           style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
         >
           <GlassSurface />
           <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
         </AnimatedPressable>
-        <Text style={[styles.title, { color: theme.textPrimary }]}>Eveniment nou</Text>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>{t.newEvent.title}</Text>
         <View style={styles.backButton} />
       </View>
 
@@ -356,11 +365,11 @@ export default function NewEvent() {
         extraScrollHeight={Platform.OS === 'ios' ? 20 : 0}
         keyboardOpeningTime={0}
       >
-        <Text style={[styles.label, { color: theme.textSecondary }]}>TITLU</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newEvent.titleLabel}</Text>
         <TextInput
           value={title}
           onChangeText={setTitle}
-          placeholder="Ex: Grătar la iarbă verde"
+          placeholder={t.newEvent.titlePlaceholder}
           placeholderTextColor={theme.textSecondary}
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
           maxLength={TITLE_MAX_LENGTH}
@@ -369,11 +378,11 @@ export default function NewEvent() {
           {title.length}/{TITLE_MAX_LENGTH}
         </Text>
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>DESCRIERE</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newEvent.descriptionLabel}</Text>
         <TextInput
           value={detail}
           onChangeText={setDetail}
-          placeholder="Spune-le prietenilor ce să aștepte"
+          placeholder={t.newEvent.descriptionPlaceholder}
           placeholderTextColor={theme.textSecondary}
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
           maxLength={DETAIL_MAX_LENGTH}
@@ -382,7 +391,7 @@ export default function NewEvent() {
           {detail.length}/{DETAIL_MAX_LENGTH}
         </Text>
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>LOCAȚIE</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newEvent.locationLabel}</Text>
         <AnimatedPressable
           onPress={() => {
             light();
@@ -398,33 +407,33 @@ export default function NewEvent() {
           <View style={styles.locationCardFooter}>
             <Ionicons name="location" size={16} color={colors.green500} />
             <Text style={[styles.locationCardText, { color: theme.textPrimary }]}>
-              {coords ? 'Schimbă locația' : 'Alege locația pe hartă'}
+              {coords ? t.newEvent.changeLocation : t.newEvent.chooseLocationOnMap}
             </Text>
           </View>
         </AnimatedPressable>
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>DATĂ</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newEvent.dateLabel}</Text>
         <View style={[styles.wheelGroup, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <WheelPicker label="ZI" options={dateDays} selectedValue={selectedDate.getDate()} onValueChange={(value) => selectDatePart('day', value)} />
-          <WheelPicker label="LUNĂ" options={dateMonths} selectedValue={selectedDate.getFullYear() * 12 + selectedDate.getMonth()} onValueChange={(value) => selectDatePart('month', value)} />
+          <WheelPicker label={t.newEvent.dayLabel} options={dateDays} selectedValue={selectedDate.getDate()} onValueChange={(value) => selectDatePart('day', value)} />
+          <WheelPicker label={t.newEvent.monthLabel} options={dateMonths} selectedValue={selectedDate.getFullYear() * 12 + selectedDate.getMonth()} onValueChange={(value) => selectDatePart('month', value)} />
           <Text style={[styles.selectedDateText, { color: theme.textSecondary }]}>
-            {selectedDate.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })}
+            {selectedDate.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })}
           </Text>
         </View>
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>ORĂ</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newEvent.timeLabel}</Text>
         <View style={[styles.wheelGroup, styles.timeWheelGroup, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <WheelPicker label="ORE" options={HOURS.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={hour} onValueChange={setHour} />
+          <WheelPicker label={t.newEvent.hoursLabel} options={HOURS.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={hour} onValueChange={setHour} />
           <Text style={[styles.timeSeparator, { color: theme.textPrimary }]}>:</Text>
-          <WheelPicker label="MINUTE" options={MINUTES.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={minute} onValueChange={setMinute} />
+          <WheelPicker label={t.newEvent.minutesLabel} options={MINUTES.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={minute} onValueChange={setMinute} />
         </View>
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>MUZICĂ</Text>
-        <Text style={[styles.subLabel, { color: theme.textSecondary }]}>GEN MUZICAL</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newEvent.musicLabel}</Text>
+        <Text style={[styles.subLabel, { color: theme.textSecondary }]}>{t.newEvent.musicGenreLabel}</Text>
         <TextInput
           value={genre}
           onChangeText={setGenre}
-          placeholder="Ex: Manele & trap"
+          placeholder={t.newEvent.genrePlaceholder}
           placeholderTextColor={theme.textSecondary}
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
           maxLength={GENRE_MAX_LENGTH}
@@ -433,47 +442,107 @@ export default function NewEvent() {
           {genre.length}/{GENRE_MAX_LENGTH}
         </Text>
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>PREȚ INTRARE (RON)</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newEvent.entryPriceLabel}</Text>
         <TextInput
           value={entryFee}
           onChangeText={setEntryFee}
-          placeholder="Lasă gol dacă e gratis"
+          placeholder={t.newEvent.entryPricePlaceholder}
           placeholderTextColor={theme.textSecondary}
           keyboardType="decimal-pad"
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
         />
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>PREȚ BĂUTURI (RON)</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newEvent.drinksPriceLabel}</Text>
         <TextInput
           value={drinksPrice}
           onChangeText={setDrinksPrice}
-          placeholder="Ex: 15"
+          placeholder={t.newEvent.drinksPricePlaceholder}
           placeholderTextColor={theme.textSecondary}
           keyboardType="decimal-pad"
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
         />
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>BĂUTURI LA EVENIMENT</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newEvent.eventDrinksLabel}</Text>
         <DrinkListEditor value={drinks} onChange={setDrinks} />
 
-        <Text style={[styles.subLabel, { color: theme.textSecondary }]}>MELODII REPREZENTATIVE</Text>
+        <Text style={[styles.subLabel, { color: theme.textSecondary }]}>{t.newEvent.representativeSongsLabel}</Text>
         <MusicPlaylistEditor value={songs} onChange={setSongs} />
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>MAX PARTICIPANȚI</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newEvent.maxParticipantsLabel}</Text>
         <TextInput
           value={maxParticipants}
           onChangeText={setMaxParticipants}
-          placeholder="Lasă gol pentru nelimitat"
+          placeholder={t.newEvent.maxParticipantsPlaceholder}
           placeholderTextColor={theme.textSecondary}
           keyboardType="number-pad"
           style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.textPrimary }]}
         />
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>LOCAȚIA E ÎNCHIRIATĂ?</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>CINE VEDE EVENIMENTUL</Text>
         <View style={styles.rentedRow}>
           {[
-            { label: 'Da', value: true },
-            { label: 'Nu', value: false },
+            { label: 'Public', value: 'public' as const },
+            { label: 'Privat', value: 'private' as const },
+          ].map((option) => (
+            <AnimatedPressable
+              key={option.value}
+              onPress={() => {
+                light();
+                setVisibility(option.value);
+              }}
+              style={[
+                styles.rentedChip,
+                { backgroundColor: theme.surface, borderColor: visibility === option.value ? colors.green500 : theme.border },
+                visibility === option.value && styles.chipActive,
+              ]}
+            >
+              <Text style={[styles.chipText, { color: visibility === option.value ? colors.green500 : theme.textPrimary }]}>
+                {option.label}
+              </Text>
+            </AnimatedPressable>
+          ))}
+        </View>
+        <Text style={[styles.rentalProofHint, { color: theme.textSecondary }]}>
+          {visibility === 'private'
+            ? 'Doar organizatorul, participanții și cei cu o cerere trimisă îl pot vedea.'
+            : 'Vizibil oricui deschide harta sau calendarul.'}
+        </Text>
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>CUM SE ALĂTURĂ PARTICIPANȚII</Text>
+        <View style={styles.rentedRow}>
+          {[
+            { label: 'Instant', value: 'instant' as const },
+            { label: 'Aprobare manuală', value: 'manual' as const },
+          ].map((option) => (
+            <AnimatedPressable
+              key={option.value}
+              onPress={() => {
+                light();
+                setApprovalMode(option.value);
+              }}
+              style={[
+                styles.rentedChip,
+                { backgroundColor: theme.surface, borderColor: approvalMode === option.value ? colors.green500 : theme.border },
+                approvalMode === option.value && styles.chipActive,
+              ]}
+            >
+              <Text style={[styles.chipText, { color: approvalMode === option.value ? colors.green500 : theme.textPrimary }]}>
+                {option.label}
+              </Text>
+            </AnimatedPressable>
+          ))}
+        </View>
+        <Text style={[styles.rentalProofHint, { color: theme.textSecondary }]}>
+          {approvalMode === 'manual'
+            ? 'Cererile de participare apar în notificările tale — le accepți sau refuzi tu.'
+            : 'Oricine apasă „Hai la Spritz!” intră direct în listă.'}
+        </Text>
+
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newEvent.locationRentedLabel}</Text>
+        <View style={styles.rentedRow}>
+          {[
+            { label: t.newEvent.yes, value: true },
+            { label: t.newEvent.no, value: false },
           ].map((option) => (
             <AnimatedPressable
               key={option.label}
@@ -508,7 +577,7 @@ export default function NewEvent() {
                   <Ionicons name="camera-outline" size={20} color={theme.accent} />
                 )}
                 <Text style={[styles.rentalProofText, { color: theme.textPrimary }]}>
-                  {rentalProofAsset ? 'Schimbă dovada' : 'Atașează dovada (opțional)'}
+                  {rentalProofAsset ? t.newEvent.changeProof : t.newEvent.attachProofOptional}
                 </Text>
               </AnimatedPressable>
               {rentalProofAsset && (
@@ -518,7 +587,7 @@ export default function NewEvent() {
                     setRentalProofAsset(null);
                   }}
                   hitSlop={10}
-                  accessibilityLabel="Elimină dovada"
+                  accessibilityLabel={t.newEvent.removeProof}
                   style={[styles.rentalProofClear, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}
                 >
                   <Ionicons name="close" size={13} color={theme.textSecondary} />
@@ -526,12 +595,12 @@ export default function NewEvent() {
               )}
             </View>
             <Text style={[styles.rentalProofHint, { color: theme.textSecondary }]}>
-              Rămâne privată — doar tu o vezi, nu apare public pe eveniment.
+              {t.newEvent.proofPrivateHint}
             </Text>
           </>
         )}
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>ICONIȚĂ</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newEvent.iconLabel}</Text>
         <View style={styles.emojiRow}>
           {EMOJI_CHOICES.map((choice) => (
             <AnimatedPressable
@@ -551,7 +620,7 @@ export default function NewEvent() {
           ))}
         </View>
 
-        <Text style={[styles.label, { color: theme.textSecondary }]}>CULOARE</Text>
+        <Text style={[styles.label, { color: theme.textSecondary }]}>{t.newEvent.colorLabel}</Text>
         <View style={styles.emojiRow}>
           {COLOR_CHOICES.map((choice) => (
             <AnimatedPressable
@@ -574,7 +643,7 @@ export default function NewEvent() {
           disabled={publishing}
           style={[styles.publishButton, shadows.glowGreen, publishing && styles.publishButtonDisabled]}
         >
-          <Text style={styles.publishText}>{publishing ? 'Se publică...' : 'Previzualizează evenimentul'}</Text>
+          <Text style={styles.publishText}>{publishing ? t.newEvent.publishing : t.newEvent.previewEvent}</Text>
         </AnimatedPressable>
       </KeyboardAwareScrollView>
 

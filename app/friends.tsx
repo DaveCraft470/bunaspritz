@@ -11,6 +11,7 @@ import { showAlert } from '@/lib/alert';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
@@ -18,9 +19,8 @@ import { GlassSurface } from '@/components/common/GlassSurface';
 import { FriendPrefsModal } from '@/components/social/FriendPrefsModal';
 import { ReportModal } from '@/components/social/ReportModal';
 import { SafetyMenu } from '@/components/social/SafetyMenu';
-import { blockUser, unblockUser, useBlocks } from '@/lib/blocks';
 import { USER_REPORT_REASONS } from '@/lib/reports';
-import { FriendPrefs, Profile, getFriendPrefs, setFriendPrefs, unfollow } from '@/lib/social';
+import { FriendPrefs, Profile, blockUser, getBlockedProfiles, getFriendPrefs, setFriendPrefs, unblockUser, unfollow } from '@/lib/social';
 import {
   acceptFriendRequest,
   cancelFriendRequest,
@@ -42,6 +42,7 @@ import { FriendRow } from '@/components/friends/FriendRow';
 export default function Friends() {
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
+  const { t } = useLanguage();
   const { user } = useUser();
   const { friendsStories } = useStories();
   const [viewerStories, setViewerStories] = useState<StoryGroup | null>(null);
@@ -55,21 +56,27 @@ export default function Friends() {
   const [menuFor, setMenuFor] = useState<Profile | null>(null);
   const [safetyMenuFor, setSafetyMenuFor] = useState<Profile | null>(null);
   const [reportTarget, setReportTarget] = useState<Profile | null>(null);
-  const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false });
+  const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false, blocked: false });
   const [refreshing, setRefreshing] = useState(false);
-  const blocksState = useBlocks();
-  const blockedIds = new Set(blocksState.filter((block) => block.blockerId === user?.id).map((block) => block.blockedId));
+  const [blocked, setBlocked] = useState<Profile[]>([]);
+  const blockedIds = new Set(blocked.map((profile) => profile.id));
   const visibleFriends = friends.filter((friend) => !blockedIds.has(friend.id));
 
   function load() {
     if (!user) return;
     setLoading(true);
     setLoadError(false);
-    Promise.all([getFriends(user.id), Promise.resolve(getIncomingFriendRequests(user.id)), Promise.resolve(getOutgoingFriendRequests(user.id))])
-      .then(async ([friendList, incomingList, outgoingList]) => {
+    Promise.all([
+      getFriends(user.id),
+      Promise.resolve(getIncomingFriendRequests(user.id)),
+      Promise.resolve(getOutgoingFriendRequests(user.id)),
+      getBlockedProfiles(user.id),
+    ])
+      .then(async ([friendList, incomingList, outgoingList, blockedList]) => {
         setFriends(friendList);
         setIncoming(incomingList);
         setOutgoing(outgoingList);
+        setBlocked(blockedList);
         setRequestProfiles(await getRequestProfiles([...incomingList, ...outgoingList]));
         setLoading(false);
       })
@@ -86,14 +93,16 @@ export default function Friends() {
     if (!user) return;
     setRefreshing(true);
     try {
-      const [friendList, incomingList, outgoingList] = await Promise.all([
+      const [friendList, incomingList, outgoingList, blockedList] = await Promise.all([
         getFriends(user.id),
         Promise.resolve(getIncomingFriendRequests(user.id)),
         Promise.resolve(getOutgoingFriendRequests(user.id)),
+        getBlockedProfiles(user.id),
       ]);
       setFriends(friendList);
       setIncoming(incomingList);
       setOutgoing(outgoingList);
+      setBlocked(blockedList);
       setRequestProfiles(await getRequestProfiles([...incomingList, ...outgoingList]));
       setLoadError(false);
     } catch {
@@ -118,23 +127,68 @@ export default function Friends() {
     const ok = await setFriendPrefs(user.id, menuFor.id, patch);
     if (!ok) {
       setPrefs(previous);
-      showAlert('A apărut o eroare', 'Nu am putut salva preferința. Încearcă din nou.');
+      showAlert(t.friends.genericErrorTitle, t.friends.errorSavingPref);
     }
+  }
+
+  function confirmBlockFriend(friend: Profile) {
+    light();
+    Alert.alert('Blochezi acest cont?', `${friend.name} nu te va mai putea urmări sau contacta.`, [
+      { text: 'Anulează', style: 'cancel' },
+      {
+        text: 'Blochează',
+        style: 'destructive',
+        onPress: async () => {
+          if (!user) return;
+          const ok = await blockUser(friend.id);
+          if (!ok) {
+            showAlert('A apărut o eroare', 'Nu am putut bloca acest cont. Încearcă din nou.');
+            return;
+          }
+          // getFriends() also reads the in-memory friend-request store — if
+          // an accepted request is left there, the next load() would put
+          // this person right back in the friends list even though the DB
+          // side (follows/friend_prefs) is already severed.
+          removeFriend(user.id, friend.id);
+          setFriends((current) => current.filter((f) => f.id !== friend.id));
+          setBlocked((current) => [...current, friend]);
+          setMenuFor(null);
+        },
+      },
+    ]);
+  }
+
+  function confirmUnblock(profile: Profile) {
+    light();
+    Alert.alert('Deblochezi acest cont?', `${profile.name} va putea din nou să te urmărească.`, [
+      { text: 'Anulează', style: 'cancel' },
+      {
+        text: 'Deblochează',
+        onPress: async () => {
+          const ok = await unblockUser(profile.id);
+          if (!ok) {
+            showAlert('A apărut o eroare', 'Nu am putut debloca acest cont. Încearcă din nou.');
+            return;
+          }
+          setBlocked((current) => current.filter((p) => p.id !== profile.id));
+        },
+      },
+    ]);
   }
 
   function confirmRemoveFriend(friend: Profile) {
     light();
-    Alert.alert('Elimini prietenul?', `Nu vei mai fi conectat cu ${friend.name}.`, [
-      { text: 'Anulează', style: 'cancel' },
+    Alert.alert(t.friends.removeFriendTitle, t.friends.removeFriendMessage(friend.name), [
+      { text: t.friends.cancel, style: 'cancel' },
       {
-        text: 'Elimină',
+        text: t.friends.remove,
         style: 'destructive',
         onPress: async () => {
           if (!user) return;
           const localRemoved = removeFriend(user.id, friend.id);
           const ok = localRemoved || (await unfollow(user.id, friend.id));
           if (!ok) {
-            showAlert('A apărut o eroare', 'Nu am putut elimina prietenul. Încearcă din nou.');
+            showAlert(t.friends.genericErrorTitle, t.friends.errorRemovingFriend);
             return;
           }
           setFriends((current) => current.filter((f) => f.id !== friend.id));
@@ -149,8 +203,14 @@ export default function Friends() {
     light();
     const alreadyBlocked = blockedIds.has(friend.id);
     if (alreadyBlocked) {
-      unblockUser(user.id, friend.id);
-      showAlert('Deblocat', `Ai deblocat pe ${friend.name}.`);
+      unblockUser(friend.id).then((ok) => {
+        if (!ok) {
+          showAlert('A apărut o eroare', 'Nu am putut debloca acest cont. Încearcă din nou.');
+          return;
+        }
+        setBlocked((current) => current.filter((p) => p.id !== friend.id));
+        showAlert('Deblocat', `Ai deblocat pe ${friend.name}.`);
+      });
       return;
     }
     Alert.alert(
@@ -161,8 +221,15 @@ export default function Friends() {
         {
           text: 'Blochează',
           style: 'destructive',
-          onPress: () => {
-            blockUser(user.id, friend.id, friend.name);
+          onPress: async () => {
+            const ok = await blockUser(friend.id);
+            if (!ok) {
+              showAlert('A apărut o eroare', 'Nu am putut bloca acest cont. Încearcă din nou.');
+              return;
+            }
+            removeFriend(user.id, friend.id);
+            setFriends((current) => current.filter((f) => f.id !== friend.id));
+            setBlocked((current) => [...current, friend]);
             showAlert('Utilizator blocat', `${friend.name} a fost blocat.`);
           },
         },
@@ -181,13 +248,13 @@ export default function Friends() {
             router.back();
           }}
           hitSlop={10}
-          accessibilityLabel="Înapoi"
+          accessibilityLabel={t.common.back}
           style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
         >
           <GlassSurface />
           <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
         </AnimatedPressable>
-        <Text style={[styles.title, { color: theme.textPrimary }]}>Prieteni</Text>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>{t.friends.title}</Text>
         <View style={styles.backButton} />
       </View>
 
@@ -201,7 +268,7 @@ export default function Friends() {
         {loading && (
           <View style={styles.loadingState}>
             <ActivityIndicator color={colors.green500} />
-            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Se încarcă prietenii...</Text>
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>{t.friends.loadingFriends}</Text>
           </View>
         )}
 
@@ -209,18 +276,18 @@ export default function Friends() {
         {!loading && loadError && (
           <>
             <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-              Nu am putut încărca prietenii. Verifică conexiunea și încearcă din nou.
+              {t.friends.couldNotLoadFriends}
             </Text>
             <AnimatedPressable onPress={load} style={[styles.retryButton, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.retryText, { color: theme.textPrimary }]}>Reîncearcă</Text>
+              <Text style={[styles.retryText, { color: theme.textPrimary }]}>{t.friends.retry}</Text>
             </AnimatedPressable>
           </>
         )}
 
         {!loading && !loadError && (incoming.length > 0 || outgoing.length > 0) && (
           <>
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Cereri de prietenie</Text>
-            {incoming.length > 0 && <Text style={[styles.subsectionTitle, { color: theme.textSecondary }]}>Primite</Text>}
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>{t.friends.friendRequests}</Text>
+            {incoming.length > 0 && <Text style={[styles.subsectionTitle, { color: theme.textSecondary }]}>{t.friends.received}</Text>}
             {incoming.map((request) => {
               const profile = requestProfiles.get(request.senderId);
               if (!profile) return null;
@@ -229,8 +296,8 @@ export default function Friends() {
                   key={request.id}
                   profile={profile}
                   theme={theme}
-                  primaryLabel="Acceptă"
-                  secondaryLabel="Respinge"
+                  primaryLabel={t.friends.accept}
+                  secondaryLabel={t.friends.decline}
                   onPrimary={() => acceptFriendRequest(user!.id, request.id)}
                   onSecondary={() => rejectFriendRequest(user!.id, request.id)}
                 />
@@ -241,7 +308,7 @@ export default function Friends() {
 
         {!loading && !loadError && outgoing.length > 0 && (
           <>
-            <Text style={[styles.subsectionTitle, { color: theme.textSecondary }]}>Trimise</Text>
+            <Text style={[styles.subsectionTitle, { color: theme.textSecondary }]}>{t.friends.sent}</Text>
             {outgoing.map((request) => {
               const profile = requestProfiles.get(request.receiverId);
               if (!profile) return null;
@@ -250,8 +317,8 @@ export default function Friends() {
                   key={request.id}
                   profile={profile}
                   theme={theme}
-                  primaryLabel="Cerere trimisă"
-                  secondaryLabel="Anulează"
+                  primaryLabel={t.friends.requestSent}
+                  secondaryLabel={t.friends.cancelRequest}
                   primaryDisabled
                   onPrimary={() => {}}
                   onSecondary={() => cancelFriendRequest(user!.id, request.id)}
@@ -261,17 +328,17 @@ export default function Friends() {
           </>
         )}
 
-        {!loading && !loadError && visibleFriends.length > 0 && <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Prieteni</Text>}
+        {!loading && !loadError && visibleFriends.length > 0 && <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>{t.friends.friendsSectionTitle}</Text>}
 
         {!loading && !loadError && visibleFriends.length === 0 && incoming.length === 0 && outgoing.length === 0 && (
           <View style={styles.emptyState}>
-            <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>Încă nu ai prieteni</Text>
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Adaugă persoane pentru a începe conversațiile.</Text>
+            <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>{t.friends.noFriendsYet}</Text>
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{t.friends.addPeopleToStart}</Text>
             <AnimatedPressable
               onPress={() => router.push('/search')}
               style={[styles.findFriendsButton, { borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}
             >
-              <Text style={[styles.findFriendsText, { color: theme.accent }]}>Caută prieteni</Text>
+              <Text style={[styles.findFriendsText, { color: theme.accent }]}>{t.friends.findFriends}</Text>
             </AnimatedPressable>
           </View>
         )}
@@ -293,6 +360,27 @@ export default function Friends() {
           />
           );
         })}
+
+        {!loading && !loadError && blocked.length > 0 && (
+          <>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Conturi blocate</Text>
+            {blocked.map((profile) => (
+              <View key={profile.id} style={[styles.requestRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Avatar uri={profile.avatar_url} name={profile.name} size={44} fontSize={18} style={styles.avatar} />
+                <View style={styles.rowText}>
+                  <Text style={[styles.name, { color: theme.textPrimary }]} numberOfLines={1}>{profile.name}</Text>
+                  <Text style={[styles.username, { color: theme.textSecondary }]} numberOfLines={1}>@{profile.username}</Text>
+                </View>
+                <AnimatedPressable
+                  onPress={() => confirmUnblock(profile)}
+                  style={[styles.requestButton, { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1 }]}
+                >
+                  <Text style={[styles.requestButtonText, { color: theme.textPrimary }]}>Deblochează</Text>
+                </AnimatedPressable>
+              </View>
+            ))}
+          </>
+        )}
       </ScrollView>
 
       <FriendPrefsModal
@@ -301,6 +389,7 @@ export default function Friends() {
         prefs={prefs}
         onChange={updatePref}
         onRemove={() => menuFor && confirmRemoveFriend(menuFor)}
+        onBlock={() => menuFor && confirmBlockFriend(menuFor)}
         onClose={() => setMenuFor(null)}
       />
       <SafetyMenu

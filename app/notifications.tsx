@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { useEvents } from '@/contexts/EventsContext';
@@ -23,6 +24,7 @@ import {
 } from '@/lib/friendRequests';
 import { simulateNotification, type Notification } from '@/lib/notifications';
 import { acceptEventInvitation, declineEventInvitation, getEventInvitation, simulateEventInvitation } from '@/lib/eventInvitations';
+import { getHostJoinRequests, respondToJoinRequest, type HostJoinRequest } from '@/lib/events';
 
 const notificationIcons: Record<Notification['type'], keyof typeof Ionicons.glyphMap> = {
   friend_request: 'person-add-outline',
@@ -35,17 +37,52 @@ const notificationIcons: Record<Notification['type'], keyof typeof Ionicons.glyp
   review: 'star-outline',
 };
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleString('ro-RO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+function formatDate(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
 export default function Notifications() {
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
+  const { t, locale } = useLanguage();
   const { user } = useUser();
   const { events } = useEvents();
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
   const [actors, setActors] = useState<Record<string, Profile>>({});
+  const [joinRequests, setJoinRequests] = useState<HostJoinRequest[]>([]);
+  const [joinRequestsLoading, setJoinRequestsLoading] = useState(false);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
+
+  const loadJoinRequests = useCallback(async () => {
+    if (!user) {
+      setJoinRequests([]);
+      return;
+    }
+    setJoinRequestsLoading(true);
+    try {
+      setJoinRequests(await getHostJoinRequests(user.id));
+    } finally {
+      setJoinRequestsLoading(false);
+    }
+  }, [user]);
+
+  // The DB, not the local fake notification store, is the source of truth
+  // here — a request created by a guest on another device would never reach
+  // this host if it only lived in that in-memory array (see lib/notifications.ts).
+  useFocusEffect(
+    useCallback(() => {
+      loadJoinRequests();
+    }, [loadJoinRequests]),
+  );
+
+  async function respondToRequest(request: HostJoinRequest, approve: boolean) {
+    light();
+    setRespondingId(request.id);
+    const ok = await respondToJoinRequest(request.id, approve);
+    setRespondingId(null);
+    if (!ok) return;
+    setJoinRequests((current) => current.filter((item) => item.id !== request.id));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -103,13 +140,13 @@ export default function Notifications() {
             router.back();
           }}
           hitSlop={10}
-          accessibilityLabel="Înapoi"
+          accessibilityLabel={t.common.back}
           style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
         >
           <GlassSurface />
           <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
         </AnimatedPressable>
-        <Text style={[styles.title, { color: theme.textPrimary }]}>Notificări</Text>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>{t.notifications.title}</Text>
         <AnimatedPressable
           onPress={() => {
             light();
@@ -117,7 +154,7 @@ export default function Notifications() {
           }}
           disabled={!unreadCount}
           hitSlop={8}
-          accessibilityLabel="Marchează tot ca citit"
+          accessibilityLabel={t.notifications.markAllRead}
           style={styles.markAllButton}
         >
           <Ionicons name="checkmark-done-outline" size={21} color={unreadCount ? theme.accent : theme.border} />
@@ -125,14 +162,56 @@ export default function Notifications() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {unreadCount === 0 && <Text style={[styles.emptyNew, { color: theme.textSecondary }]}>Nu ai notificări noi.</Text>}
+        {joinRequestsLoading && joinRequests.length === 0 && (
+          <ActivityIndicator color={colors.green500} style={styles.joinRequestsLoader} />
+        )}
 
-        {notifications.length > 0 && unreadCount === 0 && <Text style={[styles.historyLabel, { color: theme.textSecondary }]}>ISTORIC</Text>}
+        {joinRequests.length > 0 && (
+          <>
+            <Text style={[styles.historyLabel, { color: theme.textSecondary }]}>CERERI DE PARTICIPARE</Text>
+            {joinRequests.map((request) => (
+              <View
+                key={request.id}
+                style={[styles.notificationRow, { backgroundColor: theme.surface, borderColor: colors.green400 }]}
+              >
+                <AnimatedPressable onPress={() => router.push(`/user/${request.userId}`)}>
+                  <Avatar uri={request.avatarUrl} name={request.name} size={34} fontSize={14} />
+                </AnimatedPressable>
+                <View style={styles.notificationCopy}>
+                  <Text style={[styles.notificationTitle, { color: theme.textPrimary }]}>{request.name || `@${request.username}`}</Text>
+                  <Text style={[styles.notificationBody, { color: theme.textSecondary }]}>
+                    Vrea să participe la {request.eventTitle}.
+                  </Text>
+                  <View style={styles.invitationActions}>
+                    <AnimatedPressable
+                      onPress={() => respondToRequest(request, true)}
+                      disabled={respondingId === request.id}
+                      style={[styles.invitationAccept, { backgroundColor: colors.green500 }]}
+                    >
+                      <Text style={styles.invitationAcceptText}>Acceptă</Text>
+                    </AnimatedPressable>
+                    <AnimatedPressable
+                      onPress={() => respondToRequest(request, false)}
+                      disabled={respondingId === request.id}
+                      style={[styles.invitationDecline, { borderColor: theme.border }]}
+                    >
+                      <Text style={[styles.invitationDeclineText, { color: theme.textPrimary }]}>Refuză</Text>
+                    </AnimatedPressable>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </>
+        )}
+
+        {unreadCount === 0 && <Text style={[styles.emptyNew, { color: theme.textSecondary }]}>{t.notifications.noNewNotifications}</Text>}
+
+        {notifications.length > 0 && unreadCount === 0 && <Text style={[styles.historyLabel, { color: theme.textSecondary }]}>{t.notifications.history}</Text>}
 
         {notifications.length === 0 && (
           <View style={styles.emptyState}>
             <Ionicons name="notifications-off-outline" size={32} color={theme.textSecondary} />
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Notificările noi vor apărea aici.</Text>
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{t.notifications.emptyHint}</Text>
           </View>
         )}
 
@@ -160,11 +239,11 @@ export default function Notifications() {
               <View style={styles.notificationCopy}>
                 <Text style={[styles.notificationTitle, { color: theme.textPrimary }]}>{notification.title}</Text>
                 <Text style={[styles.notificationBody, { color: theme.textSecondary }]}>{notification.body}</Text>
-                <Text style={[styles.notificationDate, { color: theme.textSecondary }]}>{formatDate(notification.createdAt)}</Text>
+                <Text style={[styles.notificationDate, { color: theme.textSecondary }]}>{formatDate(notification.createdAt, locale)}</Text>
                 {notification.type === 'event_invite' && notification.metadata?.invitationId && (() => {
                   const invitation = getEventInvitation(notification.metadata.invitationId);
                   if (!invitation || invitation.status !== 'pending') {
-                    return <Text style={[styles.invitationStatus, { color: theme.textSecondary }]}>{invitation?.status === 'accepted' ? 'Acceptată' : 'Refuzată'}</Text>;
+                    return <Text style={[styles.invitationStatus, { color: theme.textSecondary }]}>{invitation?.status === 'accepted' ? t.notifications.accepted : t.notifications.declined}</Text>;
                   }
                   return (
                     <View style={styles.invitationActions}>
@@ -172,13 +251,13 @@ export default function Notifications() {
                         onPress={() => handleInvitationAction(notification, 'accept')}
                         style={[styles.invitationAccept, { backgroundColor: colors.green500 }]}
                       >
-                        <Text style={styles.invitationAcceptText}>Acceptă</Text>
+                        <Text style={styles.invitationAcceptText}>{t.notifications.accept}</Text>
                       </AnimatedPressable>
                       <AnimatedPressable
                         onPress={() => handleInvitationAction(notification, 'decline')}
                         style={[styles.invitationDecline, { borderColor: theme.border }]}
                       >
-                        <Text style={[styles.invitationDeclineText, { color: theme.textPrimary }]}>Refuză</Text>
+                        <Text style={[styles.invitationDeclineText, { color: theme.textPrimary }]}>{t.notifications.decline}</Text>
                       </AnimatedPressable>
                     </View>
                   );
@@ -191,20 +270,20 @@ export default function Notifications() {
 
         {__DEV__ && user && (
           <View style={[styles.devTools, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
-            <Text style={[styles.devTitle, { color: theme.textPrimary }]}>Developer Tools</Text>
-            <Text style={[styles.devHint, { color: theme.textSecondary }]}>Doar local, dispare la restart și nu ajunge în Supabase.</Text>
+            <Text style={[styles.devTitle, { color: theme.textPrimary }]}>{t.notifications.devToolsTitle}</Text>
+            <Text style={[styles.devHint, { color: theme.textSecondary }]}>{t.notifications.devToolsHint}</Text>
             <View style={styles.devGrid}>
-              <DevButton label="Cerere primită" onPress={() => runDev(() => simulateIncomingFriendRequest(user.id))} theme={theme} />
-              <DevButton label="Cerere trimisă" onPress={() => runDev(() => simulateOutgoingFriendRequest(user.id))} theme={theme} />
-              <DevButton label="Cerere acceptată" onPress={() => runDev(() => simulateAcceptedFriendRequest(user.id))} theme={theme} />
+              <DevButton label={t.notifications.devIncomingRequest} onPress={() => runDev(() => simulateIncomingFriendRequest(user.id))} theme={theme} />
+              <DevButton label={t.notifications.devOutgoingRequest} onPress={() => runDev(() => simulateOutgoingFriendRequest(user.id))} theme={theme} />
+              <DevButton label={t.notifications.devAcceptedRequest} onPress={() => runDev(() => simulateAcceptedFriendRequest(user.id))} theme={theme} />
               <DevButton
-                label="Notificare test"
+                label={t.notifications.devTestNotification}
                 onPress={() => runDev(() => simulateNotification(user.id, ensureDevPeer(user.id).id, user.id))}
                 theme={theme}
               />
               {events[0] && (
                 <DevButton
-                  label="Invitație la event"
+                  label={t.notifications.devEventInvitation}
                   onPress={() => runDev(() => simulateEventInvitation(user.id, events[0], ensureDevPeer(user.id).id, ensureDevPeer(user.id).name))}
                   theme={theme}
                 />
@@ -233,6 +312,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '800' },
   content: { paddingHorizontal: spacing.lg, paddingBottom: 40 },
   emptyNew: { textAlign: 'center', fontSize: 13, fontStyle: 'italic', paddingVertical: 12 },
+  joinRequestsLoader: { marginBottom: 12 },
   historyLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1, marginTop: 8, marginBottom: 10 },
   emptyState: { alignItems: 'center', gap: 10, paddingVertical: 34 },
   emptyText: { fontSize: 13, textAlign: 'center' },

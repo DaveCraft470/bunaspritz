@@ -9,6 +9,7 @@ import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useEvents } from '@/contexts/EventsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
@@ -20,6 +21,7 @@ export default function OrganizerParticipants() {
   const { user } = useUser();
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
+  const { t } = useLanguage();
   const event = useMemo(() => events.find((item) => item.id === id), [events, id]);
   const [attendees, setAttendees] = useState<EventAttendee[]>([]);
   const [attendeeCount, setAttendeeCount] = useState<number | null>(null);
@@ -55,7 +57,7 @@ export default function OrganizerParticipants() {
         <StatusBar style={theme.statusBar} />
         <View style={styles.centered}>
           <ActivityIndicator color={colors.green500} />
-          <Text style={[styles.message, { color: theme.textSecondary }]}>Se încarcă evenimentul...</Text>
+          <Text style={[styles.message, { color: theme.textSecondary }]}>{t.event.loadingEvent}</Text>
         </View>
       </SafeAreaView>
     );
@@ -66,9 +68,9 @@ export default function OrganizerParticipants() {
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
         <StatusBar style={theme.statusBar} />
         <View style={styles.centered}>
-          <Text style={[styles.message, { color: theme.textSecondary }]}>Nu am putut încărca evenimentul.</Text>
+          <Text style={[styles.message, { color: theme.textSecondary }]}>{t.event.couldNotLoadEvent}</Text>
           <AnimatedPressable onPress={() => void refresh()} style={[styles.retry, { borderColor: theme.border }]}>
-            <Text style={[styles.retryText, { color: theme.textPrimary }]}>Reîncearcă</Text>
+            <Text style={[styles.retryText, { color: theme.textPrimary }]}>{t.event.retry}</Text>
           </AnimatedPressable>
         </View>
       </SafeAreaView>
@@ -80,9 +82,9 @@ export default function OrganizerParticipants() {
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
         <StatusBar style={theme.statusBar} />
         <AnimatedPressable onPress={() => router.back()} style={[styles.retry, { borderColor: theme.border }]}>
-          <Text style={[styles.retryText, { color: theme.textPrimary }]}>Înapoi</Text>
+          <Text style={[styles.retryText, { color: theme.textPrimary }]}>{t.common.back}</Text>
         </AnimatedPressable>
-        <Text style={[styles.message, { color: theme.textPrimary }]}>Nu ai acces la participanții acestui eveniment.</Text>
+        <Text style={[styles.message, { color: theme.textPrimary }]}>{t.organizerParticipants.noAccess}</Text>
       </SafeAreaView>
     );
   }
@@ -90,17 +92,17 @@ export default function OrganizerParticipants() {
   function requestKick(attendee: EventAttendee) {
     light();
     Alert.alert(
-      'Elimină participant',
-      `Sigur vrei să-l elimini pe @${attendee.username} din eveniment?`,
+      t.organizerParticipants.removeParticipantTitle,
+      t.organizerParticipants.removeParticipantMessage(attendee.username),
       [
-        { text: 'Anulează', style: 'cancel' },
+        { text: t.organizerParticipants.cancel, style: 'cancel' },
         {
-          text: 'Elimină',
+          text: t.organizerParticipants.remove,
           style: 'destructive',
           onPress: () => {
             setAttendees((current) => current.filter((item) => item.userId !== attendee.userId));
             setAttendeeCount((current) => (current === null ? current : Math.max(0, current - 1)));
-            Alert.alert('Pregătit local', 'Eliminarea este doar locală momentan. Persistența sigură necesită un RPC Supabase care verifică hostul.');
+            Alert.alert(t.organizerParticipants.localOnlyTitle, t.organizerParticipants.localOnlyMessage);
           },
         },
       ],
@@ -130,14 +132,14 @@ export default function OrganizerParticipants() {
               <AnimatedPressable onPress={() => router.back()} hitSlop={10} style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}>
                 <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
               </AnimatedPressable>
-              <Text style={[styles.title, { color: theme.textPrimary }]}>Participanți</Text>
+              <Text style={[styles.title, { color: theme.textPrimary }]}>{t.organizerParticipants.title}</Text>
               <View style={styles.backButton} />
             </View>
             <Text style={[styles.eventTitle, { color: theme.textPrimary }]}>{event.title}</Text>
             <Text style={[styles.count, { color: theme.textSecondary }]}>
-              {attendeeCount === null ? 'Se încarcă...' : `${attendeeCount}${event.maxParticipants !== null ? ` / ${event.maxParticipants}` : ''}`} participanți
+              {attendeeCount === null ? t.organizerParticipants.loadingCount : `${attendeeCount}${event.maxParticipants !== null ? ` / ${event.maxParticipants}` : ''}`} {t.organizerParticipants.participantsSuffix}
             </Text>
-            <Text style={[styles.localNote, { color: theme.textSecondary }]}>KICK-ul este pregătit local; salvarea permanentă necesită backend.</Text>
+            <Text style={[styles.localNote, { color: theme.textSecondary }]}>{t.organizerParticipants.localNote}</Text>
           </View>
         }
         ListEmptyComponent={
@@ -145,13 +147,13 @@ export default function OrganizerParticipants() {
             <ActivityIndicator color={colors.green500} style={styles.loader} />
           ) : error ? (
             <View style={styles.centered}>
-              <Text style={[styles.message, { color: theme.textSecondary }]}>Nu am putut încărca participanții.</Text>
+              <Text style={[styles.message, { color: theme.textSecondary }]}>{t.organizerParticipants.couldNotLoadParticipants}</Text>
               <AnimatedPressable onPress={load} style={[styles.retry, { borderColor: theme.border }]}>
-                <Text style={[styles.retryText, { color: theme.textPrimary }]}>Reîncearcă</Text>
+                <Text style={[styles.retryText, { color: theme.textPrimary }]}>{t.organizerParticipants.retry}</Text>
               </AnimatedPressable>
             </View>
           ) : (
-            <Text style={[styles.empty, { color: theme.textSecondary }]}>Nimeni nu s-a înscris încă.</Text>
+            <Text style={[styles.empty, { color: theme.textSecondary }]}>{t.organizerParticipants.noOneJoinedYet}</Text>
           )
         }
         renderItem={({ item }) => (
@@ -161,7 +163,7 @@ export default function OrganizerParticipants() {
               <Text style={[styles.name, { color: theme.textPrimary }]} numberOfLines={1}>{item.name}</Text>
               <Text style={[styles.username, { color: theme.textSecondary }]} numberOfLines={1}>@{item.username}</Text>
               <AnimatedPressable onPress={() => router.push(`/user/${item.userId}`)}>
-                <Text style={[styles.profileLink, { color: theme.accent }]}>Vezi profil</Text>
+                <Text style={[styles.profileLink, { color: theme.accent }]}>{t.organizerParticipants.viewProfile}</Text>
               </AnimatedPressable>
             </View>
             {item.userId !== user.id && (

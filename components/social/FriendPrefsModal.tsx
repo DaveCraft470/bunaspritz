@@ -10,6 +10,7 @@ export function FriendPrefsModal({
   prefs,
   onChange,
   onRemove,
+  onBlock,
   onClose,
 }: {
   visible: boolean;
@@ -17,9 +18,14 @@ export function FriendPrefsModal({
   prefs: FriendPrefs;
   onChange: (patch: Partial<FriendPrefs>) => void;
   onRemove?: () => void;
+  onBlock?: () => void;
   onClose: () => void;
 }) {
   const { colors: theme } = useAppTheme();
+  // "Restrict" isn't its own mechanism — it's the three prefs below applied
+  // together, so the switch reflects and toggles all three at once instead
+  // of writing a fourth flag nothing else would read.
+  const restricted = prefs.mute_messages && prefs.mute_activity && prefs.hide_activity_from;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -51,7 +57,7 @@ export function FriendPrefsModal({
             />
           </View>
 
-          <View style={[styles.row, styles.rowLast]}>
+          <View style={styles.row}>
             <Text style={[styles.label, { color: theme.textPrimary }]}>Ascunde activitatea mea de la el/ea</Text>
             <Switch
               value={prefs.hide_activity_from}
@@ -61,9 +67,30 @@ export function FriendPrefsModal({
             />
           </View>
 
+          <View style={[styles.row, styles.rowLast]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.label, { color: theme.textPrimary }]}>Restricționează</Text>
+              <Text style={[styles.hint, { color: theme.textSecondary }]}>
+                Nu mai primești notificări de la el/ea și nu îți mai vede activitatea la Spritz-uri.
+              </Text>
+            </View>
+            <Switch
+              value={restricted}
+              onValueChange={(value) => onChange({ mute_messages: value, mute_activity: value, hide_activity_from: value })}
+              trackColor={{ false: theme.surfaceMuted, true: colors.green500 }}
+              thumbColor={colors.white}
+            />
+          </View>
+
           {onRemove && (
             <Pressable onPress={onRemove} style={[styles.close, styles.removeButton]}>
               <Text style={[styles.closeText, styles.removeText]}>Elimină prieten</Text>
+            </Pressable>
+          )}
+
+          {onBlock && (
+            <Pressable onPress={onBlock} style={[styles.close, styles.blockButton]}>
+              <Text style={[styles.closeText, styles.blockText]}>Blochează</Text>
             </Pressable>
           )}
 
@@ -83,8 +110,11 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingVertical: 12 },
   rowLast: { marginBottom: 8 },
   label: { fontSize: 13, fontWeight: '600', flex: 1 },
+  hint: { fontSize: 11, marginTop: 2 },
   close: { minHeight: 46, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   closeText: { fontSize: 13, fontWeight: '800' },
   removeButton: { backgroundColor: 'rgba(229,72,77,0.12)' },
   removeText: { color: '#E5484D' },
+  blockButton: { backgroundColor: '#E5484D' },
+  blockText: { color: '#FFFFFF' },
 });

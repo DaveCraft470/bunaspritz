@@ -7,16 +7,29 @@ import { router } from 'expo-router';
 // still loaded. dismissAll() pops back to the still-mounted root regardless
 // of how deep the stack got (e.g. home -> profile -> edit-profile), and
 // push() on top of it keeps that root instance alive underneath.
+//
+// That assumes `/` is actually mounted somewhere underneath in the stack.
+// On web, a hard reload (or a first load) on /profile or /messages makes
+// that route the *only* stack entry — there's nothing to dismiss to, and
+// dismissAll()'s POP_TO_TOP goes unhandled, throwing and leaving the user
+// stuck. router.canDismiss() tells us whether a dismiss actually has
+// somewhere to land; when it doesn't, fall back to a plain navigation.
 export function goToTab(currentPathname: string, target: '/' | '/profile' | '/messages') {
   const alreadyThere = target === '/' ? currentPathname === '/' : currentPathname.startsWith(target);
   if (alreadyThere) return;
 
+  const canDismiss = router.canDismiss();
+
   if (target === '/') {
-    router.dismissAll();
+    if (canDismiss) {
+      router.dismissAll();
+    } else {
+      router.replace('/');
+    }
     return;
   }
 
-  if (currentPathname !== '/') {
+  if (currentPathname !== '/' && canDismiss) {
     router.dismissAll();
   }
   router.push(target);
