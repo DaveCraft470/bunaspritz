@@ -1,5 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 import { colors, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
@@ -21,8 +22,13 @@ export function FriendsHubTabs({ active }: { active: HubTab }) {
           router.push('/friends');
         }}
         style={[styles.tab, active === 'friends' && { backgroundColor: colors.green500 }]}
+        accessibilityLabel="Prieteni"
       >
-        <Text style={[styles.label, { color: active === 'friends' ? colors.white : theme.textSecondary }]}>Prieteni</Text>
+        <Ionicons
+          name={active === 'friends' ? 'people' : 'people-outline'}
+          size={22}
+          color={active === 'friends' ? colors.white : theme.textSecondary}
+        />
       </AnimatedPressable>
       <AnimatedPressable
         onPress={() => {
@@ -31,8 +37,13 @@ export function FriendsHubTabs({ active }: { active: HubTab }) {
           router.push('/messages');
         }}
         style={[styles.tab, active === 'messages' && { backgroundColor: colors.green500 }]}
+        accessibilityLabel="Mesaje"
       >
-        <Text style={[styles.label, { color: active === 'messages' ? colors.white : theme.textSecondary }]}>Mesaje</Text>
+        <Ionicons
+          name={active === 'messages' ? 'chatbubbles' : 'chatbubbles-outline'}
+          size={22}
+          color={active === 'messages' ? colors.white : theme.textSecondary}
+        />
       </AnimatedPressable>
     </View>
   );
@@ -41,5 +52,4 @@ export function FriendsHubTabs({ active }: { active: HubTab }) {
 const styles = StyleSheet.create({
   container: { flexDirection: 'row', marginHorizontal: spacing.lg, marginBottom: spacing.md, padding: 4, borderWidth: 1, borderRadius: 16 },
   tab: { flex: 1, minHeight: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
-  label: { fontSize: 13, fontWeight: '800' },
 });

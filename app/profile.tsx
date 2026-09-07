@@ -49,7 +49,7 @@ export default function Profile() {
 
   const name = user?.name || t.profile.defaultName;
   const username = user?.username || t.profile.defaultUsername;
-  const bio = user?.bio || t.profile.defaultBio;
+  const bio = user?.bio || '';
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
@@ -88,7 +88,7 @@ export default function Profile() {
           </Pressable>
         </View>
 
-        <Text style={[styles.bio, { color: theme.textSecondary }]}>{bio}</Text>
+        {bio ? <Text style={[styles.bio, { color: theme.textSecondary }]}>{bio}</Text> : null}
         <InstagramLink handle={user?.instagramHandle} />
 
         <View style={[styles.statsRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>

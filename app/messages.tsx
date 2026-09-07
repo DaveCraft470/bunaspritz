@@ -1124,7 +1124,10 @@ export default function Messages() {
                   </Text>
                 ) : (
                 <View key={message.id} style={[styles.messageRow, message.mine && styles.messageRowMine]}>
-                  {!message.mine && <View style={styles.dot} />}
+                  {!message.mine && selectedGroup && (
+                    <Avatar name={message.sender} size={26} fontSize={11} color={selectedGroup.color} />
+                  )}
+                  {!message.mine && !selectedGroup && <View style={styles.dot} />}
                   <View
                     style={[
                       styles.bubble,
