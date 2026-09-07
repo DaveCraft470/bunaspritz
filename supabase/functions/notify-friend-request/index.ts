@@ -44,17 +44,19 @@ Deno.serve(async (req) => {
     return new Response('receiver muted this sender', { status: 200 });
   }
 
+  const pushData = { target_id: callerId };
+
   await admin.from('notifications').insert({
     recipient_id: receiverId,
     actor_id: callerId,
     type: accepted ? 'friend_request_accepted' : 'friend_request',
     title,
     body,
-    data: { target_id: callerId },
+    data: pushData,
   });
 
   const { data: tokens } = await admin.from('push_tokens').select('token').eq('user_id', receiverId);
-  await sendExpoPush((tokens ?? []).map((t) => t.token), title, body);
+  await sendExpoPush((tokens ?? []).map((t) => t.token), title, body, pushData);
 
   return new Response('ok', { status: 200 });
 });

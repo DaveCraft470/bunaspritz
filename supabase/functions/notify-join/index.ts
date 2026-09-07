@@ -66,6 +66,8 @@ Deno.serve(async (req) => {
   const title = 'Prieten la Spritz!';
   const body = `${joiner.name} a intrat la ${event?.title ?? 'un Spritz'}!`;
 
+  const pushData = { target_id: eventId };
+
   await admin.from('notifications').insert(
     recipients.map((recipientId) => ({
       recipient_id: recipientId,
@@ -73,12 +75,12 @@ Deno.serve(async (req) => {
       type: 'event_join',
       title,
       body,
-      data: { target_id: eventId },
+      data: pushData,
     }))
   );
 
   const { data: tokens } = await admin.from('push_tokens').select('token').in('user_id', recipients);
-  await sendExpoPush((tokens ?? []).map((t) => t.token), title, body);
+  await sendExpoPush((tokens ?? []).map((t) => t.token), title, body, pushData);
 
   return new Response('ok', { status: 200 });
 });

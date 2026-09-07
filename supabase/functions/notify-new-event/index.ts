@@ -66,6 +66,8 @@ Deno.serve(async (req) => {
 
   const title = `${host?.name ?? 'Un host'} a creat un Spritz nou!`;
 
+  const pushData = { target_id: eventId };
+
   await admin.from('notifications').insert(
     recipients.map((recipientId) => ({
       recipient_id: recipientId,
@@ -73,12 +75,12 @@ Deno.serve(async (req) => {
       type: 'event_updated',
       title,
       body: event.title,
-      data: { target_id: eventId },
+      data: pushData,
     }))
   );
 
   const { data: tokens } = await admin.from('push_tokens').select('token').in('user_id', recipients);
-  await sendExpoPush((tokens ?? []).map((t) => t.token), title, event.title);
+  await sendExpoPush((tokens ?? []).map((t) => t.token), title, event.title, pushData);
 
   return new Response('ok', { status: 200 });
 });

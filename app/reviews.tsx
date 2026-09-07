@@ -110,8 +110,8 @@ export default function Reviews() {
         {(
           [
             ['pending', 'De acordat', pending.length],
-            ['given', 'Trimise', 0],
-            ['received', 'Primite', 0],
+            ['given', 'Trimise', given.length],
+            ['received', 'Primite', received.length],
           ] as const
         ).map(([value, label, badge]) => (
           <AnimatedPressable

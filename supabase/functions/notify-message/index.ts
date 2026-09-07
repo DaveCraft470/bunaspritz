@@ -32,8 +32,15 @@ Deno.serve(async (req) => {
   const { data: tokens } = await admin.from('push_tokens').select('token').eq('user_id', message.recipient_id);
 
   const body =
-    message.media_type === 'image' ? '📷 Poză' : message.media_type === 'audio' ? '🎤 Mesaj vocal' : message.text;
+    message.media_type === 'image'
+      ? '📷 Poză'
+      : message.media_type === 'gif'
+        ? '🎞 GIF'
+        : message.media_type === 'audio'
+          ? '🎤 Mesaj vocal'
+          : message.text;
   const title = `Mesaj nou de la ${sender?.name ?? 'un prieten'}`;
+  const pushData = { target_id: message.sender_id, message_id: messageId };
 
   await admin.from('notifications').insert({
     recipient_id: message.recipient_id,
@@ -41,10 +48,10 @@ Deno.serve(async (req) => {
     type: 'message',
     title,
     body,
-    data: { target_id: message.sender_id, message_id: messageId },
+    data: pushData,
   });
 
-  await sendExpoPush((tokens ?? []).map((t) => t.token), title, body);
+  await sendExpoPush((tokens ?? []).map((t) => t.token), title, body, pushData);
 
   return new Response('ok', { status: 200 });
 });

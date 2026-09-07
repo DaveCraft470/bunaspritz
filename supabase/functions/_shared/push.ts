@@ -18,12 +18,17 @@ export async function getCallerId(req: Request, admin: SupabaseClient): Promise<
   return data.user.id;
 }
 
-export async function sendExpoPush(tokens: string[], title: string, body: string) {
+export async function sendExpoPush(
+  tokens: string[],
+  title: string,
+  body: string,
+  data?: Record<string, unknown>,
+) {
   if (!tokens.length) return;
 
   await fetch('https://exp.host/--/api/v2/push/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(tokens.map((to) => ({ to, title, body, sound: 'default' }))),
+    body: JSON.stringify(tokens.map((to) => ({ to, title, body, sound: 'default', data }))),
   });
 }

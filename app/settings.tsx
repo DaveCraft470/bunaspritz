@@ -287,7 +287,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.lg,
   },
@@ -304,7 +303,6 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase', marginLeft: spacing.xs, marginBottom: spacing.xs },
   sectionLabelSpaced: { marginTop: spacing.lg },
   card: {
-    marginHorizontal: spacing.lg,
     borderRadius: 18,
     borderWidth: 1,
     padding: spacing.lg,

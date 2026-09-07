@@ -28,17 +28,19 @@ Deno.serve(async (req) => {
   // No dedicated notification type for this yet (see the `notifications`
   // table's type check) — 'system' is the closest fit without touching a
   // constraint another job's migration currently owns.
+  const pushData = { target_id: request.events.id };
+
   await admin.from('notifications').insert({
     recipient_id: request.user_id,
     actor_id: callerId,
     type: 'system',
     title,
     body,
-    data: { target_id: request.events.id },
+    data: pushData,
   });
 
   const { data: tokens } = await admin.from('push_tokens').select('token').eq('user_id', request.user_id);
-  await sendExpoPush((tokens ?? []).map((t) => t.token), title, body);
+  await sendExpoPush((tokens ?? []).map((t) => t.token), title, body, pushData);
 
   return new Response('ok', { status: 200 });
 });
