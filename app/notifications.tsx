@@ -43,7 +43,7 @@ export default function Notifications() {
   const { t, locale } = useLanguage();
   const { user } = useUser();
   const { events } = useEvents();
-  const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
+  const { notifications, unreadCount, pendingReviewCount, markRead, markAllRead } = useNotifications();
   const [actors, setActors] = useState<Record<string, Profile>>({});
   const [joinRequests, setJoinRequests] = useState<HostJoinRequest[]>([]);
   const [joinRequestsLoading, setJoinRequestsLoading] = useState(false);
@@ -160,6 +160,26 @@ export default function Notifications() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {pendingReviewCount > 0 && (
+          <AnimatedPressable
+            onPress={() => {
+              light();
+              router.push('/reviews');
+            }}
+            style={[styles.notificationRow, { backgroundColor: theme.surface, borderColor: colors.green400 }]}
+          >
+            <Ionicons name="star-outline" size={22} color="#F5B301" />
+            <View style={styles.notificationCopy}>
+              <Text style={[styles.notificationTitle, { color: theme.textPrimary }]}>Recenzii de acordat</Text>
+              <Text style={[styles.notificationBody, { color: theme.textSecondary }]}>
+                {pendingReviewCount === 1
+                  ? 'O persoană așteaptă recenzia ta.'
+                  : `${pendingReviewCount} persoane așteaptă recenzia ta.`}
+              </Text>
+            </View>
+          </AnimatedPressable>
+        )}
+
         {joinRequestsLoading && joinRequests.length === 0 && (
           <ActivityIndicator color={colors.green500} style={styles.joinRequestsLoader} />
         )}

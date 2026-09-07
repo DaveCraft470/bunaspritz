@@ -400,7 +400,7 @@ export default function PublicProfile() {
           </View>
 
           {reviews.length === 0 ? (
-            <Text style={[styles.reviewsEmpty, { color: theme.textSecondary }]}>Niciun review încă.</Text>
+            <Text style={[styles.reviewsEmpty, { color: theme.textSecondary }]}>Încă nu a primit niciun review.</Text>
           ) : (
             reviews.map((review) => (
               <View key={review.id} style={[styles.reviewCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>

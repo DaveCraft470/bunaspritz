@@ -4,6 +4,7 @@ import { useUser } from '@/contexts/UserContext';
 import { supabase } from '@/lib/supabase';
 import { freshChannel } from '@/lib/realtime';
 import { getHostJoinRequests } from '@/lib/events';
+import { getReviewablePending } from '@/lib/reviews';
 import {
   getNotifications,
   getNotificationById,
@@ -22,6 +23,7 @@ import {
 type NotificationContextValue = {
   notifications: Notification[];
   unreadCount: number;
+  pendingReviewCount: number;
   markRead: (notificationId: string) => void;
   markAllRead: () => void;
 };
@@ -32,6 +34,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   const { user } = useUser();
   const [version, setVersion] = useState(0);
   const [joinRequestCount, setJoinRequestCount] = useState(0);
+  const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const [realNotifications, setRealNotifications] = useState<Notification[]>([]);
   const [realUnreadCount, setRealUnreadCount] = useState(0);
 
@@ -72,6 +75,18 @@ export function NotificationProvider({ children }: PropsWithChildren) {
     refreshJoinRequestCount();
   }, [refreshJoinRequestCount]);
 
+  const refreshPendingReviewCount = useCallback(async () => {
+    if (!user) {
+      setPendingReviewCount(0);
+      return;
+    }
+    setPendingReviewCount((await getReviewablePending()).length);
+  }, [user]);
+
+  useEffect(() => {
+    refreshPendingReviewCount();
+  }, [refreshPendingReviewCount]);
+
   // A nudge to recount, not the source of truth itself — any insert, accept,
   // or reject this user's RLS policies let them see on event_join_requests
   // (as either a host or a requester) just triggers a fresh fetch rather
@@ -94,7 +109,8 @@ export function NotificationProvider({ children }: PropsWithChildren) {
 
     return {
       notifications: [...realNotifications, ...localInvites].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-      unreadCount: realUnreadCount + localUnread + joinRequestCount,
+      unreadCount: realUnreadCount + localUnread + joinRequestCount + pendingReviewCount,
+      pendingReviewCount,
       markRead: (notificationId) => {
         if (!recipientId) return;
         if (getNotificationById(notificationId)) {
@@ -109,7 +125,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
         markAllRealNotificationsRead().then(refreshRealNotifications);
       },
     };
-  }, [user?.id, version, joinRequestCount, realNotifications, realUnreadCount, refreshRealNotifications]);
+  }, [user?.id, version, joinRequestCount, pendingReviewCount, realNotifications, realUnreadCount, refreshRealNotifications]);
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;
 }

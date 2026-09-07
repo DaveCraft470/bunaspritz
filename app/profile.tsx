@@ -11,8 +11,10 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
 import { InstagramLink } from '@/components/common/InstagramLink';
+import { Ionicons } from '@expo/vector-icons';
 import { getFriends } from '@/lib/friendRequests';
 import { getUserEventStats } from '@/lib/events';
+import { getReviews, getReviewSummary, type Review, type ReviewSummary } from '@/lib/reviews';
 
 // Profile design by raulnitu8 — ported from App.tsx's ProfileScreen onto its
 // own Expo Router screen, matching how app/messages.tsx was ported.
@@ -24,17 +26,27 @@ export default function Profile() {
   const { user, effectiveVerified } = useUser();
   const [friendCount, setFriendCount] = useState(0);
   const [eventStats, setEventStats] = useState({ attended: 0, hosted: 0 });
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewSummary, setReviewSummary] = useState<ReviewSummary>({ average: 0, count: 0 });
   const [refreshing, setRefreshing] = useState(false);
 
-  // getFriends/getUserEventStats already resolve to safe defaults
-  // (empty list / zero counts) rather than throwing, so there's no distinct
-  // load-error state to surface here — this just makes "did it actually
-  // refetch" pullable instead of only ever loading once on mount.
+  // getFriends/getUserEventStats/getReviews/getReviewSummary already resolve
+  // to safe defaults (empty list / zero counts) rather than throwing, so
+  // there's no distinct load-error state to surface here — this just makes
+  // "did it actually refetch" pullable instead of only ever loading once on
+  // mount.
   const load = useCallback(async () => {
     if (!user) return;
-    const [friends, stats] = await Promise.all([getFriends(user.id), getUserEventStats(user.id)]);
+    const [friends, stats, reviewsList, summary] = await Promise.all([
+      getFriends(user.id),
+      getUserEventStats(user.id),
+      getReviews(user.id),
+      getReviewSummary(user.id),
+    ]);
     setFriendCount(friends.length);
     setEventStats(stats);
+    setReviews(reviewsList);
+    setReviewSummary(summary);
   }, [user]);
 
   useEffect(() => {
@@ -133,6 +145,19 @@ export default function Profile() {
         </Pressable>
 
         <Pressable
+          onPress={() => router.push('/reviews')}
+          style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        >
+          <View style={styles.myEventsCopy}>
+            <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>Recenzii</Text>
+            <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
+              Recenzii de acordat, trimise și primite.
+            </Text>
+          </View>
+          <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
+        </Pressable>
+
+        <Pressable
           onPress={() => {
             if (!effectiveVerified) {
               router.push({ pathname: '/verification', params: { returnTo: '/profile' } });
@@ -157,6 +182,45 @@ export default function Profile() {
           </View>
           {!effectiveVerified && <Text style={[styles.verifyArrow, { color: theme.accent }]}>›</Text>}
         </Pressable>
+
+        <View style={styles.reviewsSection}>
+          <View style={styles.reviewsHeader}>
+            <View style={styles.reviewsSummary}>
+              <Ionicons name="star" size={16} color="#F5B301" />
+              <Text style={[styles.reviewsAverage, { color: theme.textPrimary }]}>
+                {reviewSummary.count > 0 ? reviewSummary.average.toFixed(1) : '–'}
+              </Text>
+              <Text style={[styles.reviewsCount, { color: theme.textSecondary }]}>
+                ({reviewSummary.count} {reviewSummary.count === 1 ? 'review' : 'review-uri'})
+              </Text>
+            </View>
+          </View>
+
+          {reviews.length === 0 ? (
+            <Text style={[styles.reviewsEmpty, { color: theme.textSecondary }]}>Încă nu ai primit niciun review.</Text>
+          ) : (
+            reviews.map((review) => (
+              <View key={review.id} style={[styles.reviewCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <View style={styles.reviewCardHeader}>
+                  <Text style={[styles.reviewerName, { color: theme.textPrimary }]}>{review.reviewerName}</Text>
+                  <View style={styles.reviewStars}>
+                    {[1, 2, 3, 4, 5].map((value) => (
+                      <Ionicons
+                        key={value}
+                        name={value <= review.rating ? 'star' : 'star-outline'}
+                        size={12}
+                        color="#F5B301"
+                      />
+                    ))}
+                  </View>
+                </View>
+                {review.comment ? (
+                  <Text style={[styles.reviewComment, { color: theme.textSecondary }]}>{review.comment}</Text>
+                ) : null}
+              </View>
+            ))
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -195,4 +259,15 @@ const styles = StyleSheet.create({
   verifyTitle: { fontSize: 13, fontWeight: '800' },
   verifyDetail: { fontSize: 10, lineHeight: 14, marginTop: 3 },
   verifyArrow: { fontSize: 26, fontWeight: '300' },
+  reviewsSection: { width: '100%', marginTop: 26 },
+  reviewsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  reviewsSummary: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  reviewsAverage: { fontSize: 15, fontWeight: '800' },
+  reviewsCount: { fontSize: 12, fontWeight: '600' },
+  reviewsEmpty: { fontSize: 12, fontStyle: 'italic', textAlign: 'center', paddingVertical: 10 },
+  reviewCard: { borderRadius: 15, borderWidth: 1, padding: 13, marginBottom: 10 },
+  reviewCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  reviewerName: { fontSize: 13, fontWeight: '800' },
+  reviewStars: { flexDirection: 'row', gap: 1 },
+  reviewComment: { fontSize: 12, lineHeight: 17, marginTop: 6 },
 });
