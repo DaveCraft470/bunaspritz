@@ -16,12 +16,7 @@ import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { getProfile, type Profile } from '@/lib/social';
-import {
-  ensureDevPeer,
-  simulateAcceptedFriendRequest,
-  simulateIncomingFriendRequest,
-  simulateOutgoingFriendRequest,
-} from '@/lib/friendRequests';
+import { ensureDevPeer } from '@/lib/devFixtures';
 import { simulateNotification, type Notification } from '@/lib/notifications';
 import { acceptEventInvitation, declineEventInvitation, getEventInvitation, simulateEventInvitation } from '@/lib/eventInvitations';
 import { getHostJoinRequests, respondToJoinRequest, type HostJoinRequest } from '@/lib/events';
@@ -273,9 +268,6 @@ export default function Notifications() {
             <Text style={[styles.devTitle, { color: theme.textPrimary }]}>{t.notifications.devToolsTitle}</Text>
             <Text style={[styles.devHint, { color: theme.textSecondary }]}>{t.notifications.devToolsHint}</Text>
             <View style={styles.devGrid}>
-              <DevButton label={t.notifications.devIncomingRequest} onPress={() => runDev(() => simulateIncomingFriendRequest(user.id))} theme={theme} />
-              <DevButton label={t.notifications.devOutgoingRequest} onPress={() => runDev(() => simulateOutgoingFriendRequest(user.id))} theme={theme} />
-              <DevButton label={t.notifications.devAcceptedRequest} onPress={() => runDev(() => simulateAcceptedFriendRequest(user.id))} theme={theme} />
               <DevButton
                 label={t.notifications.devTestNotification}
                 onPress={() => runDev(() => simulateNotification(user.id, ensureDevPeer(user.id).id, user.id))}

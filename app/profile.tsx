@@ -26,7 +26,7 @@ export default function Profile() {
   const [eventStats, setEventStats] = useState({ attended: 0, hosted: 0 });
   const [refreshing, setRefreshing] = useState(false);
 
-  // getMutualFriends/getUserEventStats already resolve to safe defaults
+  // getFriends/getUserEventStats already resolve to safe defaults
   // (empty list / zero counts) rather than throwing, so there's no distinct
   // load-error state to surface here — this just makes "did it actually
   // refetch" pullable instead of only ever loading once on mount.

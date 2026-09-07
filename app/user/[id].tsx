@@ -35,7 +35,6 @@ import {
   getIncomingFriendRequests,
   rejectFriendRequest,
   sendFriendRequest,
-  getLocalProfile,
   type RelationshipStatus,
 } from '@/lib/friendRequests';
 import {
@@ -77,18 +76,18 @@ export default function PublicProfile() {
     setProfileError(false);
     getProfile(id)
       .then((result) => {
-        const resolvedProfile = result ?? getLocalProfile(id);
-        setProfile(resolvedProfile);
+        setProfile(result);
         setProfileLoading(false);
-        if (!resolvedProfile) setProfileError(true);
+        if (!result) setProfileError(true);
       })
       .catch(() => {
         setProfileLoading(false);
         setProfileError(true);
       });
     getFriendRequestStatus(user.id, id).then(setRelationship);
-    const incoming = getIncomingFriendRequests(user.id).find((request) => request.senderId === id);
-    setRequestId(incoming?.id ?? null);
+    getIncomingFriendRequests(user.id).then((incoming) => {
+      setRequestId(incoming.find((request) => request.senderId === id)?.id ?? null);
+    });
     getFriendPrefs(user.id, id).then(setPrefs);
     getReviews(id).then(setReviews);
     getReviewSummary(id).then(setReviewSummary);
@@ -104,14 +103,15 @@ export default function PublicProfile() {
       const result = await getProfile(id);
       setProfile(result);
       setProfileError(!result);
-      const [relationshipStatus, friendPrefs, reviewsList, summary] = await Promise.all([
+      const [relationshipStatus, incoming, friendPrefs, reviewsList, summary] = await Promise.all([
         getFriendRequestStatus(user.id, id),
+        getIncomingFriendRequests(user.id),
         getFriendPrefs(user.id, id),
         getReviews(id),
         getReviewSummary(id),
       ]);
       setRelationship(relationshipStatus);
-      setRequestId(getIncomingFriendRequests(user.id).find((request) => request.senderId === id)?.id ?? null);
+      setRequestId(incoming.find((request) => request.senderId === id)?.id ?? null);
       setPrefs(friendPrefs);
       setReviews(reviewsList);
       setReviewSummary(summary);
@@ -139,16 +139,18 @@ export default function PublicProfile() {
     light();
     setRelationshipUpdating(true);
     const currentRequestId = requestId;
-    const result =
-      action === 'send'
-        ? await sendFriendRequest(user.id, id)
-        : !currentRequestId
-          ? { ok: false as const, error: 'Cererea nu mai este disponibilă.' }
-          : action === 'cancel'
-            ? cancelFriendRequest(user.id, currentRequestId)
-            : action === 'accept'
-              ? acceptFriendRequest(user.id, currentRequestId)
-              : rejectFriendRequest(user.id, currentRequestId);
+    let result: { ok: true; request?: unknown } | { ok: false; error: string };
+    if (action === 'send') {
+      result = await sendFriendRequest(user.id, id);
+    } else if (!currentRequestId) {
+      result = { ok: false, error: 'Cererea nu mai este disponibilă.' };
+    } else if (action === 'cancel') {
+      result = await cancelFriendRequest(user.id, currentRequestId);
+    } else if (action === 'accept') {
+      result = await acceptFriendRequest(user.id, currentRequestId);
+    } else {
+      result = await rejectFriendRequest(user.id, currentRequestId);
+    }
 
     if (result.ok) {
       setRelationship(action === 'send' ? 'outgoing_pending' : action === 'accept' ? 'friends' : 'none');

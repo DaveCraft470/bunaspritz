@@ -15,17 +15,21 @@ import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import {
-  follow,
   getBlockedIds,
-  getFollowStatuses,
-  getFollowingIds,
   getRandomProfiles,
   getSuggestedFriends,
   Profile,
   searchProfiles,
   SuggestedProfile,
 } from '@/lib/social';
-import { getOutgoingFriendRequests } from '@/lib/friendRequests';
+import {
+  getFriendRequestStatuses,
+  getFriends,
+  getIncomingFriendRequests,
+  getOutgoingFriendRequests,
+  sendFriendRequest,
+  type RelationshipStatus,
+} from '@/lib/friendRequests';
 
 const REASON_LABEL: Record<SuggestedProfile['reason'], string> = {
   mutual: 'Prieteni în comun',
@@ -40,7 +44,7 @@ export default function Search() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(false);
-  const [following, setFollowing] = useState<Set<string>>(new Set());
+  const [relationships, setRelationships] = useState<Record<string, RelationshipStatus>>({});
 
   const [suggestions, setSuggestions] = useState<(Profile & { reason?: SuggestedProfile['reason'] })[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(true);
@@ -53,31 +57,46 @@ export default function Search() {
 
     (async () => {
       setSuggestionsLoading(true);
-      // Pending outgoing requests only live in the in-memory store in
-      // lib/friendRequests.ts (not the DB), so the RPC can't filter them —
-      // do it client-side instead.
-      const alreadyRequested = new Set(getOutgoingFriendRequests(user.id).map((request) => request.receiverId));
 
-      const graphSuggestions = (await getSuggestedFriends(10)).filter((person) => !alreadyRequested.has(person.id));
+      const graphSuggestions = await getSuggestedFriends(10);
       if (cancelled) return;
 
       if (graphSuggestions.length > 0) {
         setSuggestions(graphSuggestions);
+        setRelationships((current) => ({
+          ...current,
+          ...Object.fromEntries(graphSuggestions.map((person) => [person.id, 'none' as const])),
+        }));
         setSuggestionsLoading(false);
         return;
       }
 
       // No friends-of-friends or shared-event overlap yet — fall back to a
-      // shuffled page of other people with an account. blockedIds only
-      // covers people *I* blocked (friend_prefs RLS hides the reverse), so
-      // someone who blocked me could still show up here; adding them just
-      // fails with the generic error alert, which is an acceptable edge case.
-      const [followingIds, blockedIds] = await Promise.all([getFollowingIds(user.id), getBlockedIds(user.id)]);
+      // shuffled page of other people with an account, excluding existing
+      // friends/pending requests/blocks. blockedIds only covers people *I*
+      // blocked (friend_prefs RLS hides the reverse), so someone who blocked
+      // me could still show up here; adding them just fails with the generic
+      // error alert, which is an acceptable edge case.
+      const [friends, incoming, outgoing, blockedIds] = await Promise.all([
+        getFriends(user.id),
+        getIncomingFriendRequests(user.id),
+        getOutgoingFriendRequests(user.id),
+        getBlockedIds(user.id),
+      ]);
       if (cancelled) return;
-      const excludeIds = [...followingIds, ...blockedIds, ...alreadyRequested];
+      const excludeIds = [
+        ...friends.map((f) => f.id),
+        ...incoming.map((r) => r.senderId),
+        ...outgoing.map((r) => r.receiverId),
+        ...blockedIds,
+      ];
       const random = await getRandomProfiles(user.id, excludeIds, 10);
       if (cancelled) return;
       setSuggestions(random);
+      setRelationships((current) => ({
+        ...current,
+        ...Object.fromEntries(random.map((person) => [person.id, 'none' as const])),
+      }));
       setSuggestionsLoading(false);
     })();
 
@@ -99,10 +118,10 @@ export default function Search() {
       const people = await searchProfiles(trimmedQuery, user.id);
       if (cancelled) return;
 
-      const statuses = await getFollowStatuses(user.id, people.map((p) => p.id));
+      const statuses = await getFriendRequestStatuses(user.id, people.map((p) => p.id));
       if (cancelled) return;
 
-      setFollowing(new Set(people.filter((p) => statuses[p.id]?.iFollow).map((p) => p.id)));
+      setRelationships((current) => ({ ...current, ...statuses }));
       setResults(people);
       setLoading(false);
     }, 300); // debounce
@@ -116,22 +135,25 @@ export default function Search() {
   async function handleAdd(person: Profile) {
     if (!user) return;
     light();
-    setFollowing((current) => new Set(current).add(person.id));
-    const ok = await follow(user.id, person.id);
-    if (!ok) {
-      // Revert the optimistic mark — this used to show "Adăugat ✓" even
-      // when the insert failed, since follow() swallowed its own error.
-      setFollowing((current) => {
-        const next = new Set(current);
-        next.delete(person.id);
-        return next;
-      });
+    setRelationships((current) => ({ ...current, [person.id]: 'outgoing_pending' }));
+    const result = await sendFriendRequest(user.id, person.id);
+    if (!result.ok) {
+      setRelationships((current) => ({ ...current, [person.id]: 'none' }));
       showAlert(t.search.genericErrorTitle, t.search.errorFollowing);
     }
   }
 
   function renderPerson(person: Profile & { reason?: SuggestedProfile['reason'] }) {
-    const isFollowing = following.has(person.id);
+    const status = relationships[person.id] ?? 'none';
+    const buttonLabel =
+      status === 'friends'
+        ? 'Prieteni'
+        : status === 'outgoing_pending'
+          ? t.search.added
+          : status === 'incoming_pending'
+            ? 'Te-a adăugat'
+            : t.search.add;
+    const buttonDisabled = status !== 'none';
     return (
       <AnimatedPressable
         key={person.id}
@@ -148,17 +170,17 @@ export default function Search() {
           </Text>
         </View>
         <AnimatedPressable
-          onPress={() => handleAdd(person)}
-          disabled={isFollowing}
+          onPress={() => (status === 'incoming_pending' ? router.push('/friends') : handleAdd(person))}
+          disabled={status === 'friends' || status === 'outgoing_pending'}
           style={[
             styles.addButton,
-            isFollowing
+            buttonDisabled
               ? { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1 }
               : { backgroundColor: colors.green500 },
           ]}
         >
-          <Text style={[styles.addButtonText, { color: isFollowing ? theme.textSecondary : colors.white }]}>
-            {isFollowing ? t.search.added : t.search.add}
+          <Text style={[styles.addButtonText, { color: buttonDisabled ? theme.textSecondary : colors.white }]}>
+            {buttonLabel}
           </Text>
         </AnimatedPressable>
       </AnimatedPressable>
