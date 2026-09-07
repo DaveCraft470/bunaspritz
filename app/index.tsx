@@ -17,6 +17,10 @@ import { addMonths, dateKey, formatMonth, isSameDay, startOfDay } from '@/lib/ca
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { getUserJoinedEventIds } from '@/lib/events';
 import { getRecommendedEvents, RecommendedEvent } from '@/lib/recommendations';
+import { getFavoriteCategories } from '@/lib/favorites';
+import { getFriendAttendingCounts } from '@/lib/social';
+import { getDismissedEventIds } from '@/lib/eventDismissals';
+import { getRecentlyViewedEventIds } from '@/lib/recentActivity';
 import { useUser } from '@/contexts/UserContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { useStories } from '@/contexts/StoriesContext';
@@ -244,6 +248,10 @@ export default function Home() {
   const [joinedEventIds, setJoinedEventIds] = useState<Set<string>>(new Set());
   const [joinedLoading, setJoinedLoading] = useState(false);
   const [joinedError, setJoinedError] = useState(false);
+  const [preferredGenres, setPreferredGenres] = useState<Set<string>>(new Set());
+  const [dismissedEventIds, setDismissedEventIds] = useState<Set<string>>(new Set());
+  const [viewedEventIds, setViewedEventIds] = useState<Set<string>>(new Set());
+  const [friendAttendeeCounts, setFriendAttendeeCounts] = useState<Map<string, number>>(new Map());
 
   const loadJoinedEvents = useCallback(async () => {
     if (!user) {
@@ -267,9 +275,29 @@ export default function Home() {
     }, [loadJoinedEvents]),
   );
 
+  // The rest of "For You"'s signals (Sprint 5) — favorite categories,
+  // skipped events, recently viewed events, and how many friends are going
+  // to each event. Loaded once per focus, same cadence as joined events.
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      getFavoriteCategories(user.id).then((cats) => setPreferredGenres(new Set(cats)));
+      getDismissedEventIds(user.id).then((ids) => setDismissedEventIds(new Set(ids)));
+      getRecentlyViewedEventIds(user.id, 20).then((ids) => setViewedEventIds(new Set(ids)));
+      getFriendAttendingCounts().then(setFriendAttendeeCounts);
+    }, [user]),
+  );
+
   const recommendations = useMemo(
-    () => getRecommendedEvents(events, user?.id, { joinedEventIds }),
-    [events, joinedEventIds, user?.id],
+    () =>
+      getRecommendedEvents(events, user?.id, {
+        joinedEventIds,
+        dismissedEventIds,
+        preferredGenres,
+        viewedEventIds,
+        friendAttendeeCounts,
+      }),
+    [events, joinedEventIds, dismissedEventIds, preferredGenres, viewedEventIds, friendAttendeeCounts, user?.id],
   );
 
   return (

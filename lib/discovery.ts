@@ -121,3 +121,44 @@ export function getLastMinuteEvents(events: SpritzEvent[], now = new Date(), win
     })
     .sort((left, right) => new Date(left.startsAt!).getTime() - new Date(right.startsAt!).getTime());
 }
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function byStartAsc(left: SpritzEvent, right: SpritzEvent) {
+  return new Date(left.startsAt!).getTime() - new Date(right.startsAt!).getTime();
+}
+
+// "For Tonight": still-upcoming events starting later today.
+export function getTonightEvents(events: SpritzEvent[], now = new Date()) {
+  const endOfToday = new Date(now);
+  endOfToday.setHours(23, 59, 59, 999);
+  return events
+    .filter((event) => {
+      if (!event.startsAt) return false;
+      const startsAt = new Date(event.startsAt);
+      return startsAt.getTime() > now.getTime() && startsAt.getTime() <= endOfToday.getTime();
+    })
+    .sort(byStartAsc);
+}
+
+// "For Your Weekend": events on the upcoming Saturday/Sunday. If today is
+// already Saturday or Sunday, that means the rest of *this* weekend, not a
+// week out — matches how a person would actually read "this weekend".
+export function getWeekendEvents(events: SpritzEvent[], now = new Date()) {
+  const day = now.getDay(); // 0 = Sunday, 6 = Saturday
+  const todayStart = startOfDay(now);
+  const windowStart = day === 6 || day === 0 ? todayStart : addDays(todayStart, (6 - day + 7) % 7);
+  const windowEnd = day === 0 ? addDays(todayStart, 1) : addDays(windowStart, 2);
+
+  return events
+    .filter((event) => {
+      if (!event.startsAt) return false;
+      const startsAt = new Date(event.startsAt);
+      return startsAt.getTime() > now.getTime() && startsAt.getTime() >= windowStart.getTime() && startsAt.getTime() < windowEnd.getTime();
+    })
+    .sort(byStartAsc);
+}

@@ -244,6 +244,8 @@ export const ro = {
     noEventsFound: 'Nu am găsit evenimente.',
     tryAnotherSearchTerm: 'Încearcă un alt termen de căutare.',
     resetFiltersButton: 'Resetează filtrele',
+    forTonight: '🌙 Diseară',
+    forWeekend: '🎊 Weekendul acesta',
     lastMinute: '⏰ În curând',
     trending: '🔥 În trend',
     recentlyViewed: 'Văzute recent',

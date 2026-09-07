@@ -32,6 +32,8 @@ import {
   getDiscoverableEvents,
   getDiscoveryGenres,
   getLastMinuteEvents,
+  getTonightEvents,
+  getWeekendEvents,
 } from '@/lib/discovery';
 import { getTrendingEventIds } from '@/lib/trending';
 import { clearRecentSearches, getRecentSearches, getRecentlyViewedEventIds, recordSearch } from '@/lib/recentActivity';
@@ -195,6 +197,8 @@ export default function Discover() {
   const activeFilterCount = Number(filters.genre !== 'all') + Number(filters.date !== 'all') + Number(filters.price !== 'all');
 
   const lastMinuteEvents = useMemo(() => getLastMinuteEvents(events), [events]);
+  const tonightEvents = useMemo(() => getTonightEvents(events), [events]);
+  const weekendEvents = useMemo(() => getWeekendEvents(events), [events]);
   const trendingEvents = useMemo(() => {
     const order = new Map(trendingIds.map((id, index) => [id, index]));
     return events.filter((event) => order.has(event.id)).sort((a, b) => order.get(a.id)! - order.get(b.id)!);
@@ -326,6 +330,8 @@ export default function Discover() {
 
         {showBrowseSections && (
           <>
+            <EventRow title={t.discover.forTonight} events={tonightEvents} />
+            <EventRow title={t.discover.forWeekend} events={weekendEvents} />
             <EventRow
               title={t.discover.lastMinute}
               events={lastMinuteEvents}

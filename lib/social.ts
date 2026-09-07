@@ -128,6 +128,16 @@ export async function getCommonEvents(otherId: string): Promise<CommonEvent[]> {
   }));
 }
 
+// "N of your friends are going" per event, for the recommendation engine
+// (lib/recommendations.ts) — via the get_friend_attending_counts() RPC,
+// since RLS can't answer a batched cross-event friend-attendance query from
+// the client directly.
+export async function getFriendAttendingCounts(): Promise<Map<string, number>> {
+  const { data, error } = await supabase.rpc('get_friend_attending_counts');
+  if (error || !data) return new Map();
+  return new Map((data as { event_id: string; friend_count: number }[]).map((row) => [row.event_id, row.friend_count]));
+}
+
 export async function getRandomProfiles(excludeId: string, excludeIds: string[], limit = 10): Promise<Profile[]> {
   const { data, error } = await supabase.from('profiles').select(PROFILE_COLUMNS).neq('id', excludeId).limit(50);
   if (error || !data) return [];

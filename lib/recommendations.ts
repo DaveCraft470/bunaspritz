@@ -2,23 +2,38 @@ import { SpritzEvent } from '@/constants/events';
 
 export const RECOMMENDATION_WEIGHTS = {
   genreMatch: 40,
+  friends: 35,
   distance: 30,
   behavior: 20,
+  viewedBehavior: 10,
   timing: 15,
   popularity: 10,
 } as const;
 
 export type RecommendationContext = {
   joinedEventIds?: ReadonlySet<string>;
+  // "Skips" (Not Interested, Sprint 1) — excluded outright, not just down-
+  // ranked, same as how Discover's main list already treats them.
+  dismissedEventIds?: ReadonlySet<string>;
+  // Favorite Categories (Sprint 4) — the strongest single signal, distinct
+  // from behaviorally-inferred genre affinity below.
   preferredGenres?: ReadonlySet<string>;
+  // Recently Viewed (Sprint 1) — a softer behavioral signal than actually
+  // joining: "looked at" implies some interest, not confirmed intent.
+  viewedEventIds?: ReadonlySet<string>;
   location?: { lat: number; lng: number };
   attendeeCounts?: ReadonlyMap<string, number>;
+  // "N of your friends are going" (Sprint 4/5) — from
+  // get_friend_attending_counts(), see lib/social.ts.
+  friendAttendeeCounts?: ReadonlyMap<string, number>;
 };
 
 export type RecommendedEvent = {
   event: SpritzEvent;
   score: number;
-  reason: 'Potrivit pentru tine' | 'Aproape de tine' | 'Începe curând' | 'Popular';
+  // Free-text now (was a fixed union) — see chooseReason below. Existing
+  // renderers (app/index.tsx's RecommendationRow) just display it as-is.
+  reason: string;
 };
 
 function normalize(value: string) {
@@ -62,6 +77,26 @@ function diversify(items: RecommendedEvent[], limit: number) {
   return selected;
 }
 
+// "De ce vezi acest event?" — picks the single most explanatory signal
+// rather than concatenating every contributing factor. Social proof beats
+// a genre match beats proximity beats popularity beats "starts soon" as a
+// default, matching how compelling each reason actually reads to a person.
+function chooseReason(event: SpritzEvent, genre: string, friendCount: number, genreMatched: boolean, distanceScore: number, attendeeCount: number | undefined): string {
+  if (friendCount > 0) {
+    return friendCount === 1 ? '1 prieten participă' : `${friendCount} prieteni participă`;
+  }
+  if (genreMatched && event.genre) {
+    return `Pentru că îți place ${event.genre}`;
+  }
+  if (distanceScore >= RECOMMENDATION_WEIGHTS.distance * 0.65) {
+    return 'Aproape de tine';
+  }
+  if (attendeeCount !== undefined && attendeeCount >= 5) {
+    return 'Popular';
+  }
+  return 'Începe curând';
+}
+
 export function getRecommendedEvents(
   events: SpritzEvent[],
   userId: string | undefined,
@@ -70,38 +105,42 @@ export function getRecommendedEvents(
 ): RecommendedEvent[] {
   const now = Date.now();
   const joinedIds = context.joinedEventIds ?? new Set<string>();
+  const dismissedIds = context.dismissedEventIds ?? new Set<string>();
+  const viewedIds = context.viewedEventIds ?? new Set<string>();
   const preferredGenres = new Set([...(context.preferredGenres ?? [])].map(normalize));
 
   const ranked = events
     .filter((event) => event.hostId !== userId && event.startsAt !== null)
     .filter((event) => new Date(event.startsAt!).getTime() > now)
-    .filter((event) => !joinedIds.has(event.id))
+    .filter((event) => !joinedIds.has(event.id) && !dismissedIds.has(event.id))
     .map((event) => {
       let score = 0;
-      let reason: RecommendedEvent['reason'] = 'Începe curând';
       const genre = normalize(event.genre);
 
-      if (genre && preferredGenres.has(genre)) {
-        score += RECOMMENDATION_WEIGHTS.genreMatch;
-        reason = 'Potrivit pentru tine';
-      }
+      const genreMatched = !!genre && preferredGenres.has(genre);
+      if (genreMatched) score += RECOMMENDATION_WEIGHTS.genreMatch;
 
+      let distanceScore = 0;
       if (context.location) {
         const distance = distanceKm(context.location, { lat: event.lat, lng: event.lng });
-        const distanceScore = Math.max(0, RECOMMENDATION_WEIGHTS.distance * (1 - Math.min(distance, 30) / 30));
+        distanceScore = Math.max(0, RECOMMENDATION_WEIGHTS.distance * (1 - Math.min(distance, 30) / 30));
         score += distanceScore;
-        if (distanceScore >= RECOMMENDATION_WEIGHTS.distance * 0.65 && reason === 'Începe curând') {
-          reason = 'Aproape de tine';
-        }
       }
 
-      const behaviorGenre = [...joinedIds]
+      const behaviorGenres = [...joinedIds]
         .map((id) => events.find((candidate) => candidate.id === id)?.genre)
         .filter((value): value is string => !!value)
         .map(normalize);
-      if (genre && behaviorGenre.includes(genre)) {
+      if (genre && behaviorGenres.includes(genre)) {
         score += RECOMMENDATION_WEIGHTS.behavior;
-        if (reason === 'Începe curând') reason = 'Potrivit pentru tine';
+      }
+
+      const viewedGenres = [...viewedIds]
+        .map((id) => events.find((candidate) => candidate.id === id)?.genre)
+        .filter((value): value is string => !!value)
+        .map(normalize);
+      if (genre && viewedGenres.includes(genre)) {
+        score += RECOMMENDATION_WEIGHTS.viewedBehavior;
       }
 
       score += timingScore(event.startsAt!);
@@ -109,8 +148,14 @@ export function getRecommendedEvents(
       const attendeeCount = context.attendeeCounts?.get(event.id);
       if (attendeeCount !== undefined && attendeeCount > 0) {
         score += Math.min(RECOMMENDATION_WEIGHTS.popularity, Math.log10(attendeeCount + 1) * 5);
-        if (reason === 'Începe curând' && attendeeCount >= 5) reason = 'Popular';
       }
+
+      const friendCount = context.friendAttendeeCounts?.get(event.id) ?? 0;
+      if (friendCount > 0) {
+        score += Math.min(RECOMMENDATION_WEIGHTS.friends, friendCount * 12);
+      }
+
+      const reason = chooseReason(event, genre, friendCount, genreMatched, distanceScore, attendeeCount);
 
       return { event, score, reason };
     })

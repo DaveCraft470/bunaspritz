@@ -246,6 +246,8 @@ export const en: Translations = {
     noEventsFound: 'No events found.',
     tryAnotherSearchTerm: 'Try a different search term.',
     resetFiltersButton: 'Reset filters',
+    forTonight: '🌙 Tonight',
+    forWeekend: '🎊 This weekend',
     lastMinute: '⏰ Last minute',
     trending: '🔥 Trending',
     recentlyViewed: 'Recently viewed',
