@@ -17,6 +17,9 @@ import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { FriendPrefsModal } from '@/components/social/FriendPrefsModal';
+import { ReportModal } from '@/components/social/ReportModal';
+import { SafetyMenu } from '@/components/social/SafetyMenu';
+import { USER_REPORT_REASONS } from '@/lib/reports';
 import { FriendPrefs, Profile, blockUser, getBlockedProfiles, getFriendPrefs, setFriendPrefs, unblockUser, unfollow } from '@/lib/social';
 import {
   acceptFriendRequest,
@@ -51,6 +54,8 @@ export default function Friends() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [menuFor, setMenuFor] = useState<Profile | null>(null);
+  const [safetyMenuFor, setSafetyMenuFor] = useState<Profile | null>(null);
+  const [reportTarget, setReportTarget] = useState<Profile | null>(null);
   const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false, blocked: false });
   const [refreshing, setRefreshing] = useState(false);
   const [blocked, setBlocked] = useState<Profile[]>([]);
@@ -146,6 +151,7 @@ export default function Friends() {
           setFriends((current) => current.filter((f) => f.id !== friend.id));
           setBlocked((current) => [...current, friend]);
           setMenuFor(null);
+          setSafetyMenuFor(null);
         },
       },
     ]);
@@ -310,7 +316,7 @@ export default function Friends() {
             onAvatarPress={() => friendStoryGroup && setViewerStories(friendStoryGroup)}
             onProfilePress={() => router.push(`/user/${friend.id}`)}
             onMessagePress={() => router.push({ pathname: '/messages', params: { friendId: friend.id } })}
-            onMorePress={() => openMenu(friend)}
+            onMorePress={() => setSafetyMenuFor(friend)}
           />
           );
         })}
@@ -346,6 +352,55 @@ export default function Friends() {
         onBlock={() => menuFor && confirmBlockFriend(menuFor)}
         onClose={() => setMenuFor(null)}
       />
+      <SafetyMenu
+        visible={!!safetyMenuFor}
+        title={safetyMenuFor ? `@${safetyMenuFor.username}` : undefined}
+        onClose={() => setSafetyMenuFor(null)}
+        actions={
+          safetyMenuFor
+            ? [
+                {
+                  key: 'prefs',
+                  label: 'Preferințe notificări',
+                  icon: 'notifications-outline',
+                  onPress: () => openMenu(safetyMenuFor),
+                },
+                {
+                  key: 'block',
+                  label: 'Blochează',
+                  icon: 'lock-closed-outline',
+                  destructive: true,
+                  onPress: () => confirmBlockFriend(safetyMenuFor),
+                },
+                {
+                  key: 'report',
+                  label: 'Raportează',
+                  icon: 'flag-outline',
+                  onPress: () => setReportTarget(safetyMenuFor),
+                },
+                {
+                  key: 'remove',
+                  label: 'Elimină prieten',
+                  icon: 'person-remove-outline',
+                  destructive: true,
+                  onPress: () => confirmRemoveFriend(safetyMenuFor),
+                },
+              ]
+            : []
+        }
+      />
+      {user && reportTarget && (
+        <ReportModal
+          visible={!!reportTarget}
+          targetType="user"
+          targetId={reportTarget.id}
+          targetLabel={`@${reportTarget.username}`}
+          reasons={USER_REPORT_REASONS}
+          reporterId={user.id}
+          reporterLabel={`@${user.username}`}
+          onClose={() => setReportTarget(null)}
+        />
+      )}
       <StoryViewer
         visible={!!viewerStories}
         stories={viewerStories?.stories ?? []}
