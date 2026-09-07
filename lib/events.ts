@@ -352,6 +352,16 @@ export async function deleteEvent(eventId: string, hostId: string, rentalProofPa
   return true;
 }
 
+// Admin moderation delete — bypasses the "hosts delete their own events" RLS
+// policy via the admin_delete_event() RPC, which re-checks is_admin()
+// server-side (the client-side gate in lib/admin.ts is UI-only).
+export async function adminDeleteEvent(eventId: string, rentalProofPath: string | null): Promise<boolean> {
+  const { error } = await supabase.rpc('admin_delete_event', { p_event_id: eventId });
+  if (error) return false;
+  if (rentalProofPath) await removeRentalProof(rentalProofPath);
+  return true;
+}
+
 // ==================================================== event_join_requests ==
 // Only meaningful for approval_mode: 'manual' events — joinEvent() above
 // still handles instant-approval joins directly, unchanged.

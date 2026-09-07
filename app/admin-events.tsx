@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -12,6 +12,8 @@ import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { isAdminAccessEnabled } from '@/lib/admin';
 import { useUser } from '@/contexts/UserContext';
 import { getProfiles } from '@/lib/social';
+import { adminDeleteEvent } from '@/lib/events';
+import { showAlert } from '@/lib/alert';
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleString('ro-RO', { dateStyle: 'medium', timeStyle: 'short' }) : 'Data nestabilită';
@@ -24,6 +26,27 @@ export default function AdminEvents() {
   const [query, setQuery] = useState('');
   const [localModeration, setLocalModeration] = useState<Record<string, 'hidden' | 'review'>>({});
   const [hostNames, setHostNames] = useState<Record<string, string>>({});
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  function confirmDelete(eventId: string, title: string, rentalProofPath: string | null) {
+    Alert.alert('Ștergi acest eveniment?', `„${title}" va fi șters definitiv, inclusiv participanții și recenziile asociate.`, [
+      { text: 'Anulează', style: 'cancel' },
+      {
+        text: 'Șterge',
+        style: 'destructive',
+        onPress: async () => {
+          setDeletingId(eventId);
+          const ok = await adminDeleteEvent(eventId, rentalProofPath);
+          setDeletingId(null);
+          if (!ok) {
+            showAlert('A apărut o eroare', 'Nu am putut șterge evenimentul. Încearcă din nou.');
+            return;
+          }
+          refresh();
+        },
+      },
+    ]);
+  }
   useEffect(() => {
     const hostIds = [...new Set(events.map((event) => event.hostId).filter((id): id is string => id !== null))];
     getProfiles(hostIds).then((profiles) => {
@@ -94,6 +117,13 @@ export default function AdminEvents() {
                 </AnimatedPressable>
                 <AnimatedPressable onPress={() => setLocalModeration((current) => ({ ...current, [item.id]: 'review' }))} style={[styles.button, { backgroundColor: colors.green500 }]}>
                   <Text style={[styles.buttonText, { color: colors.white }]}>Review</Text>
+                </AnimatedPressable>
+                <AnimatedPressable
+                  onPress={() => confirmDelete(item.id, item.title, item.rentalProofPath)}
+                  disabled={deletingId === item.id}
+                  style={[styles.button, { backgroundColor: '#E5484D', opacity: deletingId === item.id ? 0.6 : 1 }]}
+                >
+                  <Text style={[styles.buttonText, { color: colors.white }]}>{deletingId === item.id ? '...' : 'Șterge'}</Text>
                 </AnimatedPressable>
               </View>
             </View>

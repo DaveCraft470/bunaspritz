@@ -1,9 +1,13 @@
 import { PublicUser } from '@/contexts/auth';
 
-// Development-only switch. This is not authorization and must be replaced by
-// a backend role/RLS check before an admin panel is enabled in production.
-export const DEV_ADMIN_ACCESS_ENABLED = true;
+// Mirrors the server-side is_admin() SQL function exactly — this is only a
+// UI gate (hides/shows admin screens); the actual authorization for
+// destructive actions like admin_delete_event() is re-checked server-side,
+// since a client-only check can't stop a direct RPC call from a non-admin.
+// Checked by username string (not a stored role/id) so it survives an
+// account delete + recreate under the same handle.
+const ADMIN_USERNAMES = ['david', 'raul'];
 
 export function isAdminAccessEnabled(user: PublicUser | null): boolean {
-  return __DEV__ && DEV_ADMIN_ACCESS_ENABLED && user !== null;
+  return user !== null && ADMIN_USERNAMES.includes(user.username.toLowerCase());
 }
