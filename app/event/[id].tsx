@@ -31,6 +31,7 @@ import {
   getEventAttendeeCount,
   getJoinRequestStatus,
   getMyAttendance,
+  getUserJoinedEventIds,
   hasJoined,
   joinEvent,
   leaveEvent,
@@ -55,6 +56,10 @@ import { getFriends } from '@/lib/friendRequests';
 import { sendEventInvitation } from '@/lib/eventInvitations';
 import { isEventSaved, saveEvent, unsaveEvent } from '@/lib/savedEvents';
 import { recordEventView } from '@/lib/recentActivity';
+import { findConflictingEvent } from '@/lib/eventConflicts';
+import { MeetupPointCard } from '@/components/event/MeetupPointCard';
+import { TravelTimeCard } from '@/components/event/TravelTimeCard';
+import { PhotoAlbum } from '@/components/event/PhotoAlbum';
 import { formatDrinkVolume, getEventDrinks } from '@/lib/drinks';
 import { getEventSongs } from '@/lib/music';
 import { MusicCoverPlaceholder } from '@/components/music/MusicCoverPlaceholder';
@@ -142,6 +147,12 @@ export default function EventDetail() {
   const eventStories = event ? getEventStories(event.id) : [];
   const eventDrinks = event ? getEventDrinks(event.id) : [];
   const eventSongs = event ? getEventSongs(event.id) : [];
+  function attendeeName(userId: string): string {
+    if (userId === user?.id) return 'Tu';
+    if (userId === hostProfile?.id) return hostProfile!.name;
+    return attendees.find((a) => a.userId === userId)?.name ?? 'Cineva';
+  }
+
   const friendsParticipating = useMemo(() => {
     const attendeeIds = new Set(attendees.map((attendee) => attendee.userId));
     return inviteFriends.filter((friend) => attendeeIds.has(friend.id));
@@ -315,6 +326,28 @@ export default function EventDetail() {
     }
 
     if (isFull) return;
+
+    // Client-side heads-up only, not a hard block — a genuine reason to
+    // double-book (e.g. hopping between two nearby spritzes) should still be
+    // possible. See lib/eventConflicts.ts for the assumed-duration overlap check.
+    const joinedIds = await getUserJoinedEventIds(user.id);
+    const conflict = findConflictingEvent(
+      event,
+      events.filter((e) => joinedIds.includes(e.id)),
+    );
+    if (conflict) {
+      const proceed = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          '⚠️ Ai deja un eveniment la ora asta',
+          `Se suprapune cu „${conflict.title}". Vrei să participi oricum?`,
+          [
+            { text: 'Anulează', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Particip oricum', onPress: () => resolve(true) },
+          ],
+        );
+      });
+      if (!proceed) return;
+    }
 
     if (VERIFICATION_REQUIRED && !effectiveVerified) {
       router.push({ pathname: '/verification', params: { returnTo: `/event/${event.id}` } });
@@ -678,6 +711,18 @@ export default function EventDetail() {
               </AnimatedPressable>
             )}
           </View>
+
+          {(joined || isHost) && (
+            <MeetupPointCard eventId={event.id} userId={user!.id} scheme={scheme} canSet={joined || isHost} senderName={attendeeName} />
+          )}
+
+          {(joined || isHost) && !isPast && event.startsAt && (
+            <TravelTimeCard eventId={event.id} eventTitle={event.title} destination={{ lat: event.lat, lng: event.lng }} startsAt={event.startsAt} />
+          )}
+
+          {user && (
+            <PhotoAlbum eventId={event.id} canUpload={joined || isHost} isHost={isHost} currentUserId={user.id} />
+          )}
 
           {eventStories.length > 0 && (
             <StoriesRow

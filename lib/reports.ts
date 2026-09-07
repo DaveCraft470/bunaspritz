@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-export type ReportTargetType = 'user' | 'event';
+export type ReportTargetType = 'user' | 'event' | 'event_photo';
 export type ReportStatus = 'new' | 'reviewing' | 'resolved' | 'dismissed';
 
 export type Report = {
@@ -18,6 +18,7 @@ export type Report = {
 
 export const USER_REPORT_REASONS = ['Comportament nepotrivit', 'Hărțuire', 'Spam', 'Profil fals', 'Conținut nepotrivit', 'Alt motiv'] as const;
 export const EVENT_REPORT_REASONS = ['Eveniment fals', 'Conținut nepotrivit', 'Fraudă/scam', 'Spam', 'Informații incorecte', 'Alt motiv'] as const;
+export const EVENT_PHOTO_REPORT_REASONS = ['Conținut nepotrivit', 'Nu are legătură cu evenimentul', 'Hărțuire', 'Spam', 'Alt motiv'] as const;
 
 let reports: Report[] = [];
 const listeners = new Set<() => void>();

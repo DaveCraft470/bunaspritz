@@ -132,6 +132,19 @@ export default function Profile() {
         </Pressable>
 
         <Pressable
+          onPress={() => router.push('/memories')}
+          style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        >
+          <View style={styles.myEventsCopy}>
+            <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>Amintiri</Text>
+            <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
+              Evenimentele la care ai participat, cu poze și statistici.
+            </Text>
+          </View>
+          <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
+        </Pressable>
+
+        <Pressable
           onPress={() => router.push('/saved-events')}
           style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
         >
