@@ -27,27 +27,27 @@ Deno.serve(async (req) => {
     return new Response('joiner disabled join notifications', { status: 200 });
   }
 
-  const { data: event } = await admin.from('events').select('title').eq('id', eventId).single();
+  const { data: event } = await admin.from('events').select('title, visibility').eq('id', eventId).single();
 
-  // Mutual friends: people the joiner follows who also follow the joiner back.
-  const { data: following } = await admin.from('follows').select('followee_id').eq('follower_id', callerId);
-  const followingIds = (following ?? []).map((row) => row.followee_id);
-  if (!followingIds.length) return new Response('joiner has no friends', { status: 200 });
+  // A private event's title/existence isn't meant to reach anyone beyond
+  // who the host already let in — broadcasting "X joined <title>" to the
+  // joiner's friends (who may have no connection to this event at all)
+  // would leak exactly that.
+  if (event?.visibility === 'private') return new Response('private event, no broadcast', { status: 200 });
 
-  const { data: mutualEdges } = await admin
-    .from('follows')
-    .select('follower_id')
-    .eq('followee_id', callerId)
-    .in('follower_id', followingIds);
-  const mutualIds = (mutualEdges ?? []).map((row) => row.follower_id);
-  if (!mutualIds.length) return new Response('joiner has no mutual friends', { status: 200 });
+  // friendships is a canonical (least, greatest) pair — the friend is
+  // whichever column isn't the caller.
+  const { data: asA } = await admin.from('friendships').select('user_b').eq('user_a', callerId);
+  const { data: asB } = await admin.from('friendships').select('user_a').eq('user_b', callerId);
+  const friendIds = [...(asA ?? []).map((r) => r.user_b), ...(asB ?? []).map((r) => r.user_a)];
+  if (!friendIds.length) return new Response('joiner has no friends', { status: 200 });
 
-  // A mutual is excluded if THEY muted the joiner's activity, or the joiner
+  // A friend is excluded if THEY muted the joiner's activity, or the joiner
   // hides their own activity from THEM specifically.
   const { data: muteRows } = await admin
     .from('friend_prefs')
     .select('owner_id')
-    .in('owner_id', mutualIds)
+    .in('owner_id', friendIds)
     .eq('subject_id', callerId)
     .eq('mute_activity', true);
   const mutedBy = new Set((muteRows ?? []).map((row) => row.owner_id));
@@ -56,21 +56,29 @@ Deno.serve(async (req) => {
     .from('friend_prefs')
     .select('subject_id')
     .eq('owner_id', callerId)
-    .in('subject_id', mutualIds)
+    .in('subject_id', friendIds)
     .eq('hide_activity_from', true);
   const hiddenFrom = new Set((hideRows ?? []).map((row) => row.subject_id));
 
-  const recipients = mutualIds.filter((id) => !mutedBy.has(id) && !hiddenFrom.has(id));
+  const recipients = friendIds.filter((id) => !mutedBy.has(id) && !hiddenFrom.has(id));
   if (!recipients.length) return new Response('no eligible recipients', { status: 200 });
 
-  const { data: tokens } = await admin.from('push_tokens').select('token').in('user_id', recipients);
+  const title = 'Prieten la Spritz!';
+  const body = `${joiner.name} a intrat la ${event?.title ?? 'un Spritz'}!`;
 
-  await sendExpoPush(
-    (tokens ?? []).map((t) => t.token),
-    'Prieten la Spritz!',
-    `${joiner.name} a intrat la ${event?.title ?? 'un Spritz'}!`,
-    { route: `/event/${eventId}` }
+  await admin.from('notifications').insert(
+    recipients.map((recipientId) => ({
+      recipient_id: recipientId,
+      actor_id: callerId,
+      type: 'event_join',
+      title,
+      body,
+      data: { target_id: eventId },
+    }))
   );
+
+  const { data: tokens } = await admin.from('push_tokens').select('token').in('user_id', recipients);
+  await sendExpoPush((tokens ?? []).map((t) => t.token), title, body);
 
   return new Response('ok', { status: 200 });
 });

@@ -19,19 +19,26 @@ Deno.serve(async (req) => {
     return new Response('forbidden', { status: 403 });
   }
 
-  const { data: tokens } = await admin.from('push_tokens').select('token').eq('user_id', request.user_id);
-  if (!tokens?.length) return new Response('requester has no push tokens', { status: 200 });
-
   const accepted = request.status === 'accepted';
+  const title = accepted ? 'Cerere acceptată!' : 'Cerere respinsă';
+  const body = accepted
+    ? `Ai fost acceptat la ${request.events.title}.`
+    : `Cererea ta pentru ${request.events.title} a fost respinsă.`;
 
-  await sendExpoPush(
-    tokens.map((t) => t.token),
-    accepted ? 'Cerere acceptată!' : 'Cerere respinsă',
-    accepted
-      ? `Ai fost acceptat la ${request.events.title}.`
-      : `Cererea ta pentru ${request.events.title} a fost respinsă.`,
-    { route: `/event/${request.events.id}` }
-  );
+  // No dedicated notification type for this yet (see the `notifications`
+  // table's type check) — 'system' is the closest fit without touching a
+  // constraint another job's migration currently owns.
+  await admin.from('notifications').insert({
+    recipient_id: request.user_id,
+    actor_id: callerId,
+    type: 'system',
+    title,
+    body,
+    data: { target_id: request.events.id },
+  });
+
+  const { data: tokens } = await admin.from('push_tokens').select('token').eq('user_id', request.user_id);
+  await sendExpoPush((tokens ?? []).map((t) => t.token), title, body);
 
   return new Response('ok', { status: 200 });
 });
