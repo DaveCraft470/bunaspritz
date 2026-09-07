@@ -11,6 +11,7 @@ import { showAlert } from '@/lib/alert';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
@@ -38,6 +39,7 @@ import { FriendRow } from '@/components/friends/FriendRow';
 export default function Friends() {
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
+  const { t } = useLanguage();
   const { user } = useUser();
   const { friendsStories } = useStories();
   const [viewerStories, setViewerStories] = useState<StoryGroup | null>(null);
@@ -118,7 +120,7 @@ export default function Friends() {
     const ok = await setFriendPrefs(user.id, menuFor.id, patch);
     if (!ok) {
       setPrefs(previous);
-      showAlert('A apărut o eroare', 'Nu am putut salva preferința. Încearcă din nou.');
+      showAlert(t.friends.genericErrorTitle, t.friends.errorSavingPref);
     }
   }
 
@@ -169,17 +171,17 @@ export default function Friends() {
 
   function confirmRemoveFriend(friend: Profile) {
     light();
-    Alert.alert('Elimini prietenul?', `Nu vei mai fi conectat cu ${friend.name}.`, [
-      { text: 'Anulează', style: 'cancel' },
+    Alert.alert(t.friends.removeFriendTitle, t.friends.removeFriendMessage(friend.name), [
+      { text: t.friends.cancel, style: 'cancel' },
       {
-        text: 'Elimină',
+        text: t.friends.remove,
         style: 'destructive',
         onPress: async () => {
           if (!user) return;
           const localRemoved = removeFriend(user.id, friend.id);
           const ok = localRemoved || (await unfollow(user.id, friend.id));
           if (!ok) {
-            showAlert('A apărut o eroare', 'Nu am putut elimina prietenul. Încearcă din nou.');
+            showAlert(t.friends.genericErrorTitle, t.friends.errorRemovingFriend);
             return;
           }
           setFriends((current) => current.filter((f) => f.id !== friend.id));
@@ -200,13 +202,13 @@ export default function Friends() {
             router.back();
           }}
           hitSlop={10}
-          accessibilityLabel="Înapoi"
+          accessibilityLabel={t.common.back}
           style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
         >
           <GlassSurface />
           <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
         </AnimatedPressable>
-        <Text style={[styles.title, { color: theme.textPrimary }]}>Prieteni</Text>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>{t.friends.title}</Text>
         <View style={styles.backButton} />
       </View>
 
@@ -220,7 +222,7 @@ export default function Friends() {
         {loading && (
           <View style={styles.loadingState}>
             <ActivityIndicator color={colors.green500} />
-            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Se încarcă prietenii...</Text>
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>{t.friends.loadingFriends}</Text>
           </View>
         )}
 
@@ -228,18 +230,18 @@ export default function Friends() {
         {!loading && loadError && (
           <>
             <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-              Nu am putut încărca prietenii. Verifică conexiunea și încearcă din nou.
+              {t.friends.couldNotLoadFriends}
             </Text>
             <AnimatedPressable onPress={load} style={[styles.retryButton, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.retryText, { color: theme.textPrimary }]}>Reîncearcă</Text>
+              <Text style={[styles.retryText, { color: theme.textPrimary }]}>{t.friends.retry}</Text>
             </AnimatedPressable>
           </>
         )}
 
         {!loading && !loadError && (incoming.length > 0 || outgoing.length > 0) && (
           <>
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Cereri de prietenie</Text>
-            {incoming.length > 0 && <Text style={[styles.subsectionTitle, { color: theme.textSecondary }]}>Primite</Text>}
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>{t.friends.friendRequests}</Text>
+            {incoming.length > 0 && <Text style={[styles.subsectionTitle, { color: theme.textSecondary }]}>{t.friends.received}</Text>}
             {incoming.map((request) => {
               const profile = requestProfiles.get(request.senderId);
               if (!profile) return null;
@@ -248,8 +250,8 @@ export default function Friends() {
                   key={request.id}
                   profile={profile}
                   theme={theme}
-                  primaryLabel="Acceptă"
-                  secondaryLabel="Respinge"
+                  primaryLabel={t.friends.accept}
+                  secondaryLabel={t.friends.decline}
                   onPrimary={() => acceptFriendRequest(user!.id, request.id)}
                   onSecondary={() => rejectFriendRequest(user!.id, request.id)}
                 />
@@ -260,7 +262,7 @@ export default function Friends() {
 
         {!loading && !loadError && outgoing.length > 0 && (
           <>
-            <Text style={[styles.subsectionTitle, { color: theme.textSecondary }]}>Trimise</Text>
+            <Text style={[styles.subsectionTitle, { color: theme.textSecondary }]}>{t.friends.sent}</Text>
             {outgoing.map((request) => {
               const profile = requestProfiles.get(request.receiverId);
               if (!profile) return null;
@@ -269,8 +271,8 @@ export default function Friends() {
                   key={request.id}
                   profile={profile}
                   theme={theme}
-                  primaryLabel="Cerere trimisă"
-                  secondaryLabel="Anulează"
+                  primaryLabel={t.friends.requestSent}
+                  secondaryLabel={t.friends.cancelRequest}
                   primaryDisabled
                   onPrimary={() => {}}
                   onSecondary={() => cancelFriendRequest(user!.id, request.id)}
@@ -280,17 +282,17 @@ export default function Friends() {
           </>
         )}
 
-        {!loading && !loadError && friends.length > 0 && <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Prieteni</Text>}
+        {!loading && !loadError && friends.length > 0 && <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>{t.friends.friendsSectionTitle}</Text>}
 
         {!loading && !loadError && friends.length === 0 && incoming.length === 0 && outgoing.length === 0 && (
           <View style={styles.emptyState}>
-            <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>Încă nu ai prieteni</Text>
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Adaugă persoane pentru a începe conversațiile.</Text>
+            <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>{t.friends.noFriendsYet}</Text>
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{t.friends.addPeopleToStart}</Text>
             <AnimatedPressable
               onPress={() => router.push('/search')}
               style={[styles.findFriendsButton, { borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}
             >
-              <Text style={[styles.findFriendsText, { color: theme.accent }]}>Caută prieteni</Text>
+              <Text style={[styles.findFriendsText, { color: theme.accent }]}>{t.friends.findFriends}</Text>
             </AnimatedPressable>
           </View>
         )}

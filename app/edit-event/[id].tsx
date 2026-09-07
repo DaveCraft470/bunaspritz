@@ -12,6 +12,7 @@ import { SpritzEvent } from '@/constants/events';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useEvents } from '@/contexts/EventsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { WheelPicker } from '@/components/common/WheelPicker';
@@ -34,7 +35,6 @@ const EMOJI_CHOICES = ['🎉', '🍻', '🎷', '🎸', '🌮', '🎲', '🥾', '
 const COLOR_CHOICES = ['#FF9F5A', '#5FD98A', '#5AA9E6', '#FFD25A', '#FF6B81', '#B388FF', '#4ED9C9'];
 const HOURS = Array.from({ length: 24 }, (_, index) => index);
 const MINUTES = [0, 15, 30, 45];
-const MONTHS = ['IANUARIE', 'FEBRUARIE', 'MARTIE', 'APRILIE', 'MAI', 'IUNIE', 'IULIE', 'AUGUST', 'SEPTEMBRIE', 'OCTOMBRIE', 'NOIEMBRIE', 'DECEMBRIE'];
 
 function initialDate(event: SpritzEvent) {
   return event.startsAt ? new Date(event.startsAt) : startOfDay(new Date());
@@ -45,6 +45,7 @@ export default function EditEvent() {
   const { events, loading: eventsLoading, error: eventsError, refresh, updateEvent: updateEventInContext } = useEvents();
   const { user } = useUser();
   const { colors: theme, scheme } = useAppTheme();
+  const { t, locale } = useLanguage();
   const insets = useSafeAreaInsets();
   const { light, medium } = useHaptics();
   const event = useMemo(() => events.find((item) => item.id === id), [events, id]);
@@ -125,8 +126,8 @@ export default function EditEvent() {
   useEffect(() => {
     if (!user || !event) return;
     if (event.hostId !== user.id) {
-      Alert.alert('Acces restricționat', 'Doar organizatorul poate edita acest eveniment.', [
-        { text: 'Înapoi', onPress: () => router.back() },
+      Alert.alert(t.editEvent.restrictedAccessTitle, t.editEvent.ownerOnlyMessage, [
+        { text: t.common.back, onPress: () => router.back() },
       ]);
     }
   }, [event, user]);
@@ -134,7 +135,7 @@ export default function EditEvent() {
   if (eventsLoading) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
-        <Text style={[styles.message, { color: theme.textSecondary }]}>Se încarcă evenimentul...</Text>
+        <Text style={[styles.message, { color: theme.textSecondary }]}>{t.event.loadingEvent}</Text>
       </SafeAreaView>
     );
   }
@@ -142,9 +143,9 @@ export default function EditEvent() {
   if (eventsError && !event) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
-        <Text style={[styles.message, { color: theme.textSecondary }]}>Nu am putut încărca evenimentul.</Text>
+        <Text style={[styles.message, { color: theme.textSecondary }]}>{t.event.couldNotLoadEvent}</Text>
         <AnimatedPressable onPress={() => void refresh()} style={[styles.retryButton, { borderColor: theme.border }]}>
-          <Text style={[styles.retryText, { color: theme.textPrimary }]}>Reîncearcă</Text>
+          <Text style={[styles.retryText, { color: theme.textPrimary }]}>{t.event.retry}</Text>
         </AnimatedPressable>
       </SafeAreaView>
     );
@@ -153,7 +154,7 @@ export default function EditEvent() {
   if (!event) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
-        <Text style={[styles.message, { color: theme.textSecondary }]}>Evenimentul nu mai este disponibil.</Text>
+        <Text style={[styles.message, { color: theme.textSecondary }]}>{t.editEvent.eventNoLongerAvailable}</Text>
       </SafeAreaView>
     );
   }
@@ -186,7 +187,7 @@ export default function EditEvent() {
       const month = value % 12;
       const daysInMonth = new Date(year, month + 1, 0).getDate();
       return {
-        label: MONTHS[month],
+        label: t.newEvent.months[month],
         value,
         disabled: !Array.from({ length: daysInMonth }, (_, index) => isSelectableDate(new Date(year, month, index + 1))).some(Boolean),
       };
@@ -221,7 +222,7 @@ export default function EditEvent() {
   async function pickProof() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      alertPermissionDenied(permission.canAskAgain, 'Activează accesul la poze din Setările telefonului ca să atașezi o dovadă.');
+      alertPermissionDenied(permission.canAskAgain, t.newEvent.photoPermissionDeniedProof);
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 });
@@ -235,28 +236,28 @@ export default function EditEvent() {
     if (!isOwner || !user || savingRef.current) return;
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
-      Alert.alert('Mai e nevoie de un nume', 'Dă-i evenimentului un titlu înainte să salvezi.');
+      Alert.alert(t.newEvent.errorNoTitleTitle, t.editEvent.errorNoTitleMessage);
       return;
     }
     const hasStart = originalStart !== null || dateEdited;
     if (hasStart && dateWasChanged() && !isDateBetween(selectedDate, today, latestDate)) {
-      Alert.alert('Data invalidă', 'Alege o dată între azi și peste o lună.');
+      Alert.alert(t.newEvent.errorInvalidDateTitle, t.newEvent.errorInvalidDateMessage);
       return;
     }
     const startsAt = hasStart ? buildStartsAt() : null;
     if (startsAt && timeWasChanged() && startsAt.getTime() < Date.now()) {
-      Alert.alert('Ora aleasă a trecut deja', 'Alege o oră care nu a trecut încă.');
+      Alert.alert(t.newEvent.errorPastTimeTitle, t.newEvent.errorPastTimeMessage);
       return;
     }
     const parsedEntryFee = entryFee.trim() ? Number(entryFee.replace(',', '.')) : null;
     const parsedDrinksPrice = drinksPrice.trim() ? Number(drinksPrice.replace(',', '.')) : null;
     const parsedMaxParticipants = maxParticipants.trim() ? Number(maxParticipants) : null;
     if (parsedEntryFee !== null && (!Number.isFinite(parsedEntryFee) || parsedEntryFee < 0)) {
-      Alert.alert('Preț invalid', 'Prețul intrării nu poate fi negativ.');
+      Alert.alert(t.newEvent.errorInvalidPriceTitle, t.newEvent.errorNegativeEntryPrice);
       return;
     }
     if (parsedDrinksPrice !== null && (!Number.isFinite(parsedDrinksPrice) || parsedDrinksPrice < 0)) {
-      Alert.alert('Preț invalid', 'Prețul băuturilor nu poate fi negativ.');
+      Alert.alert(t.newEvent.errorInvalidPriceTitle, t.newEvent.errorNegativeDrinksPrice);
       return;
     }
 
@@ -273,12 +274,12 @@ export default function EditEvent() {
       const proofPath = locationIsRented === true ? (newProofPath ?? (proofRemoved ? null : oldProofPath)) : null;
       const updated = await updateEvent(currentEvent.id, user.id, {
         title: trimmedTitle,
-        detail: detail.trim() || 'Detalii în curând',
+        detail: detail.trim() || t.newEvent.defaultDetail,
         emoji,
         color,
         lng: coords?.lng ?? currentEvent.lng ?? MAPBOX_INITIAL_VIEW.center[0],
         lat: coords?.lat ?? currentEvent.lat ?? MAPBOX_INITIAL_VIEW.center[1],
-        genre: genre.trim() || 'Surpriză',
+        genre: genre.trim() || t.newEvent.defaultGenre,
         startsAt: startsAt ? startsAt.toISOString() : null,
         entryFeeRon: parsedEntryFee,
         drinksPriceRon: parsedDrinksPrice,
@@ -300,9 +301,9 @@ export default function EditEvent() {
     } catch (error) {
       if (newProofPath) await removeRentalProof(newProofPath);
       const message = error instanceof Error && error.message === 'rental-proof-upload-failed'
-        ? 'Nu am putut încărca dovada nouă. Dovada existentă a fost păstrată.'
-        : 'Nu am putut salva modificările. Încearcă din nou.';
-      Alert.alert('A apărut o eroare', message);
+        ? t.editEvent.errorUploadingNewProof
+        : t.editEvent.errorSavingChanges;
+      Alert.alert(t.newEvent.genericErrorTitle, message);
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -345,11 +346,11 @@ export default function EditEvent() {
           <GlassSurface />
           <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
         </AnimatedPressable>
-        <Text style={[styles.topTitle, { color: theme.textPrimary }]}>Editează evenimentul</Text>
+        <Text style={[styles.topTitle, { color: theme.textPrimary }]}>{t.editEvent.title}</Text>
         <View style={styles.backButton} />
       </View>
       {!isOwner ? (
-        <Text style={[styles.message, { color: theme.textSecondary }]}>Doar organizatorul poate edita acest eveniment.</Text>
+        <Text style={[styles.message, { color: theme.textSecondary }]}>{t.editEvent.ownerOnlyMessage}</Text>
       ) : (
         <KeyboardAwareScrollView
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 116 }]}
@@ -357,55 +358,55 @@ export default function EditEvent() {
           enableOnAndroid
           extraScrollHeight={Platform.OS === 'ios' ? 20 : 0}
         >
-          <FieldLabel text="TITLU" theme={theme} />
-          <TextInput value={title} onChangeText={setTitle} maxLength={TITLE_MAX_LENGTH} placeholder="Titlul evenimentului" placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
+          <FieldLabel text={t.newEvent.titleLabel} theme={theme} />
+          <TextInput value={title} onChangeText={setTitle} maxLength={TITLE_MAX_LENGTH} placeholder={t.editEvent.titlePlaceholder} placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
           <Text style={[styles.counter, { color: theme.textSecondary }]}>{title.length}/{TITLE_MAX_LENGTH}</Text>
-          <FieldLabel text="DESCRIERE" theme={theme} />
-          <TextInput value={detail} onChangeText={setDetail} maxLength={DETAIL_MAX_LENGTH} placeholder="Descriere" placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
+          <FieldLabel text={t.newEvent.descriptionLabel} theme={theme} />
+          <TextInput value={detail} onChangeText={setDetail} maxLength={DETAIL_MAX_LENGTH} placeholder={t.editEvent.descriptionPlaceholder} placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
           <Text style={[styles.counter, { color: theme.textSecondary }]}>{detail.length}/{DETAIL_MAX_LENGTH}</Text>
-          <FieldLabel text="LOCAȚIE" theme={theme} />
+          <FieldLabel text={t.newEvent.locationLabel} theme={theme} />
           <AnimatedPressable onPress={() => setPickerOpen(true)} style={[styles.locationCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             {mapPreviewUrl ? <Image source={{ uri: mapPreviewUrl }} style={styles.locationPreview} /> : <View style={[styles.locationPreview, { backgroundColor: theme.surfaceMuted }]} />}
-            <View style={styles.locationFooter}><Ionicons name="location" size={16} color={colors.green500} /><Text style={[styles.locationText, { color: theme.textPrimary }]}>Schimbă locația</Text></View>
+            <View style={styles.locationFooter}><Ionicons name="location" size={16} color={colors.green500} /><Text style={[styles.locationText, { color: theme.textPrimary }]}>{t.newEvent.changeLocation}</Text></View>
           </AnimatedPressable>
-          <FieldLabel text="DATĂ" theme={theme} />
+          <FieldLabel text={t.newEvent.dateLabel} theme={theme} />
           <View style={[styles.wheelGroup, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <WheelPicker label="ZI" options={dateDays} selectedValue={selectedDate.getDate()} onValueChange={(value) => selectDatePart('day', value)} />
-            <WheelPicker label="LUNĂ" options={dateMonths} selectedValue={selectedDate.getFullYear() * 12 + selectedDate.getMonth()} onValueChange={(value) => selectDatePart('month', value)} />
-            <Text style={[styles.selectedDate, { color: theme.textSecondary }]}>{selectedDate.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+            <WheelPicker label={t.newEvent.dayLabel} options={dateDays} selectedValue={selectedDate.getDate()} onValueChange={(value) => selectDatePart('day', value)} />
+            <WheelPicker label={t.newEvent.monthLabel} options={dateMonths} selectedValue={selectedDate.getFullYear() * 12 + selectedDate.getMonth()} onValueChange={(value) => selectDatePart('month', value)} />
+            <Text style={[styles.selectedDate, { color: theme.textSecondary }]}>{selectedDate.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
           </View>
-          <FieldLabel text="ORĂ" theme={theme} />
+          <FieldLabel text={t.newEvent.timeLabel} theme={theme} />
           <View style={[styles.wheelGroup, styles.timeWheelGroup, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <WheelPicker label="ORE" options={HOURS.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={hour} onValueChange={(value) => { setDateEdited(true); setHour(value); }} />
+            <WheelPicker label={t.newEvent.hoursLabel} options={HOURS.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={hour} onValueChange={(value) => { setDateEdited(true); setHour(value); }} />
             <Text style={[styles.timeSeparator, { color: theme.textPrimary }]}>:</Text>
-            <WheelPicker label="MINUTE" options={MINUTES.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={minute} onValueChange={(value) => { setDateEdited(true); setMinute(value); }} />
+            <WheelPicker label={t.newEvent.minutesLabel} options={MINUTES.map((value) => ({ label: String(value).padStart(2, '0'), value }))} selectedValue={minute} onValueChange={(value) => { setDateEdited(true); setMinute(value); }} />
           </View>
-          <FieldLabel text="MUZICĂ" theme={theme} />
-          <Text style={[styles.subLabel, { color: theme.textSecondary }]}>GEN MUZICAL</Text>
-          <TextInput value={genre} onChangeText={setGenre} placeholder="Genul muzical" placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
-          <FieldLabel text="PREȚ INTRARE (RON)" theme={theme} />
-          <TextInput value={entryFee} onChangeText={setEntryFee} keyboardType="decimal-pad" placeholder="Ex: 20" placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
-          <FieldLabel text="PREȚ BĂUTURI (RON)" theme={theme} />
-          <TextInput value={drinksPrice} onChangeText={setDrinksPrice} keyboardType="decimal-pad" placeholder="Ex: 15" placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
-          <FieldLabel text="BĂUTURI LA EVENIMENT" theme={theme} />
+          <FieldLabel text={t.newEvent.musicLabel} theme={theme} />
+          <Text style={[styles.subLabel, { color: theme.textSecondary }]}>{t.newEvent.musicGenreLabel}</Text>
+          <TextInput value={genre} onChangeText={setGenre} placeholder={t.editEvent.genrePlaceholder} placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
+          <FieldLabel text={t.newEvent.entryPriceLabel} theme={theme} />
+          <TextInput value={entryFee} onChangeText={setEntryFee} keyboardType="decimal-pad" placeholder={t.editEvent.entryPricePlaceholder} placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
+          <FieldLabel text={t.newEvent.drinksPriceLabel} theme={theme} />
+          <TextInput value={drinksPrice} onChangeText={setDrinksPrice} keyboardType="decimal-pad" placeholder={t.newEvent.drinksPricePlaceholder} placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
+          <FieldLabel text={t.newEvent.eventDrinksLabel} theme={theme} />
           <DrinkListEditor value={drinks} onChange={setDrinks} />
-          <Text style={[styles.subLabel, { color: theme.textSecondary }]}>MELODII REPREZENTATIVE</Text>
+          <Text style={[styles.subLabel, { color: theme.textSecondary }]}>{t.newEvent.representativeSongsLabel}</Text>
           <MusicPlaylistEditor value={songs} onChange={setSongs} />
-          <FieldLabel text="MAX PARTICIPANȚI" theme={theme} />
-          <TextInput value={maxParticipants} onChangeText={setMaxParticipants} keyboardType="number-pad" placeholder="Lasă gol pentru nelimitat" placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
+          <FieldLabel text={t.newEvent.maxParticipantsLabel} theme={theme} />
+          <TextInput value={maxParticipants} onChangeText={setMaxParticipants} keyboardType="number-pad" placeholder={t.newEvent.maxParticipantsPlaceholder} placeholderTextColor={theme.textSecondary} style={[styles.input, inputColors(theme)]} />
           <FieldLabel text="CINE VEDE EVENIMENTUL" theme={theme} />
           <View style={styles.rentedRow}>{[{ label: 'Public', value: 'public' as const }, { label: 'Privat', value: 'private' as const }].map((option) => <AnimatedPressable key={option.value} onPress={() => setVisibility(option.value)} style={[styles.rentedChip, { backgroundColor: theme.surface, borderColor: visibility === option.value ? colors.green500 : theme.border }]}><Text style={[styles.chipText, { color: visibility === option.value ? colors.green500 : theme.textPrimary }]}>{option.label}</Text></AnimatedPressable>)}</View>
           <FieldLabel text="CUM SE ALĂTURĂ PARTICIPANȚII" theme={theme} />
           <View style={styles.rentedRow}>{[{ label: 'Instant', value: 'instant' as const }, { label: 'Aprobare manuală', value: 'manual' as const }].map((option) => <AnimatedPressable key={option.value} onPress={() => setApprovalMode(option.value)} style={[styles.rentedChip, { backgroundColor: theme.surface, borderColor: approvalMode === option.value ? colors.green500 : theme.border }]}><Text style={[styles.chipText, { color: approvalMode === option.value ? colors.green500 : theme.textPrimary }]}>{option.label}</Text></AnimatedPressable>)}</View>
-          <FieldLabel text="LOCAȚIA E ÎNCHIRIATĂ?" theme={theme} />
-          <View style={styles.rentedRow}>{[{ label: 'Da', value: true }, { label: 'Nu', value: false }].map((option) => <AnimatedPressable key={option.label} onPress={() => { setLocationIsRented((current) => current === option.value ? null : option.value); if (option.value !== true) { setRentalProofAsset(null); setProofRemoved(true); } }} style={[styles.rentedChip, { backgroundColor: theme.surface, borderColor: locationIsRented === option.value ? colors.green500 : theme.border }]}><Text style={[styles.chipText, { color: locationIsRented === option.value ? colors.green500 : theme.textPrimary }]}>{option.label}</Text></AnimatedPressable>)}</View>
-          {locationIsRented === true && <AnimatedPressable onPress={pickProof} style={[styles.proofCard, { backgroundColor: theme.surface, borderColor: theme.border }]}><Ionicons name="camera-outline" size={20} color={theme.accent} /><Text style={[styles.proofText, { color: theme.textPrimary }]}>{rentalProofAsset ? 'Schimbă dovada' : proofRemoved || !currentEvent.rentalProofPath ? 'Atașează dovada (opțional)' : 'Dovada existentă · schimbă'}</Text></AnimatedPressable>}
-          <FieldLabel text="ICONIȚĂ" theme={theme} />
+          <FieldLabel text={t.newEvent.locationRentedLabel} theme={theme} />
+          <View style={styles.rentedRow}>{[{ label: t.newEvent.yes, value: true }, { label: t.newEvent.no, value: false }].map((option) => <AnimatedPressable key={option.label} onPress={() => { setLocationIsRented((current) => current === option.value ? null : option.value); if (option.value !== true) { setRentalProofAsset(null); setProofRemoved(true); } }} style={[styles.rentedChip, { backgroundColor: theme.surface, borderColor: locationIsRented === option.value ? colors.green500 : theme.border }]}><Text style={[styles.chipText, { color: locationIsRented === option.value ? colors.green500 : theme.textPrimary }]}>{option.label}</Text></AnimatedPressable>)}</View>
+          {locationIsRented === true && <AnimatedPressable onPress={pickProof} style={[styles.proofCard, { backgroundColor: theme.surface, borderColor: theme.border }]}><Ionicons name="camera-outline" size={20} color={theme.accent} /><Text style={[styles.proofText, { color: theme.textPrimary }]}>{rentalProofAsset ? t.newEvent.changeProof : proofRemoved || !currentEvent.rentalProofPath ? t.newEvent.attachProofOptional : t.editEvent.existingProofChange}</Text></AnimatedPressable>}
+          <FieldLabel text={t.newEvent.iconLabel} theme={theme} />
           <View style={styles.emojiRow}>{EMOJI_CHOICES.map((choice) => <AnimatedPressable key={choice} onPress={() => setEmoji(choice)} style={[styles.emojiChip, { borderColor: choice === emoji ? colors.green500 : theme.border }]}><Text style={styles.emoji}>{choice}</Text></AnimatedPressable>)}</View>
-          <FieldLabel text="CULOARE" theme={theme} />
+          <FieldLabel text={t.newEvent.colorLabel} theme={theme} />
           <View style={styles.emojiRow}>{COLOR_CHOICES.map((choice) => <AnimatedPressable key={choice} onPress={() => setColor(choice)} style={[styles.colorChip, { backgroundColor: choice }, choice === color && styles.colorActive]} />)}</View>
-          <AnimatedPressable onPress={handlePreview} disabled={saving} style={[styles.previewButton, { borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}><Text style={[styles.previewText, { color: theme.accent }]}>Previzualizează</Text></AnimatedPressable>
-          <AnimatedPressable onPress={save} disabled={saving} style={[styles.saveButton, shadows.glowGreen, saving && { opacity: 0.6 }]}><Text style={styles.saveText}>{saving ? 'Se salvează...' : 'Salvează modificările'}</Text></AnimatedPressable>
+          <AnimatedPressable onPress={handlePreview} disabled={saving} style={[styles.previewButton, { borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}><Text style={[styles.previewText, { color: theme.accent }]}>{t.editEvent.preview}</Text></AnimatedPressable>
+          <AnimatedPressable onPress={save} disabled={saving} style={[styles.saveButton, shadows.glowGreen, saving && { opacity: 0.6 }]}><Text style={styles.saveText}>{saving ? t.editEvent.saving : t.editEvent.saveChanges}</Text></AnimatedPressable>
         </KeyboardAwareScrollView>
       )}
       <LocationPickerModal visible={pickerOpen} initialCoords={coords} onClose={() => setPickerOpen(false)} onConfirm={(picked) => { setCoords(picked); setPickerOpen(false); }} />

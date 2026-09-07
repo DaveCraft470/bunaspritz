@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { useEvents } from '@/contexts/EventsContext';
@@ -36,13 +37,14 @@ const notificationIcons: Record<Notification['type'], keyof typeof Ionicons.glyp
   review: 'star-outline',
 };
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleString('ro-RO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+function formatDate(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
 export default function Notifications() {
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
+  const { t, locale } = useLanguage();
   const { user } = useUser();
   const { events } = useEvents();
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
@@ -138,13 +140,13 @@ export default function Notifications() {
             router.back();
           }}
           hitSlop={10}
-          accessibilityLabel="Înapoi"
+          accessibilityLabel={t.common.back}
           style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
         >
           <GlassSurface />
           <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
         </AnimatedPressable>
-        <Text style={[styles.title, { color: theme.textPrimary }]}>Notificări</Text>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>{t.notifications.title}</Text>
         <AnimatedPressable
           onPress={() => {
             light();
@@ -152,7 +154,7 @@ export default function Notifications() {
           }}
           disabled={!unreadCount}
           hitSlop={8}
-          accessibilityLabel="Marchează tot ca citit"
+          accessibilityLabel={t.notifications.markAllRead}
           style={styles.markAllButton}
         >
           <Ionicons name="checkmark-done-outline" size={21} color={unreadCount ? theme.accent : theme.border} />
@@ -202,14 +204,14 @@ export default function Notifications() {
           </>
         )}
 
-        {unreadCount === 0 && <Text style={[styles.emptyNew, { color: theme.textSecondary }]}>Nu ai notificări noi.</Text>}
+        {unreadCount === 0 && <Text style={[styles.emptyNew, { color: theme.textSecondary }]}>{t.notifications.noNewNotifications}</Text>}
 
-        {notifications.length > 0 && unreadCount === 0 && <Text style={[styles.historyLabel, { color: theme.textSecondary }]}>ISTORIC</Text>}
+        {notifications.length > 0 && unreadCount === 0 && <Text style={[styles.historyLabel, { color: theme.textSecondary }]}>{t.notifications.history}</Text>}
 
         {notifications.length === 0 && (
           <View style={styles.emptyState}>
             <Ionicons name="notifications-off-outline" size={32} color={theme.textSecondary} />
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Notificările noi vor apărea aici.</Text>
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{t.notifications.emptyHint}</Text>
           </View>
         )}
 
@@ -237,11 +239,11 @@ export default function Notifications() {
               <View style={styles.notificationCopy}>
                 <Text style={[styles.notificationTitle, { color: theme.textPrimary }]}>{notification.title}</Text>
                 <Text style={[styles.notificationBody, { color: theme.textSecondary }]}>{notification.body}</Text>
-                <Text style={[styles.notificationDate, { color: theme.textSecondary }]}>{formatDate(notification.createdAt)}</Text>
+                <Text style={[styles.notificationDate, { color: theme.textSecondary }]}>{formatDate(notification.createdAt, locale)}</Text>
                 {notification.type === 'event_invite' && notification.metadata?.invitationId && (() => {
                   const invitation = getEventInvitation(notification.metadata.invitationId);
                   if (!invitation || invitation.status !== 'pending') {
-                    return <Text style={[styles.invitationStatus, { color: theme.textSecondary }]}>{invitation?.status === 'accepted' ? 'Acceptată' : 'Refuzată'}</Text>;
+                    return <Text style={[styles.invitationStatus, { color: theme.textSecondary }]}>{invitation?.status === 'accepted' ? t.notifications.accepted : t.notifications.declined}</Text>;
                   }
                   return (
                     <View style={styles.invitationActions}>
@@ -249,13 +251,13 @@ export default function Notifications() {
                         onPress={() => handleInvitationAction(notification, 'accept')}
                         style={[styles.invitationAccept, { backgroundColor: colors.green500 }]}
                       >
-                        <Text style={styles.invitationAcceptText}>Acceptă</Text>
+                        <Text style={styles.invitationAcceptText}>{t.notifications.accept}</Text>
                       </AnimatedPressable>
                       <AnimatedPressable
                         onPress={() => handleInvitationAction(notification, 'decline')}
                         style={[styles.invitationDecline, { borderColor: theme.border }]}
                       >
-                        <Text style={[styles.invitationDeclineText, { color: theme.textPrimary }]}>Refuză</Text>
+                        <Text style={[styles.invitationDeclineText, { color: theme.textPrimary }]}>{t.notifications.decline}</Text>
                       </AnimatedPressable>
                     </View>
                   );
@@ -268,20 +270,20 @@ export default function Notifications() {
 
         {__DEV__ && user && (
           <View style={[styles.devTools, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
-            <Text style={[styles.devTitle, { color: theme.textPrimary }]}>Developer Tools</Text>
-            <Text style={[styles.devHint, { color: theme.textSecondary }]}>Doar local, dispare la restart și nu ajunge în Supabase.</Text>
+            <Text style={[styles.devTitle, { color: theme.textPrimary }]}>{t.notifications.devToolsTitle}</Text>
+            <Text style={[styles.devHint, { color: theme.textSecondary }]}>{t.notifications.devToolsHint}</Text>
             <View style={styles.devGrid}>
-              <DevButton label="Cerere primită" onPress={() => runDev(() => simulateIncomingFriendRequest(user.id))} theme={theme} />
-              <DevButton label="Cerere trimisă" onPress={() => runDev(() => simulateOutgoingFriendRequest(user.id))} theme={theme} />
-              <DevButton label="Cerere acceptată" onPress={() => runDev(() => simulateAcceptedFriendRequest(user.id))} theme={theme} />
+              <DevButton label={t.notifications.devIncomingRequest} onPress={() => runDev(() => simulateIncomingFriendRequest(user.id))} theme={theme} />
+              <DevButton label={t.notifications.devOutgoingRequest} onPress={() => runDev(() => simulateOutgoingFriendRequest(user.id))} theme={theme} />
+              <DevButton label={t.notifications.devAcceptedRequest} onPress={() => runDev(() => simulateAcceptedFriendRequest(user.id))} theme={theme} />
               <DevButton
-                label="Notificare test"
+                label={t.notifications.devTestNotification}
                 onPress={() => runDev(() => simulateNotification(user.id, ensureDevPeer(user.id).id, user.id))}
                 theme={theme}
               />
               {events[0] && (
                 <DevButton
-                  label="Invitație la event"
+                  label={t.notifications.devEventInvitation}
                   onPress={() => runDev(() => simulateEventInvitation(user.id, events[0], ensureDevPeer(user.id).id, ensureDevPeer(user.id).name))}
                   theme={theme}
                 />

@@ -11,25 +11,27 @@ import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useEvents } from '@/contexts/EventsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { getEventAttendeeCount } from '@/lib/events';
+import type { Translations } from '@/lib/i18n/ro';
 
 function isUpcoming(event: SpritzEvent) {
   return event.startsAt !== null && new Date(event.startsAt).getTime() >= Date.now();
 }
 
-function formatEventDate(startsAt: string | null) {
-  if (!startsAt) return 'Data în curs de stabilire';
-  return new Date(startsAt).toLocaleDateString('ro-RO', {
+function formatEventDate(startsAt: string | null, t: Translations, locale: string) {
+  if (!startsAt) return t.organizer.dateTbd;
+  return new Date(startsAt).toLocaleDateString(locale, {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
   });
 }
 
-function formatEventTime(startsAt: string | null) {
-  if (!startsAt) return 'Ora în curs de stabilire';
-  return new Date(startsAt).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' });
+function formatEventTime(startsAt: string | null, t: Translations, locale: string) {
+  if (!startsAt) return t.organizerDashboard.timeTbd;
+  return new Date(startsAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 }
 
 function EventDashboardCard({
@@ -47,6 +49,7 @@ function EventDashboardCard({
 }) {
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
+  const { t, locale } = useLanguage();
   const upcoming = isUpcoming(event);
   const hasDate = event.startsAt !== null;
   const capacity = event.maxParticipants;
@@ -62,7 +65,7 @@ function EventDashboardCard({
           <Text style={[styles.eventTitle, { color: theme.textPrimary }]} numberOfLines={1}>{event.title}</Text>
           <View style={[styles.statusBadge, { backgroundColor: upcoming ? colors.green50 : theme.surfaceMuted }]}>
             <Text style={[styles.statusText, { color: upcoming ? colors.green700 : theme.textSecondary }]}>
-              {upcoming ? 'Viitor' : hasDate ? 'Finalizat' : 'Data nestabilită'}
+              {upcoming ? t.organizerDashboard.upcomingStatus : hasDate ? t.organizerDashboard.completedStatus : t.organizer.undatedSection}
             </Text>
           </View>
         </View>
@@ -71,21 +74,21 @@ function EventDashboardCard({
       <View style={styles.dateRow}>
         <Ionicons name="calendar-outline" size={16} color={theme.textSecondary} />
         <Text style={[styles.dateText, { color: theme.textSecondary }]}>
-          {formatEventDate(event.startsAt)} · {formatEventTime(event.startsAt)}
+          {formatEventDate(event.startsAt, t, locale)} · {formatEventTime(event.startsAt, t, locale)}
         </Text>
       </View>
 
       <View style={styles.attendeeRow}>
         <Ionicons name="people-outline" size={18} color={theme.accent} />
         <Text style={[styles.attendeeText, { color: theme.textPrimary }]}>
-          {attendeeCount === undefined ? 'Se încarcă participanții...' : `${attendeeCount} participanți${capacity ? ` / ${capacity}` : ''}`}
+          {attendeeCount === undefined ? t.organizerDashboard.loadingParticipants : t.organizerDashboard.participantsCount(attendeeCount, capacity)}
         </Text>
       </View>
 
       {occupancy !== null && (
         <View style={styles.occupancyBlock}>
           <View style={styles.occupancyHeader}>
-            <Text style={[styles.occupancyLabel, { color: theme.textSecondary }]}>Ocupare</Text>
+            <Text style={[styles.occupancyLabel, { color: theme.textSecondary }]}>{t.organizerDashboard.occupancy}</Text>
             <Text style={[styles.occupancyValue, { color: theme.textPrimary }]}>{occupancy}%</Text>
           </View>
           <View style={[styles.progressTrack, { backgroundColor: theme.surfaceMuted }]}>
@@ -103,7 +106,7 @@ function EventDashboardCard({
           style={[styles.secondaryButton, { borderColor: theme.border }]}
         >
           <Ionicons name="eye-outline" size={16} color={theme.textPrimary} />
-          <Text style={[styles.secondaryButtonText, { color: theme.textPrimary }]}>Vezi</Text>
+          <Text style={[styles.secondaryButtonText, { color: theme.textPrimary }]}>{t.organizerDashboard.view}</Text>
         </AnimatedPressable>
         <AnimatedPressable
           onPress={() => {
@@ -113,7 +116,7 @@ function EventDashboardCard({
           style={[styles.primaryButton, { backgroundColor: colors.green500 }]}
         >
           <Ionicons name="create-outline" size={16} color={colors.white} />
-          <Text style={styles.primaryButtonText}>Editează</Text>
+          <Text style={styles.primaryButtonText}>{t.profile.edit}</Text>
         </AnimatedPressable>
         <AnimatedPressable
           onPress={() => {
@@ -123,7 +126,7 @@ function EventDashboardCard({
           style={[styles.secondaryButton, { borderColor: theme.border }]}
         >
           <Ionicons name="people-outline" size={16} color={theme.textPrimary} />
-          <Text style={[styles.secondaryButtonText, { color: theme.textPrimary }]}>Participanți</Text>
+          <Text style={[styles.secondaryButtonText, { color: theme.textPrimary }]}>{t.organizer.participants}</Text>
         </AnimatedPressable>
       </View>
     </View>
@@ -132,6 +135,7 @@ function EventDashboardCard({
 
 export default function OrganizerDashboard() {
   const { colors: theme } = useAppTheme();
+  const { t } = useLanguage();
   const { events, loading: eventsLoading, error: eventsError, refresh } = useEvents();
   const { user } = useUser();
   const [refreshing, setRefreshing] = useState(false);
@@ -180,13 +184,13 @@ export default function OrganizerDashboard() {
       {eventsLoading ? (
         <View style={styles.emptyState}>
           <ActivityIndicator color={colors.green500} />
-          <Text style={[styles.emptyTitle, { color: theme.textSecondary }]}>Se încarcă evenimentele...</Text>
+          <Text style={[styles.emptyTitle, { color: theme.textSecondary }]}>{t.organizer.loadingEvents}</Text>
         </View>
       ) : eventsError ? (
         <View style={styles.emptyState}>
-          <Text style={[styles.emptyTitle, { color: theme.textSecondary }]}>Nu am putut încărca evenimentele.</Text>
+          <Text style={[styles.emptyTitle, { color: theme.textSecondary }]}>{t.organizer.couldNotLoadEvents}</Text>
           <AnimatedPressable onPress={() => void refresh()} style={[styles.createButton, { backgroundColor: colors.green500 }]}>
-            <Text style={styles.primaryButtonText}>Reîncearcă</Text>
+            <Text style={styles.primaryButtonText}>{t.organizer.retry}</Text>
           </AnimatedPressable>
         </View>
       ) : (
@@ -203,37 +207,37 @@ export default function OrganizerDashboard() {
                 onPress={() => router.back()}
                 hitSlop={10}
                 style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
-                accessibilityLabel="Înapoi"
+                accessibilityLabel={t.common.back}
               >
                 <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
               </AnimatedPressable>
               <View style={styles.titleBlock}>
-                <Text style={[styles.eyebrow, { color: theme.accent }]}>ORGANIZER MODE</Text>
-                <Text style={[styles.title, { color: theme.textPrimary }]}>Dashboard</Text>
+                <Text style={[styles.eyebrow, { color: theme.accent }]}>{t.organizer.eyebrow}</Text>
+                <Text style={[styles.title, { color: theme.textPrimary }]}>{t.organizer.dashboard}</Text>
               </View>
               <View style={styles.backButton} />
             </View>
 
             <View style={styles.statsGrid}>
-              <StatCard label="Total" value={hostedEvents.length} theme={theme} />
-              <StatCard label="Viitoare" value={upcomingEvents.length} theme={theme} />
-              <StatCard label="Finalizate" value={completedEvents.length} theme={theme} />
-              <StatCard label="Participanți" value={loadingCounts ? null : participantTotal} theme={theme} />
+              <StatCard label={t.organizerDashboard.total} value={hostedEvents.length} theme={theme} />
+              <StatCard label={t.organizer.upcoming} value={upcomingEvents.length} theme={theme} />
+              <StatCard label={t.organizer.completed} value={completedEvents.length} theme={theme} />
+              <StatCard label={t.organizer.participants} value={loadingCounts ? null : participantTotal} theme={theme} />
             </View>
 
-            {upcomingEvents.length > 0 && <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Viitoare</Text>}
+            {upcomingEvents.length > 0 && <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>{t.organizer.upcoming}</Text>}
             {upcomingEvents.length === 0 && completedEvents.length > 0 && (
-              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Evenimente</Text>
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>{t.organizerDashboard.eventsSection}</Text>
             )}
           </View>
         }
         renderItem={({ item, index }) => (
           <>
             {index === upcomingEvents.length && completedEvents.length > 0 && upcomingEvents.length > 0 && (
-              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Finalizate</Text>
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>{t.organizer.completed}</Text>
             )}
             {index === upcomingEvents.length + completedEvents.length && undatedEvents.length > 0 && (
-              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Data nestabilită</Text>
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>{t.organizer.undatedSection}</Text>
             )}
             <EventDashboardCard
               event={item}
@@ -251,10 +255,10 @@ export default function OrganizerDashboard() {
             ) : (
               <>
                 <Ionicons name="calendar-outline" size={42} color={theme.textSecondary} />
-                <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>Nu ai încă evenimente create.</Text>
+                <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>{t.organizerDashboard.noEventsCreated}</Text>
                 <AnimatedPressable onPress={() => router.push('/new-event')} style={[styles.createButton, { backgroundColor: colors.green500 }]}>
                   <Ionicons name="add" size={20} color={colors.white} />
-                  <Text style={styles.primaryButtonText}>Creează eveniment</Text>
+                  <Text style={styles.primaryButtonText}>{t.organizer.createEvent}</Text>
                 </AnimatedPressable>
               </>
             )}

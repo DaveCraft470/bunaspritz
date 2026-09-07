@@ -9,6 +9,7 @@ import { buildApproxStaticMapUrl } from '@/constants/mapbox';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
@@ -16,22 +17,24 @@ import { GlassSurface } from '@/components/common/GlassSurface';
 import { getEventPreviewDraft, type EventPreviewDraft } from '@/lib/eventPreview';
 import { formatDrinkVolume } from '@/lib/drinks';
 import { MusicCoverPlaceholder } from '@/components/music/MusicCoverPlaceholder';
+import type { Translations } from '@/lib/i18n/ro';
 
-function formatDate(iso: string | null) {
+function formatDate(iso: string | null, locale: string) {
   if (!iso) return null;
   const date = new Date(iso);
-  return `${date.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })} · ${date.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}`;
+  return `${date.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })} · ${date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-function formatPrice(value: number | null) {
+function formatPrice(value: number | null, t: Translations) {
   if (value === null) return null;
-  return value === 0 ? 'Gratis' : `${value} RON`;
+  return value === 0 ? t.event.free : `${value} RON`;
 }
 
 export default function EventPreview() {
   const { colors: theme, scheme } = useAppTheme();
   const { user } = useUser();
   const { light } = useHaptics();
+  const { t, locale } = useLanguage();
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState<EventPreviewDraft | null>(null);
 
@@ -42,8 +45,8 @@ export default function EventPreview() {
   if (!draft) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.page }]}>
-        <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Previzualizarea nu mai este disponibilă.</Text>
-        <AnimatedPressable onPress={() => router.back()} style={styles.centerBack}><Text style={[styles.backText, { color: theme.accent }]}>Înapoi</Text></AnimatedPressable>
+        <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{t.eventPreview.unavailable}</Text>
+        <AnimatedPressable onPress={() => router.back()} style={styles.centerBack}><Text style={[styles.backText, { color: theme.accent }]}>{t.common.back}</Text></AnimatedPressable>
       </SafeAreaView>
     );
   }
@@ -69,50 +72,50 @@ export default function EventPreview() {
           <GlassSurface />
           <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
         </AnimatedPressable>
-        <Text style={[styles.topTitle, { color: theme.textPrimary }]}>Previzualizare</Text>
+        <Text style={[styles.topTitle, { color: theme.textPrimary }]}>{t.eventPreview.topTitle}</Text>
         <View style={styles.backButton} />
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 150 }]} showsVerticalScrollIndicator={false}>
         <View style={[styles.hero, { backgroundColor: draft.color }]}> <Text style={styles.heroEmoji}>{draft.emoji}</Text></View>
-        <Text style={[styles.title, { color: theme.textPrimary }]}>{draft.title || 'Titlul evenimentului'}</Text>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>{draft.title || t.editEvent.titlePlaceholder}</Text>
         {draft.genre ? <Text style={[styles.genre, { color: theme.accent }]}>{draft.genre}</Text> : null}
-        {formatDate(draft.startsAt) && <Text style={[styles.date, { color: theme.textSecondary }]}>{formatDate(draft.startsAt)}</Text>}
+        {formatDate(draft.startsAt, locale) && <Text style={[styles.date, { color: theme.textSecondary }]}>{formatDate(draft.startsAt, locale)}</Text>}
 
         {user && (
-          <View style={[styles.organizerCard, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
+          <View style={[styles.organizerCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Avatar uri={user.avatarUrl} name={user.name} size={44} fontSize={17} />
-            <View style={styles.organizerCopy}><Text style={[styles.label, { color: theme.textSecondary }]}>ORGANIZATOR</Text><Text style={[styles.organizerName, { color: theme.textPrimary }]}>{user.name}</Text><Text style={[styles.username, { color: theme.textSecondary }]}>@{user.username}</Text></View>
+            <View style={styles.organizerCopy}><Text style={[styles.label, { color: theme.textSecondary }]}>{t.event.organizer}</Text><Text style={[styles.organizerName, { color: theme.textPrimary }]}>{user.name}</Text><Text style={[styles.username, { color: theme.textSecondary }]}>@{user.username}</Text></View>
             {user.verified && <Ionicons name="checkmark-circle" size={18} color={theme.accent} />}
           </View>
         )}
 
         {(draft.entryFeeRon !== null || draft.drinksPriceRon !== null || draft.maxParticipants !== null || draft.locationIsRented === true) && (
-          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
-            {draft.entryFeeRon !== null && <InfoRow icon="ticket-outline" text={`Intrare: ${formatPrice(draft.entryFeeRon)}`} theme={theme} />}
-            {draft.drinksPriceRon !== null && <InfoRow icon="wine-outline" text={`Băuturi de la ${formatPrice(draft.drinksPriceRon)}`} theme={theme} />}
-            {draft.maxParticipants !== null && <InfoRow icon="people-outline" text={`Max ${draft.maxParticipants} persoane`} theme={theme} />}
-            {draft.locationIsRented === true && <InfoRow icon="key-outline" text={`Locație închiriată${draft.rentalProofAttached ? ' · dovadă atașată' : ''}`} theme={theme} />}
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            {draft.entryFeeRon !== null && <InfoRow icon="ticket-outline" text={t.event.entry(formatPrice(draft.entryFeeRon, t)!)} theme={theme} />}
+            {draft.drinksPriceRon !== null && <InfoRow icon="wine-outline" text={t.event.drinksFrom(formatPrice(draft.drinksPriceRon, t)!)} theme={theme} />}
+            {draft.maxParticipants !== null && <InfoRow icon="people-outline" text={t.event.maxPeople(draft.maxParticipants)} theme={theme} />}
+            {draft.locationIsRented === true && <InfoRow icon="key-outline" text={t.eventPreview.rentedLocation(!!draft.rentalProofAttached)} theme={theme} />}
           </View>
         )}
 
-        {draft.detail && <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}><Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>DESCRIERE</Text><Text style={[styles.detail, { color: theme.textPrimary }]}>{draft.detail}</Text></View>}
-        {draft.drinks?.length > 0 && <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}><Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>BĂUTURI</Text>{draft.drinks.map((drink) => <View key={drink.id} style={styles.drinkRow}><View style={styles.drinkCopy}><Text style={[styles.drinkName, { color: theme.textPrimary }]}>{drink.name}</Text><Text style={[styles.drinkMeta, { color: theme.textSecondary }]}>{formatDrinkVolume(drink.volumeMl)}</Text></View><Text style={[styles.drinkQuantity, { color: theme.accent }]}>× {drink.quantity}</Text></View>)}</View>}
-        {draft.songs?.length > 0 && <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}><Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>MUZICĂ</Text>{draft.genre ? <Text style={[styles.genreValue, { color: theme.textPrimary }]}>{draft.genre}</Text> : null}<Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>🎵 PLAYLIST</Text>{draft.songs.slice(0, 4).map((song) => <View key={song.id} style={styles.songRow}>{song.coverUrl ? <Image source={{ uri: song.coverUrl }} style={styles.songCover} /> : <MusicCoverPlaceholder size={38} />}<View style={styles.drinkCopy}><Text style={[styles.drinkName, { color: theme.textPrimary }]} numberOfLines={1}>{song.title}</Text><Text style={[styles.drinkMeta, { color: theme.textSecondary }]} numberOfLines={1}>{song.artist}</Text></View></View>)}{draft.songs.length > 4 && <Text style={[styles.moreSongs, { color: theme.accent }]}>+ {draft.songs.length - 4} alte melodii</Text>}</View>}
-        {mapUrl && <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}><Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>LOCAȚIE</Text><Image source={{ uri: mapUrl }} style={styles.map} resizeMode="cover" /></View>}
+        {draft.detail && <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}><Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t.newEvent.descriptionLabel}</Text><Text style={[styles.detail, { color: theme.textPrimary }]}>{draft.detail}</Text></View>}
+        {draft.drinks?.length > 0 && <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}><Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t.event.drinks}</Text>{draft.drinks.map((drink) => <View key={drink.id} style={styles.drinkRow}><View style={styles.drinkCopy}><Text style={[styles.drinkName, { color: theme.textPrimary }]}>{drink.name}</Text><Text style={[styles.drinkMeta, { color: theme.textSecondary }]}>{formatDrinkVolume(drink.volumeMl)}</Text></View><Text style={[styles.drinkQuantity, { color: theme.accent }]}>× {drink.quantity}</Text></View>)}</View>}
+        {draft.songs?.length > 0 && <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}><Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t.eventPreview.musicLabel}</Text>{draft.genre ? <Text style={[styles.genreValue, { color: theme.textPrimary }]}>{draft.genre}</Text> : null}<Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t.event.playlist}</Text>{draft.songs.slice(0, 4).map((song) => <View key={song.id} style={styles.songRow}>{song.coverUrl ? <Image source={{ uri: song.coverUrl }} style={styles.songCover} /> : <MusicCoverPlaceholder size={38} />}<View style={styles.drinkCopy}><Text style={[styles.drinkName, { color: theme.textPrimary }]} numberOfLines={1}>{song.title}</Text><Text style={[styles.drinkMeta, { color: theme.textSecondary }]} numberOfLines={1}>{song.artist}</Text></View></View>)}{draft.songs.length > 4 && <Text style={[styles.moreSongs, { color: theme.accent }]}>{t.event.moreSongs(draft.songs.length - 4)}</Text>}</View>}
+        {mapUrl && <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}><Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>{t.newEvent.locationLabel}</Text><Image source={{ uri: mapUrl }} style={styles.map} resizeMode="cover" /></View>}
 
         <View style={[styles.previewNote, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
           <Ionicons name="eye-outline" size={18} color={theme.accent} />
-          <Text style={[styles.noteText, { color: theme.textSecondary }]}>Așa va arăta evenimentul înainte să fie publicat.</Text>
+          <Text style={[styles.noteText, { color: theme.textSecondary }]}>{t.eventPreview.previewNote}</Text>
         </View>
       </ScrollView>
 
       <View style={[styles.actions, { paddingBottom: insets.bottom + 14, backgroundColor: theme.page }]}>
-        <AnimatedPressable onPress={returnToEdit} style={[styles.editButton, { borderColor: theme.border, backgroundColor: theme.surface }]}> 
-          <Text style={[styles.editText, { color: theme.textPrimary }]}>Editează</Text>
+        <AnimatedPressable onPress={returnToEdit} style={[styles.editButton, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+          <Text style={[styles.editText, { color: theme.textPrimary }]}>{t.profile.edit}</Text>
         </AnimatedPressable>
-        <AnimatedPressable onPress={publish} style={[styles.publishButton, shadows.glowGreen]}> 
-          <Text style={styles.publishText}>Publică evenimentul</Text>
+        <AnimatedPressable onPress={publish} style={[styles.publishButton, shadows.glowGreen]}>
+          <Text style={styles.publishText}>{t.eventPreview.publishEvent}</Text>
         </AnimatedPressable>
       </View>
     </SafeAreaView>

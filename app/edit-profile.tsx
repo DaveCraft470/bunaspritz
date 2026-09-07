@@ -10,6 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
@@ -23,6 +24,7 @@ const BIO_MAX_LENGTH = 150;
 export default function EditProfile() {
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
+  const { t } = useLanguage();
   const { user, updateProfile, uploadAvatar } = useUser();
 
   const [name, setName] = useState(user?.name ?? '');
@@ -37,7 +39,7 @@ export default function EditProfile() {
     if (uploadingAvatar) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      alertPermissionDenied(permission.canAskAgain, 'Activează accesul la poze din Setările telefonului ca să schimbi poza de profil.');
+      alertPermissionDenied(permission.canAskAgain, t.editProfile.photoPermissionDenied);
       return;
     }
 
@@ -67,11 +69,11 @@ export default function EditProfile() {
     setError(null);
 
     if (!name.trim()) {
-      setError('Introdu numele tău.');
+      setError(t.editProfile.errorEnterName);
       return;
     }
     if (!USERNAME_REGEX.test(username.trim())) {
-      setError('Username: 3-20 caractere, doar litere, cifre, "." sau "_".');
+      setError(t.editProfile.errorUsernameFormat);
       return;
     }
 
@@ -104,13 +106,13 @@ export default function EditProfile() {
             router.back();
           }}
           hitSlop={10}
-          accessibilityLabel="Înapoi"
+          accessibilityLabel={t.common.back}
           style={[styles.backButton, shadows.soft, { borderColor: glassButton.border }]}
         >
           <GlassSurface />
           <Ionicons name="chevron-back" size={20} color={glassButton.icon} />
         </AnimatedPressable>
-        <Text style={[styles.title, { color: theme.textPrimary }]}>Editează profilul</Text>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>{t.editProfile.title}</Text>
         <View style={styles.backButton} />
       </View>
 
@@ -127,7 +129,7 @@ export default function EditProfile() {
             <AnimatedPressable onPress={handlePickAvatar} style={styles.avatarPressable}>
               <Avatar
                 uri={user?.avatarUrl}
-                name={name || 'U'}
+                name={name || t.profile.defaultName.charAt(0)}
                 size={92}
                 fontSize={38}
                 color={colors.green500}
@@ -145,13 +147,13 @@ export default function EditProfile() {
 
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: theme.textPrimary }]}>Nume</Text>
+              <Text style={[styles.label, { color: theme.textPrimary }]}>{t.editProfile.nameLabel}</Text>
               <View style={[styles.inputWrapper, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
                 <Ionicons name="person-outline" size={19} color={theme.textSecondary} />
                 <TextInput
                   value={name}
                   onChangeText={setName}
-                  placeholder="Numele tău"
+                  placeholder={t.editProfile.namePlaceholder}
                   placeholderTextColor={theme.textSecondary}
                   style={[styles.input, { color: theme.textPrimary }]}
                   autoCapitalize="words"
@@ -160,13 +162,13 @@ export default function EditProfile() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: theme.textPrimary }]}>Username</Text>
+              <Text style={[styles.label, { color: theme.textPrimary }]}>{t.editProfile.usernameLabel}</Text>
               <View style={[styles.inputWrapper, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
                 <Ionicons name="at-outline" size={19} color={theme.textSecondary} />
                 <TextInput
                   value={username}
                   onChangeText={setUsername}
-                  placeholder="username"
+                  placeholder={t.editProfile.usernamePlaceholder}
                   placeholderTextColor={theme.textSecondary}
                   style={[styles.input, { color: theme.textPrimary }]}
                   autoCapitalize="none"
@@ -176,7 +178,7 @@ export default function EditProfile() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: theme.textPrimary }]}>Descriere</Text>
+              <Text style={[styles.label, { color: theme.textPrimary }]}>{t.editProfile.bioLabel}</Text>
               <View
                 style={[
                   styles.inputWrapper,
@@ -187,7 +189,7 @@ export default function EditProfile() {
                 <TextInput
                   value={bio}
                   onChangeText={setBio}
-                  placeholder="Câteva cuvinte despre tine"
+                  placeholder={t.editProfile.bioPlaceholder}
                   placeholderTextColor={theme.textSecondary}
                   style={[styles.input, styles.bioInput, { color: theme.textPrimary }]}
                   multiline
@@ -201,13 +203,13 @@ export default function EditProfile() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: theme.textPrimary }]}>Instagram</Text>
+              <Text style={[styles.label, { color: theme.textPrimary }]}>{t.editProfile.instagramLabel}</Text>
               <View style={[styles.inputWrapper, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
                 <Ionicons name="logo-instagram" size={19} color={theme.textSecondary} />
                 <TextInput
                   value={instagramHandle}
                   onChangeText={setInstagramHandle}
-                  placeholder="username (opțional)"
+                  placeholder={t.editProfile.instagramPlaceholder}
                   placeholderTextColor={theme.textSecondary}
                   style={[styles.input, { color: theme.textPrimary }]}
                   autoCapitalize="none"
@@ -222,7 +224,7 @@ export default function EditProfile() {
               onPress={handleSave}
               style={[styles.saveButton, { backgroundColor: colors.green500, opacity: saving ? 0.8 : 1 }]}
             >
-              <Text style={styles.saveText}>Salvează</Text>
+              <Text style={styles.saveText}>{t.editProfile.save}</Text>
               <Ionicons name="checkmark" size={20} color={colors.white} />
             </AnimatedPressable>
           </View>
