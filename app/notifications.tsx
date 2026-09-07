@@ -30,6 +30,7 @@ const notificationIcons: Record<Notification['type'], keyof typeof Ionicons.glyp
   event_cancelled: 'close-circle-outline',
   message: 'chatbubble-ellipses-outline',
   review: 'star-outline',
+  system: 'information-circle-outline',
 };
 
 function formatDate(iso: string, locale: string) {
@@ -100,7 +101,9 @@ export default function Notifications() {
     markRead(notification.id);
     if (notification.type === 'message') {
       router.push('/messages');
-    } else if (notification.type.startsWith('event_')) {
+    } else if (notification.type.startsWith('event_') || notification.type === 'system') {
+      // 'system' covers join-request/join-response notifications, whose
+      // target is always the event, not a user.
       router.push(`/event/${notification.targetId}`);
     } else {
       router.push(`/user/${notification.targetId}`);

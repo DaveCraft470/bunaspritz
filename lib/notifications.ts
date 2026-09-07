@@ -1,3 +1,6 @@
+import { supabase } from '@/lib/supabase';
+import { freshChannel } from '@/lib/realtime';
+
 export type NotificationType =
   | 'friend_request'
   | 'friend_request_accepted'
@@ -6,7 +9,8 @@ export type NotificationType =
   | 'event_updated'
   | 'event_cancelled'
   | 'message'
-  | 'review';
+  | 'review'
+  | 'system';
 
 export type Notification = {
   id: string;
@@ -112,4 +116,76 @@ export function simulateNotification(recipientId: string, actorId: string, targe
     title: 'Cerere nouă de prietenie',
     body: 'Cineva vrea să fie prieten cu tine.',
   });
+}
+
+// ============================================================ real backend ==
+// The notify-* edge functions (notify-friend-request, notify-message,
+// notify-join, notify-join-request, notify-join-response, notify-new-event)
+// already insert into this real, persisted `notifications` table — so every
+// notification type EXCEPT `event_invite` (a client-only feature with no
+// backend at all, see lib/eventInvitations.ts) now has a real row. The
+// functions above (createNotification and friends) stay local-array-only and
+// are only still called for event_invite.
+
+type DbNotification = {
+  id: string;
+  recipient_id: string;
+  actor_id: string | null;
+  type: NotificationType;
+  title: string;
+  body: string;
+  data: { target_id?: string } | null;
+  read_at: string | null;
+  created_at: string;
+};
+
+function fromDbNotification(row: DbNotification): Notification {
+  return {
+    id: row.id,
+    type: row.type,
+    actorId: row.actor_id ?? '',
+    recipientId: row.recipient_id,
+    targetId: row.data?.target_id ?? '',
+    title: row.title,
+    body: row.body,
+    createdAt: row.created_at,
+    readAt: row.read_at,
+  };
+}
+
+export async function getRealNotifications(recipientId: string): Promise<Notification[]> {
+  const { data } = await supabase
+    .from('notifications')
+    .select('*')
+    .eq('recipient_id', recipientId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+  return (data ?? []).map(fromDbNotification);
+}
+
+export async function getUnreadRealNotificationCount(): Promise<number> {
+  const { data } = await supabase.rpc('unread_notification_count');
+  return data ?? 0;
+}
+
+export async function markRealNotificationRead(notificationId: string): Promise<void> {
+  await supabase.rpc('mark_notification_read', { p_notification_id: notificationId });
+}
+
+export async function markAllRealNotificationsRead(): Promise<void> {
+  await supabase.rpc('mark_all_notifications_read');
+}
+
+export function subscribeToRealNotifications(recipientId: string, listener: Listener) {
+  const channel = freshChannel(`notifications-${recipientId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${recipientId}` },
+      listener,
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
 }

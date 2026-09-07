@@ -1,7 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { freshChannel } from '@/lib/realtime';
 import { getProfiles, type Profile } from '@/lib/social';
-import { createNotification } from '@/lib/notifications';
 
 export type FriendRequestStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled';
 
@@ -51,10 +50,11 @@ export async function getFriendRequestStatus(myId: string, otherId: string): Pro
     .select('sender_id, receiver_id')
     .or(pairFilter(myId, otherId))
     .eq('status', 'pending')
-    .maybeSingle();
+    .limit(1);
 
-  if (!pending) return 'none';
-  return pending.sender_id === myId ? 'outgoing_pending' : 'incoming_pending';
+  const row = pending?.[0];
+  if (!row) return 'none';
+  return row.sender_id === myId ? 'outgoing_pending' : 'incoming_pending';
 }
 
 // Batched version of getFriendRequestStatus for a list of people (e.g. search
@@ -107,14 +107,9 @@ export async function sendFriendRequest(senderId: string, receiverId: string): P
   }
 
   const request = fromDb(data as DbFriendRequest);
-  createNotification({
-    type: request.status === 'accepted' ? 'friend_request_accepted' : 'friend_request',
-    actorId: senderId,
-    recipientId: receiverId,
-    targetId: senderId,
-    title: request.status === 'accepted' ? 'Cererea de prietenie a fost acceptată' : 'Cerere nouă de prietenie',
-    body: request.status === 'accepted' ? 'Acum sunteți prieteni.' : 'Cineva vrea să fie prieten cu tine.',
-  });
+  // notify-friend-request inserts the real notifications row itself (it
+  // inspects the friend_requests row to pick "new request" vs "accepted"
+  // copy) — no client-side notification write needed here.
   supabase.functions.invoke('notify-friend-request', { body: { receiverId } }).catch(() => {});
 
   return { ok: true, request };
@@ -125,17 +120,10 @@ export async function acceptFriendRequest(myId: string, requestId: string): Prom
   if (error || !data) return { ok: false, error: 'Cererea nu mai este disponibilă.' };
 
   const request = fromDb(data as DbFriendRequest);
-  createNotification({
-    type: 'friend_request_accepted',
-    actorId: myId,
-    recipientId: request.senderId,
-    targetId: myId,
-    title: 'Cererea de prietenie a fost acceptată',
-    body: 'Acum sunteți prieteni.',
-  });
   // The original sender is the one who should be told their request was
-  // accepted — notify-friend-request looks up the row itself and picks the
-  // right copy based on its current status.
+  // accepted — notify-friend-request looks up the row itself, picks the
+  // right copy based on its current status, and inserts the real
+  // notifications row (no client-side write needed here).
   supabase.functions.invoke('notify-friend-request', { body: { receiverId: request.senderId } }).catch(() => {});
 
   return { ok: true, request };
