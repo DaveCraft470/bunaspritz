@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -14,6 +14,7 @@ import { router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
+import { EventRow } from '@/components/discover/EventRow';
 import { colors, spacing } from '@/constants/theme';
 import { SpritzEvent } from '@/constants/events';
 import { useAppTheme } from '@/contexts/ThemeContext';
@@ -30,7 +31,11 @@ import {
   DiscoverySort,
   getDiscoverableEvents,
   getDiscoveryGenres,
+  getLastMinuteEvents,
 } from '@/lib/discovery';
+import { getTrendingEventIds } from '@/lib/trending';
+import { clearRecentSearches, getRecentSearches, getRecentlyViewedEventIds, recordSearch } from '@/lib/recentActivity';
+import { dismissEvent, getDismissedEventIds, undoDismissEvent } from '@/lib/eventDismissals';
 
 function getDateFilters(t: Translations): Array<{ label: string; value: DiscoveryDateFilter }> {
   return [
@@ -62,6 +67,18 @@ function getSortOptions(t: Translations): Array<{ label: string; value: Discover
   ];
 }
 
+// Last Minute cards' secondary line — "starts in Xh Ym" is more useful there
+// than a full date, since by definition these are all starting within hours.
+function minutesUntil(startsAt: string | null, t: Translations) {
+  if (!startsAt) return null;
+  const diffMs = new Date(startsAt).getTime() - Date.now();
+  const totalMinutes = Math.max(0, Math.round(diffMs / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) return t.discover.startsInHours(hours, minutes);
+  return t.discover.startsInMinutes(minutes);
+}
+
 function formatEventDate(event: SpritzEvent, locale: string) {
   const date = new Date(event.startsAt!);
   return `${date.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' })} · ${date.toLocaleTimeString(
@@ -70,7 +87,7 @@ function formatEventDate(event: SpritzEvent, locale: string) {
   )}`;
 }
 
-function EventCard({ event }: { event: SpritzEvent }) {
+function EventCard({ event, onDismiss }: { event: SpritzEvent; onDismiss?: (event: SpritzEvent) => void }) {
   const { colors: theme } = useAppTheme();
   const { light } = useHaptics();
   const { t, locale } = useLanguage();
@@ -102,6 +119,20 @@ function EventCard({ event }: { event: SpritzEvent }) {
           {event.entryFeeRon === null || event.entryFeeRon === 0 ? t.discover.free : `${event.entryFeeRon} RON`}
         </Text>
       </View>
+      {onDismiss && user?.id !== event.hostId && (
+        <AnimatedPressable
+          onPress={(e) => {
+            e?.stopPropagation?.();
+            light();
+            onDismiss(event);
+          }}
+          hitSlop={8}
+          accessibilityLabel={t.discover.notInterested}
+          style={styles.dismissButton}
+        >
+          <Ionicons name="close-circle-outline" size={19} color={theme.textSecondary} />
+        </AnimatedPressable>
+      )}
       <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
     </AnimatedPressable>
   );
@@ -142,19 +173,97 @@ export default function Discover() {
   const { colors: theme } = useAppTheme();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
+  const { user } = useUser();
   const { events, loading, error, refresh } = useEvents();
   const [filters, setFilters] = useState<DiscoveryFilters>(DEFAULT_DISCOVERY_FILTERS);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [trendingIds, setTrendingIds] = useState<string[]>([]);
+  const [recentlyViewedIds, setRecentlyViewedIds] = useState<string[]>([]);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [undoEvent, setUndoEvent] = useState<SpritzEvent | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchRecordTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const genres = useMemo(() => getDiscoveryGenres(events), [events]);
   const genreOptions = useMemo(() => [{ label: t.discover.allGenres, value: 'all' }, ...genres.map((genre) => ({ label: genre, value: genre }))], [genres, t]);
   const dateFilters = useMemo(() => getDateFilters(t), [t]);
   const priceFilters = useMemo(() => getPriceFilters(t), [t]);
   const sortOptions = useMemo(() => getSortOptions(t), [t]);
-  const results = useMemo(() => getDiscoverableEvents(events, filters), [events, filters]);
+  const results = useMemo(() => getDiscoverableEvents(events, filters, new Date(), dismissedIds), [events, filters, dismissedIds]);
   const activeFilterCount = Number(filters.genre !== 'all') + Number(filters.date !== 'all') + Number(filters.price !== 'all');
+
+  const lastMinuteEvents = useMemo(() => getLastMinuteEvents(events), [events]);
+  const trendingEvents = useMemo(() => {
+    const order = new Map(trendingIds.map((id, index) => [id, index]));
+    return events.filter((event) => order.has(event.id)).sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+  }, [events, trendingIds]);
+  const recentlyViewedEvents = useMemo(() => {
+    const order = new Map(recentlyViewedIds.map((id, index) => [id, index]));
+    return events.filter((event) => order.has(event.id)).sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+  }, [events, recentlyViewedIds]);
+  const showBrowseSections = !filters.query && filters.genre === 'all' && filters.date === 'all' && filters.price === 'all';
+
+  useEffect(() => {
+    if (!user) return;
+    getTrendingEventIds().then(setTrendingIds);
+    getRecentlyViewedEventIds(user.id).then(setRecentlyViewedIds);
+    getDismissedEventIds(user.id).then((ids) => setDismissedIds(new Set(ids)));
+    getRecentSearches(user.id).then(setRecentSearches);
+  }, [user]);
+
+  // Debounced, same idiom as app/search.tsx's 300ms people-search debounce —
+  // logs a search only once typing settles, not on every keystroke.
+  useEffect(() => {
+    if (searchRecordTimer.current) clearTimeout(searchRecordTimer.current);
+    const trimmed = filters.query.trim();
+    if (!user || !trimmed) return;
+    searchRecordTimer.current = setTimeout(() => {
+      recordSearch(trimmed);
+      setRecentSearches((current) => [trimmed, ...current.filter((q) => q.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8));
+    }, 800);
+    return () => {
+      if (searchRecordTimer.current) clearTimeout(searchRecordTimer.current);
+    };
+  }, [filters.query, user]);
+
+  useEffect(() => {
+    return () => {
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+    };
+  }, []);
 
   function updateFilters(patch: Partial<DiscoveryFilters>) {
     setFilters((current) => ({ ...current, ...patch }));
+  }
+
+  async function handleDismiss(event: SpritzEvent) {
+    if (!user) return;
+    setDismissedIds((current) => new Set(current).add(event.id));
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndoEvent(event);
+    undoTimer.current = setTimeout(() => setUndoEvent(null), 4000);
+    await dismissEvent(user.id, event.id);
+  }
+
+  async function handleUndoDismiss() {
+    if (!user || !undoEvent) return;
+    const event = undoEvent;
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndoEvent(null);
+    setDismissedIds((current) => {
+      const next = new Set(current);
+      next.delete(event.id);
+      return next;
+    });
+    await undoDismissEvent(user.id, event.id);
+  }
+
+  async function handleClearSearches() {
+    if (!user) return;
+    setRecentSearches([]);
+    await clearRecentSearches(user.id);
   }
 
   async function onRefresh() {
@@ -169,6 +278,7 @@ export default function Discover() {
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.green500} />}
       >
         <View style={styles.header}>
@@ -184,12 +294,47 @@ export default function Discover() {
           <TextInput
             value={filters.query}
             onChangeText={(query) => updateFilters({ query })}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             placeholder={t.discover.searchPlaceholder}
             placeholderTextColor={theme.textSecondary}
             style={[styles.searchInput, { color: theme.textPrimary }]}
             returnKeyType="search"
           />
         </View>
+
+        {searchFocused && !filters.query && recentSearches.length > 0 && (
+          <View style={styles.recentSearches}>
+            <View style={styles.recentSearchesHeader}>
+              <Text style={[styles.sectionLabel, { color: theme.textPrimary, marginTop: 0 }]}>{t.discover.recentSearches}</Text>
+              <AnimatedPressable onPress={handleClearSearches}>
+                <Text style={styles.resetText}>{t.discover.clearSearches}</Text>
+              </AnimatedPressable>
+            </View>
+            {recentSearches.map((query) => (
+              <AnimatedPressable
+                key={query}
+                onPress={() => updateFilters({ query })}
+                style={[styles.recentSearchRow, { borderColor: theme.border }]}
+              >
+                <Ionicons name="time-outline" size={15} color={theme.textSecondary} />
+                <Text style={[styles.recentSearchText, { color: theme.textPrimary }]} numberOfLines={1}>{query}</Text>
+              </AnimatedPressable>
+            ))}
+          </View>
+        )}
+
+        {showBrowseSections && (
+          <>
+            <EventRow
+              title={t.discover.lastMinute}
+              events={lastMinuteEvents}
+              getMeta={(event) => minutesUntil(event.startsAt, t)}
+            />
+            <EventRow title={t.discover.trending} events={trendingEvents} getMeta={() => '🔥'} />
+            <EventRow title={t.discover.recentlyViewed} events={recentlyViewedEvents} />
+          </>
+        )}
 
         <Text style={[styles.sectionLabel, { color: theme.textPrimary }]}>{t.discover.genre}</Text>
         <ChipRow options={genreOptions} value={filters.genre} onChange={(genre) => updateFilters({ genre })} />
@@ -222,7 +367,7 @@ export default function Discover() {
         ) : results.length ? (
           <View style={styles.results}>
             <Text style={[styles.resultsCount, { color: theme.textSecondary }]}>{t.discover.eventsCount(results.length)}</Text>
-            {results.map((event) => <EventCard key={event.id} event={event} />)}
+            {results.map((event) => <EventCard key={event.id} event={event} onDismiss={handleDismiss} />)}
           </View>
         ) : (
           <View style={styles.state}>
@@ -234,6 +379,18 @@ export default function Discover() {
           </View>
         )}
       </ScrollView>
+      {undoEvent && (
+        <View style={[styles.undoBanner, { bottom: insets.bottom + 90 }]}>
+          <View style={[styles.undoBannerInner, { backgroundColor: theme.textPrimary }]}>
+            <Text style={[styles.undoBannerText, { color: theme.page }]} numberOfLines={1}>
+              {t.discover.eventHiddenUndo}
+            </Text>
+            <AnimatedPressable onPress={handleUndoDismiss}>
+              <Text style={[styles.undoBannerAction, { color: colors.green400 }]}>{t.discover.undo}</Text>
+            </AnimatedPressable>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -268,4 +425,21 @@ const styles = StyleSheet.create({
   stateText: { fontSize: 13, textAlign: 'center', marginTop: spacing.sm },
   retryButton: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 18, paddingVertical: 10, marginTop: spacing.md },
   retryText: { fontSize: 13, fontWeight: '700' },
+  dismissButton: { padding: 2 },
+  recentSearches: { marginTop: spacing.sm },
+  recentSearchesHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  recentSearchRow: { flexDirection: 'row', alignItems: 'center', gap: 9, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 10 },
+  recentSearchText: { flex: 1, fontSize: 13, fontWeight: '600' },
+  undoBanner: { position: 'absolute', left: spacing.lg, right: spacing.lg },
+  undoBannerInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  undoBannerText: { flex: 1, fontSize: 13, fontWeight: '700' },
+  undoBannerAction: { fontSize: 13, fontWeight: '900' },
 });

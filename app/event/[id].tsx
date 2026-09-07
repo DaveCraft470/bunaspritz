@@ -53,6 +53,8 @@ import { StoryViewer } from '@/components/stories/StoryViewer';
 import { EVENT_REPORT_REASONS } from '@/lib/reports';
 import { getFriends } from '@/lib/friendRequests';
 import { sendEventInvitation } from '@/lib/eventInvitations';
+import { isEventSaved, saveEvent, unsaveEvent } from '@/lib/savedEvents';
+import { recordEventView } from '@/lib/recentActivity';
 import { formatDrinkVolume, getEventDrinks } from '@/lib/drinks';
 import { getEventSongs } from '@/lib/music';
 import { MusicCoverPlaceholder } from '@/components/music/MusicCoverPlaceholder';
@@ -107,6 +109,8 @@ export default function EventDetail() {
   const [attendance, setAttendance] = useState<AttendanceStatus>({ checkedIn: false, method: null });
   const [distanceToEventM, setDistanceToEventM] = useState<number | null>(null);
   const [checkingIn, setCheckingIn] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [savingBookmark, setSavingBookmark] = useState(false);
 
   useEffect(() => {
     if (!event || !user) return;
@@ -119,7 +123,20 @@ export default function EventDetail() {
     }
     if (event.hostId) getProfile(event.hostId).then(setHostProfile);
     getFriends(user.id).then(setInviteFriends);
+    isEventSaved(user.id, event.id).then(setSaved);
+    recordEventView(event.id);
   }, [event, user]);
+
+  async function handleToggleSave() {
+    if (!event || !user || savingBookmark) return;
+    light();
+    const next = !saved;
+    setSaved(next);
+    setSavingBookmark(true);
+    const ok = next ? await saveEvent(user.id, event.id) : await unsaveEvent(user.id, event.id);
+    setSavingBookmark(false);
+    if (!ok) setSaved(!next);
+  }
 
   const isHost = !!user && !!event && user.id === event.hostId;
   const eventStories = event ? getEventStories(event.id) : [];
@@ -411,21 +428,29 @@ export default function EventDetail() {
           <Text numberOfLines={1} style={[styles.topBarTitle, { color: theme.textPrimary }]}>
             {event.title}
           </Text>
-          {!isHost ? (
+          <View style={styles.topBarActions}>
             <AnimatedPressable
-              onPress={() => {
-                light();
-                setSafetyMenuOpen(true);
-              }}
+              onPress={handleToggleSave}
               hitSlop={10}
-              accessibilityLabel="Opțiuni de siguranță"
+              accessibilityLabel={saved ? t.event.unsaveEvent : t.event.saveEvent}
               style={[styles.backButton, shadows.soft, { backgroundColor: theme.surface, borderColor: theme.border }]}
             >
-              <Ionicons name="ellipsis-horizontal" size={20} color={theme.textPrimary} />
+              <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={19} color={saved ? colors.green500 : theme.textPrimary} />
             </AnimatedPressable>
-          ) : (
-            <View style={styles.backButton} />
-          )}
+            {!isHost && (
+              <AnimatedPressable
+                onPress={() => {
+                  light();
+                  setSafetyMenuOpen(true);
+                }}
+                hitSlop={10}
+                accessibilityLabel="Opțiuni de siguranță"
+                style={[styles.backButton, shadows.soft, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              >
+                <Ionicons name="ellipsis-horizontal" size={20} color={theme.textPrimary} />
+              </AnimatedPressable>
+            )}
+          </View>
         </View>
 
         <ScrollView
@@ -843,6 +868,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   topBarTitle: { flex: 1, fontSize: 16, fontWeight: '800', textAlign: 'center' },
+  topBarActions: { flexDirection: 'row', gap: 8 },
   content: { paddingHorizontal: 18, gap: 14 },
   hero: {
     alignSelf: 'center',

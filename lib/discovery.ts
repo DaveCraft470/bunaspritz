@@ -78,9 +78,15 @@ export function getDiscoveryGenres(events: SpritzEvent[]) {
   );
 }
 
-export function getDiscoverableEvents(events: SpritzEvent[], filters: DiscoveryFilters, now = new Date()) {
+export function getDiscoverableEvents(
+  events: SpritzEvent[],
+  filters: DiscoveryFilters,
+  now = new Date(),
+  dismissedIds?: ReadonlySet<string>,
+) {
   const query = normalize(filters.query);
   const eligible = events.filter((event) => {
+    if (dismissedIds?.has(event.id)) return false;
     if (!event.startsAt || new Date(event.startsAt).getTime() <= now.getTime()) return false;
     const startsAt = new Date(event.startsAt);
     const searchable = normalize(`${event.title} ${event.detail} ${event.genre}`);
@@ -100,4 +106,18 @@ export function getDiscoverableEvents(events: SpritzEvent[], filters: DiscoveryF
     if (filters.sort === 'mostExpensive') return (right.entryFeeRon ?? 0) - (left.entryFeeRon ?? 0);
     return searchScore(right, filters.query) - searchScore(left, filters.query) || leftTime - rightTime;
   });
+}
+
+// Last Minute: events starting soon, closest-first — pure client-side, no
+// DB support needed since it's just a window/sort over the already-loaded
+// events list (same idiom as everything else in this file).
+export function getLastMinuteEvents(events: SpritzEvent[], now = new Date(), windowHours = 6) {
+  const windowEnd = now.getTime() + windowHours * 60 * 60 * 1000;
+  return events
+    .filter((event) => {
+      if (!event.startsAt) return false;
+      const startsAtMs = new Date(event.startsAt).getTime();
+      return startsAtMs > now.getTime() && startsAtMs <= windowEnd;
+    })
+    .sort((left, right) => new Date(left.startsAt!).getTime() - new Date(right.startsAt!).getTime());
 }

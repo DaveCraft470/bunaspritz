@@ -132,6 +132,19 @@ export default function Profile() {
         </Pressable>
 
         <Pressable
+          onPress={() => router.push('/saved-events')}
+          style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        >
+          <View style={styles.myEventsCopy}>
+            <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>{t.savedEvents.title}</Text>
+            <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
+              {t.savedEvents.entryDetail}
+            </Text>
+          </View>
+          <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
+        </Pressable>
+
+        <Pressable
           onPress={() => router.push('/badges')}
           style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
         >
