@@ -208,6 +208,19 @@ export default function Profile() {
         </Pressable>
 
         <Pressable
+          onPress={() => router.push('/gamification')}
+          style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        >
+          <View style={styles.myEventsCopy}>
+            <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>Progres & Clasament</Text>
+            <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
+              XP, nivel, streak, misiuni și clasamentul.
+            </Text>
+          </View>
+          <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
+        </Pressable>
+
+        <Pressable
           onPress={() => router.push('/badges')}
           style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
         >
