@@ -82,10 +82,7 @@ export default function Reviews() {
   async function handleSubmit(eventId: string, rating: number, comment: string) {
     if (!user || !reviewTarget) return false;
     const ok = await submitReview(eventId, user.id, reviewTarget.subjectId, rating, comment);
-    if (ok) {
-      setPending((current) => current.filter((p) => !(p.eventId === eventId && p.subjectId === reviewTarget.subjectId)));
-      load();
-    }
+    if (ok) load();
     return ok;
   }
 
