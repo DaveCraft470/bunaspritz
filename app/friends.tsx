@@ -59,8 +59,6 @@ export default function Friends() {
   const [prefs, setPrefs] = useState<FriendPrefs>({ mute_messages: false, mute_activity: false, hide_activity_from: false, blocked: false });
   const [refreshing, setRefreshing] = useState(false);
   const [blocked, setBlocked] = useState<Profile[]>([]);
-  const blockedIds = new Set(blocked.map((profile) => profile.id));
-  const visibleFriends = friends.filter((friend) => !blockedIds.has(friend.id));
 
   function load() {
     if (!user) return;
@@ -153,6 +151,7 @@ export default function Friends() {
           setFriends((current) => current.filter((f) => f.id !== friend.id));
           setBlocked((current) => [...current, friend]);
           setMenuFor(null);
+          setSafetyMenuFor(null);
         },
       },
     ]);
@@ -196,45 +195,6 @@ export default function Friends() {
         },
       },
     ]);
-  }
-
-  function confirmToggleBlock(friend: Profile) {
-    if (!user) return;
-    light();
-    const alreadyBlocked = blockedIds.has(friend.id);
-    if (alreadyBlocked) {
-      unblockUser(friend.id).then((ok) => {
-        if (!ok) {
-          showAlert('A apărut o eroare', 'Nu am putut debloca acest cont. Încearcă din nou.');
-          return;
-        }
-        setBlocked((current) => current.filter((p) => p.id !== friend.id));
-        showAlert('Deblocat', `Ai deblocat pe ${friend.name}.`);
-      });
-      return;
-    }
-    Alert.alert(
-      `Blochezi pe ${friend.name}?`,
-      'Nu vă veți mai putea trimite mesaje sau cereri de prietenie. Poți debloca oricând din profilul lui.',
-      [
-        { text: 'Anulează', style: 'cancel' },
-        {
-          text: 'Blochează',
-          style: 'destructive',
-          onPress: async () => {
-            const ok = await blockUser(friend.id);
-            if (!ok) {
-              showAlert('A apărut o eroare', 'Nu am putut bloca acest cont. Încearcă din nou.');
-              return;
-            }
-            removeFriend(user.id, friend.id);
-            setFriends((current) => current.filter((f) => f.id !== friend.id));
-            setBlocked((current) => [...current, friend]);
-            showAlert('Utilizator blocat', `${friend.name} a fost blocat.`);
-          },
-        },
-      ],
-    );
   }
 
   return (
@@ -328,9 +288,9 @@ export default function Friends() {
           </>
         )}
 
-        {!loading && !loadError && visibleFriends.length > 0 && <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>{t.friends.friendsSectionTitle}</Text>}
+        {!loading && !loadError && friends.length > 0 && <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>{t.friends.friendsSectionTitle}</Text>}
 
-        {!loading && !loadError && visibleFriends.length === 0 && incoming.length === 0 && outgoing.length === 0 && (
+        {!loading && !loadError && friends.length === 0 && incoming.length === 0 && outgoing.length === 0 && (
           <View style={styles.emptyState}>
             <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>{t.friends.noFriendsYet}</Text>
             <Text style={[styles.emptyText, { color: theme.textSecondary }]}>{t.friends.addPeopleToStart}</Text>
@@ -343,7 +303,7 @@ export default function Friends() {
           </View>
         )}
 
-        {visibleFriends.map((friend) => {
+        {friends.map((friend) => {
           const friendStories = friendsStories.filter((story) => story.userId === friend.id);
           const friendStoryGroup = friendStories.length
             ? { userId: friend.id, label: friend.name, stories: friendStories }
@@ -407,10 +367,10 @@ export default function Friends() {
                 },
                 {
                   key: 'block',
-                  label: blockedIds.has(safetyMenuFor.id) ? 'Deblochează' : 'Blochează',
-                  icon: blockedIds.has(safetyMenuFor.id) ? 'lock-open-outline' : 'lock-closed-outline',
-                  destructive: !blockedIds.has(safetyMenuFor.id),
-                  onPress: () => confirmToggleBlock(safetyMenuFor),
+                  label: 'Blochează',
+                  icon: 'lock-closed-outline',
+                  destructive: true,
+                  onPress: () => confirmBlockFriend(safetyMenuFor),
                 },
                 {
                   key: 'report',

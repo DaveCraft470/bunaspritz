@@ -953,6 +953,8 @@ const styles = StyleSheet.create({
   },
   editEventText: { fontSize: 13, fontWeight: '800' },
   cancelEventText: { fontSize: 13, fontWeight: '700', color: '#E5484D' },
+  reportEventButton: { alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingVertical: 10, marginTop: 10 },
+  reportEventText: { fontSize: 12, fontWeight: '700' },
   ctaWrap: {
     position: 'absolute',
     left: 18,
