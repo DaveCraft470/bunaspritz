@@ -500,7 +500,7 @@ export default function Auth() {
                     <View key={check.label} style={styles.requirementRow}>
                       <Ionicons
                         name={check.met ? 'checkmark-circle' : 'ellipse-outline'}
-                        size={14}
+                        size={12}
                         color={check.met ? colors.green500 : theme.textSecondary}
                       />
                       <Text
@@ -1105,18 +1105,21 @@ const styles = StyleSheet.create({
   },
 
   requirements: {
-    marginTop: 10,
-    gap: 5,
+    marginTop: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 4,
+    columnGap: 10,
   },
 
   requirementRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 4,
   },
 
   requirementText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '600',
   },
 
