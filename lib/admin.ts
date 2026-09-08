@@ -25,19 +25,19 @@ export type AdminUserRow = {
   suspended: boolean;
 };
 
+// Goes through admin_search_users() rather than a plain .select() — the
+// latter would read `suspended` straight off profiles, whose SELECT RLS is
+// blanket "any authenticated user" (no column-level restriction is possible
+// there without breaking contexts/auth.ts's own-row suspended check), so a
+// raw client select would let any signed-in user learn another user's
+// suspended status. The RPC re-checks is_admin() server-side instead.
 export async function adminSearchUsers(query: string, excludeId: string): Promise<AdminUserRow[]> {
-  const trimmed = query.trim().replace(/[,()]/g, '');
+  const trimmed = query.trim();
   if (!trimmed) return [];
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, name, username, avatar_url, verified, suspended')
-    .or(`name.ilike.%${trimmed}%,username.ilike.%${trimmed}%`)
-    .neq('id', excludeId)
-    .limit(20);
-
+  const { data, error } = await supabase.rpc('admin_search_users', { p_query: trimmed });
   if (error) return [];
-  return data;
+  return (data ?? []).filter((row: AdminUserRow) => row.id !== excludeId);
 }
 
 // suspended itself has no client UPDATE grant (see the migration) — this is

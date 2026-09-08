@@ -831,13 +831,17 @@ export default function EventDetail() {
             <PhotoAlbum eventId={event.id} canUpload={joined || isHost} isHost={isHost} currentUserId={user.id} />
           )}
 
-          {eventStories.length > 0 && (
+          {(eventStories.length > 0 || attendance.checkedIn) && (
             <StoriesRow
               stories={eventStories}
               currentUserId={user?.id}
               title={t.event.recentStories}
               compact
               onOpen={(group) => setViewerStories(group)}
+              // new-story.tsx's event picker only offers checked-in events
+              // (see getRecentAttendedEventIds) — gating on the same
+              // condition here keeps this event actually selectable there.
+              onAdd={attendance.checkedIn ? () => router.push('/new-story') : undefined}
             />
           )}
 

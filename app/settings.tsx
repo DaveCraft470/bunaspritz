@@ -206,9 +206,23 @@ export default function Settings() {
       <AnimatedPressable
         onPress={() => {
           light();
-          router.push('/favorites');
+          router.push('/my-events');
         }}
         style={[styles.card, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+      >
+        <View style={styles.rowText}>
+          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>{t.profile.myEvents}</Text>
+          <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>{t.profile.myEventsDetail}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+      </AnimatedPressable>
+
+      <AnimatedPressable
+        onPress={() => {
+          light();
+          router.push('/favorites');
+        }}
+        style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
       >
         <View style={styles.rowText}>
           <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>{t.settings.preferences}</Text>
