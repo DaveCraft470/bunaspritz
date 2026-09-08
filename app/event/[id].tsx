@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Dimensions, Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Dimensions, Image, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { showAlert } from '@/lib/alert';
+import { showAlert, showConfirm } from '@/lib/alert';
 import { alertPermissionDenied } from '@/lib/permissions';
 import { buildApproxStaticMapUrl, buildDirectionsUrl, buildExactStaticMapUrl } from '@/constants/mapbox';
 import { getSpritzEvent, SPRITZ_SONGS } from '@/constants/events';
@@ -291,25 +291,18 @@ export default function EventDetail() {
   function confirmLeave() {
     if (!event || !user) return;
     light();
-    Alert.alert(t.event.confirmLeaveTitle, t.event.confirmLeaveMessage(event.title), [
-      { text: t.event.cancel, style: 'cancel' },
-      {
-        text: t.event.leave,
-        style: 'destructive',
-        onPress: async () => {
-          setJoining(true);
-          const ok = await leaveEvent(event.id, user.id);
-          setJoining(false);
-          if (!ok) {
-            showAlert(t.event.genericErrorTitle, t.event.couldNotCancelParticipation);
-            return;
-          }
-          setJoined(false);
-          fetchAttendees(event.id).then(setAttendees);
-          getEventAttendeeCount(event.id).then(setAttendeeCount);
-        },
-      },
-    ]);
+    showConfirm(t.event.confirmLeaveTitle, t.event.confirmLeaveMessage(event.title), t.event.leave, t.event.cancel, async () => {
+      setJoining(true);
+      const ok = await leaveEvent(event.id, user.id);
+      setJoining(false);
+      if (!ok) {
+        showAlert(t.event.genericErrorTitle, t.event.couldNotCancelParticipation);
+        return;
+      }
+      setJoined(false);
+      fetchAttendees(event.id).then(setAttendees);
+      getEventAttendeeCount(event.id).then(setAttendeeCount);
+    });
   }
 
   // Same DB support gap as leaveEvent: "hosts delete their own events" has
@@ -322,24 +315,23 @@ export default function EventDetail() {
     light();
     const attendeeNote =
       attendeeCount > 1 ? t.event.attendeeNoteMultiple(attendeeCount) : t.event.attendeeNoteSolo;
-    Alert.alert(t.event.confirmCancelEventTitle, t.event.confirmCancelEventMessage(event.title, attendeeNote), [
-      { text: t.common.back, style: 'cancel' },
-      {
-        text: t.event.cancelEvent,
-        style: 'destructive',
-        onPress: async () => {
-          setJoining(true);
-          const ok = await deleteEvent(event.id, user.id, event.rentalProofPath);
-          setJoining(false);
-          if (!ok) {
-            showAlert(t.event.genericErrorTitle, t.event.couldNotCancelEvent);
-            return;
-          }
-          removeEvent(event.id);
-          router.back();
-        },
+    showConfirm(
+      t.event.confirmCancelEventTitle,
+      t.event.confirmCancelEventMessage(event.title, attendeeNote),
+      t.event.cancelEvent,
+      t.common.back,
+      async () => {
+        setJoining(true);
+        const ok = await deleteEvent(event.id, user.id, event.rentalProofPath);
+        setJoining(false);
+        if (!ok) {
+          showAlert(t.event.genericErrorTitle, t.event.couldNotCancelEvent);
+          return;
+        }
+        removeEvent(event.id);
+        router.back();
       },
-    ]);
+    );
   }
 
   const requiresApproval = !!event && event.approvalMode === 'manual' && !isHost;
@@ -381,16 +373,17 @@ export default function EventDetail() {
       events.filter((e) => joinedIds.includes(e.id)),
     );
     if (conflict) {
-      const proceed = await new Promise<boolean>((resolve) => {
-        Alert.alert(
-          '⚠️ Ai deja un eveniment la ora asta',
-          `Se suprapune cu „${conflict.title}". Vrei să participi oricum?`,
-          [
-            { text: 'Anulează', style: 'cancel', onPress: () => resolve(false) },
-            { text: 'Particip oricum', onPress: () => resolve(true) },
-          ],
-        );
-      });
+      const title = '⚠️ Ai deja un eveniment la ora asta';
+      const message = `Se suprapune cu „${conflict.title}". Vrei să participi oricum?`;
+      const proceed =
+        Platform.OS === 'web'
+          ? window.confirm(`${title}\n\n${message}`)
+          : await new Promise<boolean>((resolve) => {
+              Alert.alert(title, message, [
+                { text: 'Anulează', style: 'cancel', onPress: () => resolve(false) },
+                { text: 'Particip oricum', onPress: () => resolve(true) },
+              ]);
+            });
       if (!proceed) return;
     }
 

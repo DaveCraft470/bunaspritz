@@ -12,3 +12,27 @@ export function showAlert(title: string, message?: string) {
   }
   Alert.alert(title, message);
 }
+
+// Same web gap as showAlert, but for confirm/cancel dialogs: any Alert.alert
+// call with a buttons array (and therefore an onPress callback the caller
+// depends on to actually do something) is a silent no-op on web — the
+// confirm text: label used here for the affirmative choice was always
+// getting lost with it. window.confirm() only gives a single OK/Cancel
+// pair (no custom labels, no destructive styling), which is the ceiling of
+// what the web platform offers here.
+export function showConfirm(
+  title: string,
+  message: string,
+  confirmText: string,
+  cancelText: string,
+  onConfirm: () => void,
+) {
+  if (Platform.OS === 'web') {
+    if (window.confirm(`${title}\n\n${message}`)) onConfirm();
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: cancelText, style: 'cancel' },
+    { text: confirmText, style: 'destructive', onPress: onConfirm },
+  ]);
+}
