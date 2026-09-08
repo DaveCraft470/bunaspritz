@@ -128,9 +128,18 @@ export default function EditEvent() {
   useEffect(() => {
     if (!user || !event) return;
     if (event.hostId !== user.id) {
-      Alert.alert(t.editEvent.restrictedAccessTitle, t.editEvent.ownerOnlyMessage, [
-        { text: t.common.back, onPress: () => router.back() },
-      ]);
+      // Single-button "notice, then navigate away" — not a confirm/cancel, so
+      // showConfirm doesn't fit. On web Alert.alert with a buttons array is a
+      // silent no-op (see lib/alert.ts), which would leave a non-owner
+      // stranded on someone else's edit screen with no dialog and no redirect.
+      if (Platform.OS === 'web') {
+        window.alert(`${t.editEvent.restrictedAccessTitle}\n\n${t.editEvent.ownerOnlyMessage}`);
+        router.back();
+      } else {
+        Alert.alert(t.editEvent.restrictedAccessTitle, t.editEvent.ownerOnlyMessage, [
+          { text: t.common.back, onPress: () => router.back() },
+        ]);
+      }
     }
   }, [event, user]);
 

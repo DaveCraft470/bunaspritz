@@ -5,9 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Alert } from 'react-native';
-
-import { showAlert } from '@/lib/alert';
+import { showAlert, showConfirm } from '@/lib/alert';
 import { colors, glassButton, shadows, spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
@@ -149,66 +147,64 @@ export default function Friends() {
 
   function confirmBlockFriend(friend: Profile) {
     light();
-    Alert.alert('Blochezi acest cont?', `${friend.name} nu te va mai putea urmări sau contacta.`, [
-      { text: 'Anulează', style: 'cancel' },
-      {
-        text: 'Blochează',
-        style: 'destructive',
-        onPress: async () => {
-          if (!user) return;
-          const ok = await blockUser(friend.id);
-          if (!ok) {
-            showAlert('A apărut o eroare', 'Nu am putut bloca acest cont. Încearcă din nou.');
-            return;
-          }
-          // block_user() already cancels pending requests and deletes the
-          // friendships row server-side — no separate unfriend() call needed.
-          setFriends((current) => current.filter((f) => f.id !== friend.id));
-          setBlocked((current) => [...current, friend]);
-          setMenuFor(null);
-          setSafetyMenuFor(null);
-        },
+    showConfirm(
+      'Blochezi acest cont?',
+      `${friend.name} nu te va mai putea urmări sau contacta.`,
+      'Blochează',
+      'Anulează',
+      async () => {
+        if (!user) return;
+        const ok = await blockUser(friend.id);
+        if (!ok) {
+          showAlert('A apărut o eroare', 'Nu am putut bloca acest cont. Încearcă din nou.');
+          return;
+        }
+        // block_user() already cancels pending requests and deletes the
+        // friendships row server-side — no separate unfriend() call needed.
+        setFriends((current) => current.filter((f) => f.id !== friend.id));
+        setBlocked((current) => [...current, friend]);
+        setMenuFor(null);
+        setSafetyMenuFor(null);
       },
-    ]);
+    );
   }
 
   function confirmUnblock(profile: Profile) {
     light();
-    Alert.alert('Deblochezi acest cont?', `${profile.name} va putea din nou să te urmărească.`, [
-      { text: 'Anulează', style: 'cancel' },
-      {
-        text: 'Deblochează',
-        onPress: async () => {
-          const ok = await unblockUser(profile.id);
-          if (!ok) {
-            showAlert('A apărut o eroare', 'Nu am putut debloca acest cont. Încearcă din nou.');
-            return;
-          }
-          setBlocked((current) => current.filter((p) => p.id !== profile.id));
-        },
+    showConfirm(
+      'Deblochezi acest cont?',
+      `${profile.name} va putea din nou să te urmărească.`,
+      'Deblochează',
+      'Anulează',
+      async () => {
+        const ok = await unblockUser(profile.id);
+        if (!ok) {
+          showAlert('A apărut o eroare', 'Nu am putut debloca acest cont. Încearcă din nou.');
+          return;
+        }
+        setBlocked((current) => current.filter((p) => p.id !== profile.id));
       },
-    ]);
+    );
   }
 
   function confirmRemoveFriend(friend: Profile) {
     light();
-    Alert.alert(t.friends.removeFriendTitle, t.friends.removeFriendMessage(friend.name), [
-      { text: t.friends.cancel, style: 'cancel' },
-      {
-        text: t.friends.remove,
-        style: 'destructive',
-        onPress: async () => {
-          if (!user) return;
-          const ok = await removeFriend(user.id, friend.id);
-          if (!ok) {
-            showAlert(t.friends.genericErrorTitle, t.friends.errorRemovingFriend);
-            return;
-          }
-          setFriends((current) => current.filter((f) => f.id !== friend.id));
-          setMenuFor(null);
-        },
+    showConfirm(
+      t.friends.removeFriendTitle,
+      t.friends.removeFriendMessage(friend.name),
+      t.friends.remove,
+      t.friends.cancel,
+      async () => {
+        if (!user) return;
+        const ok = await removeFriend(user.id, friend.id);
+        if (!ok) {
+          showAlert(t.friends.genericErrorTitle, t.friends.errorRemovingFriend);
+          return;
+        }
+        setFriends((current) => current.filter((f) => f.id !== friend.id));
+        setMenuFor(null);
       },
-    ]);
+    );
   }
 
   return (

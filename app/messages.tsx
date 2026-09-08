@@ -32,7 +32,7 @@ import { Profile, getBlockedIds } from '@/lib/social';
 import { getFriends } from '@/lib/friendRequests';
 import { extensionAndTypeForImage } from '@/lib/media';
 import { alertPermissionDenied } from '@/lib/permissions';
-import { showAlert } from '@/lib/alert';
+import { showAlert, showConfirm } from '@/lib/alert';
 import { getUserJoinedEventIds } from '@/lib/events';
 import {
   DbMessage,
@@ -705,21 +705,14 @@ export default function Messages() {
   }
 
   function confirmDeleteMessage(message: DbGroupMessage) {
-    Alert.alert('Ștergi mesajul?', 'Această acțiune nu poate fi anulată.', [
-      { text: 'Anulează', style: 'cancel' },
-      {
-        text: 'Șterge',
-        style: 'destructive',
-        onPress: async () => {
-          const ok = await deleteGroupMessage(message.id);
-          if (ok) {
-            setGroupMessages((current) => current.map((m) => (m.id === message.id ? { ...m, deleted_at: new Date().toISOString() } : m)));
-          } else {
-            showAlert('A apărut o eroare', 'Nu am putut șterge mesajul. Încearcă din nou.');
-          }
-        },
-      },
-    ]);
+    showConfirm('Ștergi mesajul?', 'Această acțiune nu poate fi anulată.', 'Șterge', 'Anulează', async () => {
+      const ok = await deleteGroupMessage(message.id);
+      if (ok) {
+        setGroupMessages((current) => current.map((m) => (m.id === message.id ? { ...m, deleted_at: new Date().toISOString() } : m)));
+      } else {
+        showAlert('A apărut o eroare', 'Nu am putut șterge mesajul. Încearcă din nou.');
+      }
+    });
   }
 
   async function handleTogglePin(message: DbGroupMessage) {

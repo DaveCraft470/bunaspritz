@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Alert, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, spacing } from '@/constants/theme';
 import { Avatar } from '@/components/common/Avatar';
 import { useStories } from '@/contexts/StoriesContext';
 import type { Story } from '@/lib/stories';
+import { showConfirm } from '@/lib/alert';
 
 export function StoryViewer({
   visible,
@@ -55,18 +56,11 @@ export function StoryViewer({
 
   function confirmDelete() {
     if (story.userId !== currentUserId) return;
-    Alert.alert('Ștergi acest Story?', 'Acțiunea nu poate fi anulată.', [
-      { text: 'Anulează', style: 'cancel' },
-      {
-        text: 'Șterge',
-        style: 'destructive',
-        onPress: () => {
-          remove(story.id);
-          if (stories.length <= 1) onClose();
-          else setIndex((current) => Math.min(current, stories.length - 2));
-        },
-      },
-    ]);
+    showConfirm('Ștergi acest Story?', 'Acțiunea nu poate fi anulată.', 'Șterge', 'Anulează', () => {
+      remove(story.id);
+      if (stories.length <= 1) onClose();
+      else setIndex((current) => Math.min(current, stories.length - 2));
+    });
   }
 
   return (

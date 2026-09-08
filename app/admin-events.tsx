@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -13,7 +13,7 @@ import { isAdminAccessEnabled } from '@/lib/admin';
 import { useUser } from '@/contexts/UserContext';
 import { getProfiles } from '@/lib/social';
 import { adminDeleteEvent } from '@/lib/events';
-import { showAlert } from '@/lib/alert';
+import { showAlert, showConfirm } from '@/lib/alert';
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleString('ro-RO', { dateStyle: 'medium', timeStyle: 'short' }) : 'Data nestabilită';
@@ -29,23 +29,22 @@ export default function AdminEvents() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   function confirmDelete(eventId: string, title: string, rentalProofPath: string | null) {
-    Alert.alert('Ștergi acest eveniment?', `„${title}" va fi șters definitiv, inclusiv participanții și recenziile asociate.`, [
-      { text: 'Anulează', style: 'cancel' },
-      {
-        text: 'Șterge',
-        style: 'destructive',
-        onPress: async () => {
-          setDeletingId(eventId);
-          const ok = await adminDeleteEvent(eventId, rentalProofPath);
-          setDeletingId(null);
-          if (!ok) {
-            showAlert('A apărut o eroare', 'Nu am putut șterge evenimentul. Încearcă din nou.');
-            return;
-          }
-          refresh();
-        },
+    showConfirm(
+      'Ștergi acest eveniment?',
+      `„${title}" va fi șters definitiv, inclusiv participanții și recenziile asociate.`,
+      'Șterge',
+      'Anulează',
+      async () => {
+        setDeletingId(eventId);
+        const ok = await adminDeleteEvent(eventId, rentalProofPath);
+        setDeletingId(null);
+        if (!ok) {
+          showAlert('A apărut o eroare', 'Nu am putut șterge evenimentul. Încearcă din nou.');
+          return;
+        }
+        refresh();
       },
-    ]);
+    );
   }
   useEffect(() => {
     const hostIds = [...new Set(events.map((event) => event.hostId).filter((id): id is string => id !== null))];

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -14,6 +14,7 @@ import { useUser } from '@/contexts/UserContext';
 import { Avatar } from '@/components/common/Avatar';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { EventAttendee, fetchAttendees, getEventAttendeeCount } from '@/lib/events';
+import { showAlert, showConfirm } from '@/lib/alert';
 
 export default function OrganizerParticipants() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -91,21 +92,16 @@ export default function OrganizerParticipants() {
 
   function requestKick(attendee: EventAttendee) {
     light();
-    Alert.alert(
+    showConfirm(
       t.organizerParticipants.removeParticipantTitle,
       t.organizerParticipants.removeParticipantMessage(attendee.username),
-      [
-        { text: t.organizerParticipants.cancel, style: 'cancel' },
-        {
-          text: t.organizerParticipants.remove,
-          style: 'destructive',
-          onPress: () => {
-            setAttendees((current) => current.filter((item) => item.userId !== attendee.userId));
-            setAttendeeCount((current) => (current === null ? current : Math.max(0, current - 1)));
-            Alert.alert(t.organizerParticipants.localOnlyTitle, t.organizerParticipants.localOnlyMessage);
-          },
-        },
-      ],
+      t.organizerParticipants.remove,
+      t.organizerParticipants.cancel,
+      () => {
+        setAttendees((current) => current.filter((item) => item.userId !== attendee.userId));
+        setAttendeeCount((current) => (current === null ? current : Math.max(0, current - 1)));
+        showAlert(t.organizerParticipants.localOnlyTitle, t.organizerParticipants.localOnlyMessage);
+      },
     );
   }
 
