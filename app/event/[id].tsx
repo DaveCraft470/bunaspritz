@@ -247,24 +247,34 @@ export default function EventDetail() {
     if (result.canceled || !result.assets[0]) return;
 
     setCheckingIn(true);
-    const asset = result.assets[0];
-    const extension = asset.uri.includes('.') ? asset.uri.slice(asset.uri.lastIndexOf('.')) : '.jpg';
-    const photoPath = await uploadCheckInPhoto(user.id, event.id, asset.uri, extension, asset.mimeType ?? 'image/jpeg');
-    if (!photoPath) {
-      setCheckingIn(false);
-      showAlert('Nu am putut încărca poza', 'Încearcă din nou.');
-      return;
-    }
+    // A real device gap: the location permission check above ran before the
+    // user physically took the photo, so GPS can genuinely be off by the
+    // time getCurrentPositionAsync below runs — same for any transient
+    // upload failure. Without this try/finally, either throw left checkingIn
+    // stuck true forever (the button frozen on "Se confirmă...") since
+    // nothing after the throw ever ran setCheckingIn(false).
+    try {
+      const asset = result.assets[0];
+      const extension = asset.uri.includes('.') ? asset.uri.slice(asset.uri.lastIndexOf('.')) : '.jpg';
+      const photoPath = await uploadCheckInPhoto(user.id, event.id, asset.uri, extension, asset.mimeType ?? 'image/jpeg');
+      if (!photoPath) {
+        showAlert('Nu am putut încărca poza', 'Încearcă din nou.');
+        return;
+      }
 
-    const freshPosition = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    const outcome = await checkInToEvent(event.id, freshPosition.coords.latitude, freshPosition.coords.longitude, photoPath);
-    setCheckingIn(false);
-    if (!outcome.ok) {
-      showAlert('Nu am putut confirma participarea', outcome.error ?? 'Încearcă din nou.');
-      return;
+      const freshPosition = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const outcome = await checkInToEvent(event.id, freshPosition.coords.latitude, freshPosition.coords.longitude, photoPath);
+      if (!outcome.ok) {
+        showAlert('Nu am putut confirma participarea', outcome.error ?? 'Încearcă din nou.');
+        return;
+      }
+      medium();
+      setAttendance({ checkedIn: true, method: 'photo' });
+    } catch {
+      showAlert('Nu am putut confirma participarea', 'Verifică locația și încearcă din nou.');
+    } finally {
+      setCheckingIn(false);
     }
-    medium();
-    setAttendance({ checkedIn: true, method: 'photo' });
   }
 
   async function sendInvitations(recipientIds: string[]) {

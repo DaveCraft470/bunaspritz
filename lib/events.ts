@@ -76,7 +76,12 @@ export async function uploadRentalProof(
   // warns "not supported on web") — fetch() reads both file:// (native) and
   // blob:/data: (web) uris the same way, so it works everywhere without a
   // platform branch (see lib/messaging.ts's sendMediaMessage for the same fix).
-  const bytes = await (await fetch(localUri)).arrayBuffer();
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await (await fetch(localUri)).arrayBuffer();
+  } catch {
+    return null;
+  }
   if (bytes.byteLength === 0) return null;
 
   const path = `${hostId}/${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
@@ -103,7 +108,12 @@ export async function uploadCheckInPhoto(
   extension: string,
   contentType: string
 ): Promise<string | null> {
-  const bytes = await (await fetch(localUri)).arrayBuffer();
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await (await fetch(localUri)).arrayBuffer();
+  } catch {
+    return null;
+  }
   if (bytes.byteLength === 0) return null;
 
   const path = `${userId}/${eventId}-${Date.now()}${extension}`;
