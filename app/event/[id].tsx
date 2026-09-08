@@ -764,14 +764,7 @@ export default function EventDetail() {
                     router.push(`/user/${attendee.userId}`);
                   }}
                 >
-                  <View>
-                    <Avatar uri={attendee.avatarUrl} name={attendee.name} size={44} fontSize={16} style={styles.attendeeAvatar} />
-                    {attendee.goingAlone && (
-                      <View style={[styles.aloneBadge, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                        <Text style={styles.aloneBadgeEmoji}>🧍</Text>
-                      </View>
-                    )}
-                  </View>
+                  <Avatar uri={attendee.avatarUrl} name={attendee.name} size={44} fontSize={16} style={styles.attendeeAvatar} />
                   <Text numberOfLines={1} style={[styles.attendeeName, { color: theme.textSecondary }]}>
                     {attendee.name}
                   </Text>
@@ -1109,8 +1102,6 @@ const styles = StyleSheet.create({
   matchCopy: { flex: 1, minWidth: 0 },
   matchName: { fontSize: 13, fontWeight: '800' },
   matchReason: { fontSize: 11, fontWeight: '700', marginTop: 1 },
-  aloneBadge: { position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  aloneBadgeEmoji: { fontSize: 9 },
   attendeeItem: { alignItems: 'center', width: 52 },
   attendeeAvatar: { width: 44, height: 44, borderRadius: 22 },
   attendeeName: { fontSize: 10, marginTop: 4 },

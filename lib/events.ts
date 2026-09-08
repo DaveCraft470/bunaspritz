@@ -291,15 +291,14 @@ export function subscribeToDeletedEvents(onDelete: (eventId: string) => void) {
   };
 }
 
-export type EventAttendee = { userId: string; name: string; username: string; avatarUrl: string | null; goingAlone: boolean };
+export type EventAttendee = { userId: string; name: string; username: string; avatarUrl: string | null };
 
 // Reads visible_event_attendees (not the raw table) so hide_activity_from is
 // respected — the viewer never even receives a hidden attendee's row.
 export async function fetchAttendees(eventId: string): Promise<EventAttendee[]> {
-  const { data: rows } = await supabase.from('visible_event_attendees').select('user_id, going_alone').eq('event_id', eventId);
+  const { data: rows } = await supabase.from('visible_event_attendees').select('user_id').eq('event_id', eventId);
   const userIds = (rows ?? []).map((row) => row.user_id);
   if (!userIds.length) return [];
-  const goingAloneByUserId = new Map((rows ?? []).map((row) => [row.user_id, row.going_alone]));
 
   const { data: profiles } = await supabase.from('profiles').select('id, name, username, avatar_url').in('id', userIds);
   return (profiles ?? []).map((p) => ({
@@ -307,7 +306,6 @@ export async function fetchAttendees(eventId: string): Promise<EventAttendee[]> 
     name: p.name,
     username: p.username,
     avatarUrl: p.avatar_url,
-    goingAlone: !!goingAloneByUserId.get(p.id),
   }));
 }
 
@@ -354,23 +352,6 @@ export async function getRecentAttendedEventIds(userId: string, limit: number): 
     .order('checked_in_at', { ascending: false })
     .limit(limit);
   return (data ?? []).map((row) => row.event_id);
-}
-
-// "Merg singur" — a per-attendance flag, only settable on your own row (no
-// general UPDATE policy on event_attendees exists; see set_going_alone).
-export async function getGoingAlone(eventId: string, userId: string): Promise<boolean> {
-  const { data } = await supabase
-    .from('event_attendees')
-    .select('going_alone')
-    .eq('event_id', eventId)
-    .eq('user_id', userId)
-    .maybeSingle();
-  return !!data?.going_alone;
-}
-
-export async function setGoingAlone(eventId: string, value: boolean): Promise<boolean> {
-  const { error } = await supabase.rpc('set_going_alone', { p_event_id: eventId, p_value: value });
-  return !error;
 }
 
 export async function joinEvent(eventId: string, userId: string): Promise<boolean> {
