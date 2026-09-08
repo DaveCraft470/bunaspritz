@@ -202,6 +202,35 @@ export default function Settings() {
         </View>
       </View>
 
+      <Text style={[styles.sectionLabel, styles.sectionLabelSpaced, { color: theme.textSecondary }]}>{t.settings.sectionPreferences}</Text>
+      <AnimatedPressable
+        onPress={() => {
+          light();
+          router.push('/favorites');
+        }}
+        style={[styles.card, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+      >
+        <View style={styles.rowText}>
+          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>{t.settings.preferences}</Text>
+          <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>{t.settings.preferencesDetail}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+      </AnimatedPressable>
+
+      <AnimatedPressable
+        onPress={() => {
+          light();
+          router.push('/saved-events');
+        }}
+        style={[styles.card, styles.cardSpaced, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+      >
+        <View style={styles.rowText}>
+          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>{t.savedEvents.title}</Text>
+          <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>{t.savedEvents.entryDetail}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+      </AnimatedPressable>
+
       <Text style={[styles.sectionLabel, styles.sectionLabelSpaced, { color: theme.textSecondary }]}>{t.settings.sectionAccount}</Text>
       <AnimatedPressable
         onPress={() => {

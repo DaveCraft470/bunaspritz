@@ -29,7 +29,6 @@ import {
   EventAttendee,
   fetchAttendees,
   getEventAttendeeCount,
-  getGoingAlone,
   getJoinRequestStatus,
   getMyAttendance,
   getUserJoinedEventIds,
@@ -37,7 +36,6 @@ import {
   joinEvent,
   leaveEvent,
   requestToJoinEvent,
-  setGoingAlone,
   uploadCheckInPhoto,
   type AttendanceStatus,
   type JoinRequestStatus,
@@ -123,8 +121,6 @@ export default function EventDetail() {
   const [checkingIn, setCheckingIn] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savingBookmark, setSavingBookmark] = useState(false);
-  const [goingAlone, setGoingAloneState] = useState(false);
-  const [togglingGoingAlone, setTogglingGoingAlone] = useState(false);
   const [myCategories, setMyCategories] = useState<string[]>([]);
   const [attendeeCategories, setAttendeeCategories] = useState<Record<string, string[]>>({});
   const [qrModalVisible, setQrModalVisible] = useState(false);
@@ -141,7 +137,6 @@ export default function EventDetail() {
     if (event.hostId) getProfile(event.hostId).then(setHostProfile);
     getFriends(user.id).then(setInviteFriends);
     isEventSaved(user.id, event.id).then(setSaved);
-    getGoingAlone(event.id, user.id).then(setGoingAloneState);
     recordEventView(event.id);
   }, [event, user]);
 
@@ -174,17 +169,6 @@ export default function EventDetail() {
       .sort((left, right) => right.shared.length - left.shared.length)
       .slice(0, 5);
   }, [attendees, attendeeCategories, myCategories, inviteFriends, user]);
-
-  async function handleToggleGoingAlone() {
-    if (!event || togglingGoingAlone) return;
-    light();
-    const next = !goingAlone;
-    setGoingAloneState(next);
-    setTogglingGoingAlone(true);
-    const ok = await setGoingAlone(event.id, next);
-    setTogglingGoingAlone(false);
-    if (!ok) setGoingAloneState(!next);
-  }
 
   async function handleToggleSave() {
     if (!event || !user || savingBookmark) return;
@@ -725,14 +709,6 @@ export default function EventDetail() {
               ) : (
                 <Text style={[styles.checkInHint, { color: theme.textPrimary }]}>Participare confirmată ✅</Text>
               )}
-              <AnimatedPressable
-                onPress={handleToggleGoingAlone}
-                disabled={togglingGoingAlone}
-                style={[styles.goingAloneRow, { borderColor: theme.border }]}
-              >
-                <Ionicons name={goingAlone ? 'checkbox' : 'square-outline'} size={18} color={goingAlone ? colors.green500 : theme.textSecondary} />
-                <Text style={[styles.goingAloneText, { color: theme.textPrimary }]}>Merg singur — sunt deschis să cunosc oameni noi</Text>
-              </AnimatedPressable>
             </View>
           )}
 
@@ -1126,8 +1102,6 @@ const styles = StyleSheet.create({
   matchCopy: { flex: 1, minWidth: 0 },
   matchName: { fontSize: 13, fontWeight: '800' },
   matchReason: { fontSize: 11, fontWeight: '700', marginTop: 1 },
-  goingAloneRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, marginTop: 4 },
-  goingAloneText: { flex: 1, fontSize: 12, fontWeight: '700' },
   aloneBadge: { position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   aloneBadgeEmoji: { fontSize: 9 },
   attendeeItem: { alignItems: 'center', width: 52 },

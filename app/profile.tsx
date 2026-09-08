@@ -16,7 +16,7 @@ import { getFriends } from '@/lib/friendRequests';
 import { getUserEventStats } from '@/lib/events';
 import { getReviews, getReviewSummary, type Review, type ReviewSummary } from '@/lib/reviews';
 import { useHaptics } from '@/contexts/HapticsContext';
-import { clearGoingOut, getMyGoingOutStatus, setGoingOut } from '@/lib/goingOut';
+import { BADGE_DEFINITIONS, getUserBadges, type EarnedBadge } from '@/lib/badges';
 import { QrModal } from '@/components/common/QrModal';
 import { buildProfileDeepLink } from '@/lib/sharing';
 
@@ -33,26 +33,9 @@ export default function Profile() {
   const [eventStats, setEventStats] = useState({ attended: 0, hosted: 0 });
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewSummary, setReviewSummary] = useState<ReviewSummary>({ average: 0, count: 0 });
+  const [earnedBadges, setEarnedBadges] = useState<EarnedBadge[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [goingOutActive, setGoingOutActive] = useState(false);
-  const [togglingGoingOut, setTogglingGoingOut] = useState(false);
   const [qrModalVisible, setQrModalVisible] = useState(false);
-
-  useEffect(() => {
-    if (!user) return;
-    getMyGoingOutStatus(user.id).then((status) => setGoingOutActive(!!status));
-  }, [user]);
-
-  async function handleToggleGoingOut() {
-    if (!user || togglingGoingOut) return;
-    light();
-    setTogglingGoingOut(true);
-    const next = !goingOutActive;
-    setGoingOutActive(next);
-    const ok = next ? await setGoingOut(user.id) : await clearGoingOut(user.id);
-    setTogglingGoingOut(false);
-    if (!ok) setGoingOutActive(!next);
-  }
 
   // getFriends/getUserEventStats/getReviews/getReviewSummary already resolve
   // to safe defaults (empty list / zero counts) rather than throwing, so
@@ -61,16 +44,18 @@ export default function Profile() {
   // mount.
   const load = useCallback(async () => {
     if (!user) return;
-    const [friends, stats, reviewsList, summary] = await Promise.all([
+    const [friends, stats, reviewsList, summary, badges] = await Promise.all([
       getFriends(user.id),
       getUserEventStats(user.id),
       getReviews(user.id),
       getReviewSummary(user.id),
+      getUserBadges(user.id),
     ]);
     setFriendCount(friends.length);
     setEventStats(stats);
     setReviews(reviewsList);
     setReviewSummary(summary);
+    setEarnedBadges(badges);
   }, [user]);
 
   useEffect(() => {
@@ -138,22 +123,6 @@ export default function Profile() {
         {bio ? <Text style={[styles.bio, { color: theme.textSecondary }]}>{bio}</Text> : null}
         <InstagramLink handle={user?.instagramHandle} />
 
-        <Pressable
-          onPress={handleToggleGoingOut}
-          disabled={togglingGoingOut}
-          style={[
-            styles.goingOutPill,
-            goingOutActive
-              ? { backgroundColor: colors.green500 }
-              : { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 },
-          ]}
-        >
-          <Text style={{ fontSize: 14 }}>🎉</Text>
-          <Text style={[styles.goingOutPillText, { color: goingOutActive ? colors.white : theme.textPrimary }]}>
-            {goingOutActive ? 'Ies în seara asta · Anulează' : 'Ies în seara asta'}
-          </Text>
-        </Pressable>
-
         <View style={[styles.statsRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Pressable style={styles.stat} onPress={() => router.push('/friends')}>
             <Text style={[styles.statNumber, { color: theme.textPrimary }]}>{friendCount}</Text>
@@ -170,32 +139,6 @@ export default function Profile() {
         </View>
 
         <Pressable
-          onPress={() => router.push('/my-events')}
-          style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        >
-          <View style={styles.myEventsCopy}>
-            <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>{t.profile.myEvents}</Text>
-            <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
-              {t.profile.myEventsDetail}
-            </Text>
-          </View>
-          <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={() => router.push('/favorites')}
-          style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        >
-          <View style={styles.myEventsCopy}>
-            <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>Preferințe</Text>
-            <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
-              Categorii și locații favorite, pentru recomandări mai bune.
-            </Text>
-          </View>
-          <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
-        </Pressable>
-
-        <Pressable
           onPress={() => router.push('/memories')}
           style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
         >
@@ -203,19 +146,6 @@ export default function Profile() {
             <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>Amintiri</Text>
             <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
               Evenimentele la care ai participat, cu poze și statistici.
-            </Text>
-          </View>
-          <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={() => router.push('/saved-events')}
-          style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        >
-          <View style={styles.myEventsCopy}>
-            <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>{t.savedEvents.title}</Text>
-            <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
-              {t.savedEvents.entryDetail}
             </Text>
           </View>
           <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
@@ -234,18 +164,36 @@ export default function Profile() {
           <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
         </Pressable>
 
-        <Pressable
-          onPress={() => router.push('/badges')}
-          style={[styles.myEventsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        >
-          <View style={styles.myEventsCopy}>
+        <View style={[styles.badgesSection, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.badgesHeader}>
             <Text style={[styles.myEventsTitle, { color: theme.textPrimary }]}>Trofee</Text>
-            <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
-              Vezi trofeele obținute și cum le poți deschide pe celelalte.
-            </Text>
+            <Pressable onPress={() => router.push('/badges')} hitSlop={8}>
+              <Text style={[styles.badgesSeeAll, { color: theme.accent }]}>Vezi toate ›</Text>
+            </Pressable>
           </View>
-          <Text style={[styles.myEventsArrow, { color: theme.accent }]}>›</Text>
-        </Pressable>
+          {earnedBadges.length === 0 ? (
+            <Text style={[styles.myEventsDetail, { color: theme.textSecondary }]}>
+              Încă nu ai obținut niciun trofeu.
+            </Text>
+          ) : (
+            <View style={styles.badgesGrid}>
+              {BADGE_DEFINITIONS.filter((badge) => earnedBadges.some((earned) => earned.badgeId === badge.id)).map(
+                (badge) => (
+                  <Pressable
+                    key={badge.id}
+                    onPress={() => router.push(`/badge/${badge.id}`)}
+                    style={[styles.badgeItem, { backgroundColor: theme.surfaceMuted }]}
+                  >
+                    <Text style={styles.badgeEmoji}>{badge.emoji}</Text>
+                    <Text numberOfLines={1} style={[styles.badgeTitle, { color: theme.textPrimary }]}>
+                      {badge.title}
+                    </Text>
+                  </Pressable>
+                )
+              )}
+            </View>
+          )}
+        </View>
 
         <Pressable
           onPress={() => router.push('/reviews')}
@@ -348,8 +296,6 @@ const styles = StyleSheet.create({
   qrButton: { padding: 8, marginRight: 4 },
   editText: { fontSize: 11, fontWeight: '800' },
   bio: { fontSize: 14, lineHeight: 20, marginTop: 20, marginBottom: 18 },
-  goingOutPill: { flexDirection: 'row', alignSelf: 'center', alignItems: 'center', gap: 7, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 16 },
-  goingOutPillText: { fontSize: 13, fontWeight: '800' },
   statsRow: { flexDirection: 'row', marginVertical: 16, borderRadius: 16, borderWidth: 1 },
   stat: { flex: 1, paddingVertical: 14, alignItems: 'center' },
   statNumber: { fontSize: 19, fontWeight: '800' },
@@ -361,6 +307,13 @@ const styles = StyleSheet.create({
   myEventsTitle: { fontSize: 14, fontWeight: '800' },
   myEventsDetail: { fontSize: 11, lineHeight: 15, marginTop: 3 },
   myEventsArrow: { fontSize: 28, fontWeight: '300' },
+  badgesSection: { width: '100%', marginTop: 0, marginBottom: 6, padding: 14, borderRadius: 17, borderWidth: 1 },
+  badgesHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  badgesSeeAll: { fontSize: 12, fontWeight: '800' },
+  badgesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  badgeItem: { width: 74, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 6, alignItems: 'center', gap: 4 },
+  badgeEmoji: { fontSize: 22 },
+  badgeTitle: { fontSize: 9, fontWeight: '700', textAlign: 'center' },
   verifyCard: { marginTop: 22, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 17, borderWidth: 1 },
   verifyIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   verifyIconText: { fontSize: 19, fontWeight: '900' },
