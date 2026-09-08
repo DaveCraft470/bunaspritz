@@ -19,7 +19,7 @@ import { addReport, hasActiveReport, ReportTargetType } from '@/lib/reports';
 
 const CUSTOM_REASON = 'Alt motiv';
 
-type Phase = 'form' | 'submitting' | 'success' | 'duplicate';
+type Phase = 'form' | 'submitting' | 'success' | 'duplicate' | 'error';
 
 // Report flow is fully self-contained: it owns reason selection, the custom
 // free-text reason, duplicate-prevention, and the submit/loading/success
@@ -50,7 +50,7 @@ export function ReportModal({
   const [phase, setPhase] = useState<Phase>('form');
 
   const isCustomReason = reason === CUSTOM_REASON;
-  const canSubmit = phase === 'form' && !!reason;
+  const canSubmit = (phase === 'form' || phase === 'error') && !!reason;
 
   function reset() {
     setReason('');
@@ -63,15 +63,15 @@ export function ReportModal({
     onClose();
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!canSubmit) return;
-    if (hasActiveReport(reporterId, targetType, targetId)) {
+    Keyboard.dismiss();
+    setPhase('submitting');
+    if (await hasActiveReport(reporterId, targetType, targetId)) {
       setPhase('duplicate');
       return;
     }
-    Keyboard.dismiss();
-    setPhase('submitting');
-    addReport({
+    const report = await addReport({
       reporterId,
       reporterLabel,
       targetType,
@@ -80,6 +80,10 @@ export function ReportModal({
       reason,
       description: isCustomReason ? customText.trim() : '',
     });
+    if (!report) {
+      setPhase('error');
+      return;
+    }
     setPhase('success');
     setTimeout(close, 1100);
   }
@@ -94,7 +98,7 @@ export function ReportModal({
                 <Ionicons name="checkmark-circle" size={40} color={colors.green500} />
                 <Text style={[styles.statusTitle, { color: theme.textPrimary }]}>Raport trimis</Text>
                 <Text style={[styles.statusText, { color: theme.textSecondary }]}>
-                  Raportul a fost înregistrat local, pregătit pentru verificare.
+                  Raportul a fost trimis către echipa de moderare.
                 </Text>
               </View>
             ) : (
@@ -134,6 +138,9 @@ export function ReportModal({
                   <Text style={styles.duplicateText}>
                     Ai raportat deja {targetType === 'user' ? 'acest utilizator' : 'acest eveniment'}.
                   </Text>
+                )}
+                {phase === 'error' && (
+                  <Text style={styles.duplicateText}>Nu am putut trimite raportul. Încearcă din nou.</Text>
                 )}
                 <View style={styles.actions}>
                   <Pressable disabled={phase === 'submitting'} onPress={close} style={[styles.button, { backgroundColor: theme.surfaceMuted }]}>

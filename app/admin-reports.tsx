@@ -83,9 +83,9 @@ function ReportDetail({ report, onClose }: { report: ReturnType<typeof useReport
   const { colors: theme } = useAppTheme();
   if (!report) return null;
   const currentReport = report;
-  function statusAction(next: ReportStatus) {
-    updateReportStatus(currentReport.id, next);
+  async function statusAction(next: ReportStatus) {
     onClose();
+    await updateReportStatus(currentReport.id, next);
   }
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -106,7 +106,6 @@ function ReportDetail({ report, onClose }: { report: ReturnType<typeof useReport
             <AnimatedPressable onPress={() => currentReport.targetType === 'user' ? router.push(`/user/${currentReport.targetId}`) : router.push(`/event/${currentReport.targetId}`)} style={styles.modalButton}><Text style={styles.modalButtonText}>Vezi {currentReport.targetType === 'user' ? 'profilul' : 'evenimentul'}</Text></AnimatedPressable>
             <AnimatedPressable onPress={onClose} style={styles.modalButton}><Text style={styles.modalButtonText}>Închide</Text></AnimatedPressable>
           </View>
-          <Text style={[styles.local, { color: theme.textSecondary }]}>Statusurile sunt locale și nu sunt persistate în backend.</Text>
         </View>
       </View>
     </Modal>
@@ -141,6 +140,5 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 7, marginTop: spacing.md },
   modalButton: { flex: 1, minHeight: 42, borderRadius: 11, backgroundColor: '#EAFBF0', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7 },
   modalButtonText: { fontSize: 10, fontWeight: '800', color: '#0E9A3D', textAlign: 'center' },
-  local: { fontSize: 10, fontStyle: 'italic', marginTop: spacing.md },
   deniedBack: { alignSelf: 'center', padding: spacing.md },
 });

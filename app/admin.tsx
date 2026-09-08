@@ -11,7 +11,7 @@ import { useEvents } from '@/contexts/EventsContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { isAdminAccessEnabled } from '@/lib/admin';
-import { useReports, seedDevelopmentReports } from '@/lib/reports';
+import { useReports } from '@/lib/reports';
 
 export default function Admin() {
   const { colors: theme } = useAppTheme();
@@ -51,15 +51,7 @@ export default function Admin() {
         <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Management</Text>
         <AdminLink icon="people-outline" title="Users" detail="Caută utilizatori și deschide profilurile lor." onPress={() => router.push('/admin-users')} theme={theme} />
         <AdminLink icon="calendar-outline" title="Events" detail="Vezi și marchează evenimente pentru moderare." onPress={() => router.push('/admin-events')} theme={theme} />
-        <AdminLink icon="flag-outline" title="Reports" detail="Analizează raportările locale și statusurile lor." onPress={() => router.push('/admin-reports')} theme={theme} />
-        {__DEV__ && (
-          <AnimatedPressable onPress={seedDevelopmentReports} style={[styles.devButton, { borderColor: theme.border }]}>
-            <Text style={[styles.linkDetail, { color: theme.textSecondary }]}>Developer tools · Adaugă reports de test</Text>
-          </AnimatedPressable>
-        )}
-        <Text style={[styles.note, { color: theme.textSecondary }]}>
-          Accesul și acțiunile admin sunt doar pentru development local. Persistența securizată necesită roluri și politici backend.
-        </Text>
+        <AdminLink icon="flag-outline" title="Reports" detail="Analizează raportările utilizatorilor și statusurile lor." onPress={() => router.push('/admin-reports')} theme={theme} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -115,8 +107,6 @@ const styles = StyleSheet.create({
   linkText: { flex: 1 },
   linkTitle: { fontSize: 15, fontWeight: '800' },
   linkDetail: { fontSize: 11, marginTop: 3 },
-  note: { fontSize: 11, lineHeight: 16, fontStyle: 'italic', marginTop: spacing.lg },
-  devButton: { borderWidth: 1, borderRadius: 12, padding: 10, marginTop: spacing.sm },
   denied: { textAlign: 'center', padding: spacing.xl, fontSize: 16, fontWeight: '700' },
   deniedBack: { alignSelf: 'center', padding: spacing.md },
 });

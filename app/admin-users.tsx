@@ -11,18 +11,17 @@ import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
-import { Profile, searchProfiles } from '@/lib/social';
-import { isAdminAccessEnabled } from '@/lib/admin';
+import { adminSearchUsers, adminSetSuspended, AdminUserRow, isAdminAccessEnabled } from '@/lib/admin';
 
 export default function AdminUsers() {
   const { colors: theme } = useAppTheme();
   const { user } = useUser();
   const { light } = useHaptics();
   const [query, setQuery] = useState('');
-  const [users, setUsers] = useState<Profile[]>([]);
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [localSuspended, setLocalSuspended] = useState<Record<string, boolean>>({});
+  const [pendingId, setPendingId] = useState<string | null>(null);
 
   if (!isAdminAccessEnabled(user)) return <AccessDenied />;
 
@@ -34,8 +33,19 @@ export default function AdminUsers() {
     }
     setLoading(true);
     setSearched(true);
-    setUsers(await searchProfiles(query, user.id));
+    setUsers(await adminSearchUsers(query, user.id));
     setLoading(false);
+  }
+
+  async function toggleSuspended(target: AdminUserRow) {
+    light();
+    const next = !target.suspended;
+    setPendingId(target.id);
+    const ok = await adminSetSuspended(target.id, next);
+    setPendingId(null);
+    if (ok) {
+      setUsers((current) => current.map((item) => (item.id === target.id ? { ...item, suspended: next } : item)));
+    }
   }
 
   return (
@@ -73,20 +83,15 @@ export default function AdminUsers() {
               <Text style={[styles.username, { color: theme.textSecondary }]}>@{item.username}</Text>
               <Text style={[styles.verified, { color: item.verified ? theme.accent : theme.textSecondary }]}>
                 {item.verified ? 'Verified' : 'Neverified'}
+                {item.suspended ? ' · Suspendat' : ''}
               </Text>
             </View>
             <View style={styles.actions}>
               <AnimatedPressable onPress={() => router.push(`/user/${item.id}`)} hitSlop={8}>
                 <Text style={[styles.actionText, { color: theme.accent }]}>Profil</Text>
               </AnimatedPressable>
-              <AnimatedPressable
-                onPress={() => {
-                  light();
-                  setLocalSuspended((current) => ({ ...current, [item.id]: !current[item.id] }));
-                }}
-                hitSlop={8}
-              >
-                <Text style={[styles.actionText, { color: '#E5484D' }]}>{localSuspended[item.id] ? 'Deblochează' : 'Suspendă'}</Text>
+              <AnimatedPressable onPress={() => toggleSuspended(item)} disabled={pendingId === item.id} hitSlop={8}>
+                <Text style={[styles.actionText, { color: '#E5484D' }]}>{item.suspended ? 'Deblochează' : 'Suspendă'}</Text>
               </AnimatedPressable>
             </View>
           </View>

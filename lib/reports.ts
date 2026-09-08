@@ -1,4 +1,7 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useState } from 'react';
+
+import { supabase } from '@/lib/supabase';
+import { freshChannel } from '@/lib/realtime';
 
 export type ReportTargetType = 'user' | 'event' | 'event_photo';
 export type ReportStatus = 'new' | 'reviewing' | 'resolved' | 'dismissed';
@@ -20,71 +23,88 @@ export const USER_REPORT_REASONS = ['Comportament nepotrivit', 'Hărțuire', 'Sp
 export const EVENT_REPORT_REASONS = ['Eveniment fals', 'Conținut nepotrivit', 'Fraudă/scam', 'Spam', 'Informații incorecte', 'Alt motiv'] as const;
 export const EVENT_PHOTO_REPORT_REASONS = ['Conținut nepotrivit', 'Nu are legătură cu evenimentul', 'Hărțuire', 'Spam', 'Alt motiv'] as const;
 
-let reports: Report[] = [];
-const listeners = new Set<() => void>();
-let seeded = false;
+const REPORT_COLUMNS = 'id, reporter_id, reporter_label, target_type, target_id, target_label, reason, description, status, created_at';
 
-function notify() {
-  listeners.forEach((listener) => listener());
+function mapReport(row: any): Report {
+  return {
+    id: row.id,
+    reporterId: row.reporter_id,
+    reporterLabel: row.reporter_label,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    targetLabel: row.target_label,
+    reason: row.reason,
+    description: row.description,
+    createdAt: row.created_at,
+    status: row.status,
+  };
 }
 
-export function useReports() {
-  return useSyncExternalStore(
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    () => reports,
-    () => reports,
-  );
+// The "resolved"/"dismissed" reports are excluded, matching the old mock's
+// hasActiveReport — a report closed out shouldn't block re-reporting.
+export async function hasActiveReport(reporterId: string, targetType: ReportTargetType, targetId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('reports')
+    .select('id')
+    .eq('reporter_id', reporterId)
+    .eq('target_type', targetType)
+    .eq('target_id', targetId)
+    .not('status', 'in', '(resolved,dismissed)')
+    .limit(1);
+  return !!data?.length;
 }
 
-export function hasActiveReport(reporterId: string, targetType: ReportTargetType, targetId: string) {
-  return reports.some((report) => report.reporterId === reporterId && report.targetType === targetType && report.targetId === targetId && !['resolved', 'dismissed'].includes(report.status));
+export async function addReport(input: Omit<Report, 'id' | 'createdAt' | 'status'>): Promise<Report | null> {
+  if (await hasActiveReport(input.reporterId, input.targetType, input.targetId)) return null;
+  const { data, error } = await supabase
+    .from('reports')
+    .insert({
+      reporter_id: input.reporterId,
+      reporter_label: input.reporterLabel,
+      target_type: input.targetType,
+      target_id: input.targetId,
+      target_label: input.targetLabel,
+      reason: input.reason,
+      description: input.description,
+    })
+    .select(REPORT_COLUMNS)
+    .single();
+  if (error || !data) return null;
+  return mapReport(data);
 }
 
-export function addReport(input: Omit<Report, 'id' | 'createdAt' | 'status'>): Report | null {
-  if (hasActiveReport(input.reporterId, input.targetType, input.targetId)) return null;
-  const report: Report = { ...input, id: `local-report-${Date.now()}-${Math.random().toString(36).slice(2)}`, createdAt: new Date().toISOString(), status: 'new' };
-  reports = [report, ...reports];
-  notify();
-  return report;
+export async function updateReportStatus(id: string, status: ReportStatus): Promise<boolean> {
+  const { data: userData } = await supabase.auth.getUser();
+  const { error } = await supabase
+    .from('reports')
+    .update({ status, reviewed_at: new Date().toISOString(), reviewed_by: userData.user?.id ?? null })
+    .eq('id', id);
+  return !error;
 }
 
-export function updateReportStatus(id: string, status: ReportStatus) {
-  reports = reports.map((report) => (report.id === id ? { ...report, status } : report));
-  notify();
-}
+// Admin-only list, live-updating via realtime — the "see your own reports,
+// admins see all" RLS policy already restricts rows to admins (or the
+// caller's own submissions), so this returns an empty list for anyone else.
+export function useReports(): Report[] {
+  const [reports, setReports] = useState<Report[]>([]);
 
-export function seedDevelopmentReports() {
-  if (!__DEV__ || seeded) return;
-  seeded = true;
-  reports = [
-    {
-      id: 'dev-report-user',
-      reporterId: 'development-reporter',
-      reporterLabel: '@tester',
-      targetType: 'user',
-      targetId: 'development-target-user',
-      targetLabel: '@demo-user',
-      reason: 'Spam',
-      description: 'Raport de test pentru filtrare și detail view.',
-      createdAt: new Date().toISOString(),
-      status: 'new',
-    },
-    {
-      id: 'dev-report-event',
-      reporterId: 'development-reporter',
-      reporterLabel: '@tester',
-      targetType: 'event',
-      targetId: 'development-target-event',
-      targetLabel: 'Eveniment demo',
-      reason: 'Informații incorecte',
-      description: 'Raport de test local; nu există în Supabase.',
-      createdAt: new Date().toISOString(),
-      status: 'reviewing',
-    },
-    ...reports,
-  ];
-  notify();
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const { data } = await supabase.from('reports').select(REPORT_COLUMNS).order('created_at', { ascending: false });
+      if (!cancelled) setReports((data ?? []).map(mapReport));
+    }
+    load();
+
+    const channel = freshChannel('reports-admin')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, () => load())
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  return reports;
 }

@@ -57,11 +57,21 @@ function mapAuthError(error: { message: string; code?: string }): string {
 async function fetchProfile(userId: string, email: string): Promise<PublicUser | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, username, bio, avatar_url, instagram_handle, verified, notify_friends_on_join')
+    .select('id, name, username, bio, avatar_url, instagram_handle, verified, notify_friends_on_join, suspended')
     .eq('id', userId)
     .single();
 
   if (error || !data) return null;
+
+  // No client UPDATE grant on `suspended` (admin_set_suspended is the only
+  // writer) — this is purely a read-side gate: a suspended account's session
+  // gets torn down the moment its profile is fetched, whether that's right
+  // after signing in or on app-open with an existing session.
+  if (data.suspended) {
+    await supabase.auth.signOut();
+    return null;
+  }
+
   return {
     id: data.id,
     name: data.name,
@@ -206,8 +216,14 @@ export async function logInUser(email: string, password: string): Promise<LoginR
     return { ok: false, error: mapAuthError(error), needsVerification: error.code === 'email_not_confirmed' };
   }
 
+  // Credentials were valid (signInWithPassword above already succeeded), so
+  // a null profile here means fetchProfile's own suspended check just fired
+  // and signed the session back out — the only path that can produce this.
   const profile = await fetchProfile(data.user.id, data.user.email ?? '');
-  return { ok: true, verified: profile?.verified ?? false };
+  if (!profile) {
+    return { ok: false, error: 'Acest cont a fost suspendat.' };
+  }
+  return { ok: true, verified: profile.verified };
 }
 
 export async function signOut(): Promise<void> {

@@ -1,5 +1,15 @@
 # Report / Block / Safety — backend handoff
 
+> **2026-09-08 update:** Both gaps this doc originally called out are now
+> closed. Blocking moved to a real backend earlier (see `lib/social.ts`'s
+> `blockUser`/`unblockUser`, not `lib/blocks.ts` — that file is dead).
+> Reporting moved to a real backend this session: `public.reports` table +
+> RLS (`supabase/migrations/20260908170000_add_reports_and_suspension.sql`),
+> `lib/reports.ts` rewritten to hit Supabase instead of an in-memory array.
+> The rest of this doc is a historical record of the original frontend-only
+> build, kept for context — don't treat its "not persisted yet" framing as
+> current.
+
 Frontend-only implementation. Everything described here lives in memory
 (`lib/reports.ts`, `lib/blocks.ts`) and resets on reload — nothing is
 persisted to Supabase yet.
