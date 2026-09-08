@@ -4,7 +4,7 @@ import { Animated, StyleSheet, View } from 'react-native';
 import { typography } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/ThemeContext';
 
-const TEXT = 'Bunaspritz ';
+const TEXT = 'buna, spritz';
 const SPACE_INDEX = TEXT.indexOf(' ');
 const GREEN_FROM = TEXT.indexOf('spritz');
 
