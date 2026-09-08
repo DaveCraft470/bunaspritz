@@ -7,16 +7,21 @@ import { supabase } from '@/lib/supabase';
 
 export async function getDismissedEventIds(userId: string): Promise<string[]> {
   const { data, error } = await supabase.from('event_dismissals').select('event_id').eq('user_id', userId);
-  if (error) return [];
+  if (error) {
+    console.error('[eventDismissals] getDismissedEventIds failed', error);
+    return [];
+  }
   return data.map((row) => row.event_id);
 }
 
 export async function dismissEvent(userId: string, eventId: string): Promise<boolean> {
   const { error } = await supabase.from('event_dismissals').insert({ user_id: userId, event_id: eventId });
+  if (error && error.code !== '23505') console.error('[eventDismissals] dismissEvent failed', error);
   return !error || error.code === '23505';
 }
 
 export async function undoDismissEvent(userId: string, eventId: string): Promise<boolean> {
   const { error } = await supabase.from('event_dismissals').delete().eq('user_id', userId).eq('event_id', eventId);
+  if (error) console.error('[eventDismissals] undoDismissEvent failed', error);
   return !error;
 }

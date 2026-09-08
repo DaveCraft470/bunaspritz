@@ -17,7 +17,10 @@ export async function isFollowing(followerId: string, followeeId: string): Promi
 
 export async function followUser(followerId: string, followeeId: string): Promise<boolean> {
   const { error } = await supabase.from('follows').insert({ follower_id: followerId, followee_id: followeeId });
-  if (error && error.code !== '23505') return false;
+  if (error && error.code !== '23505') {
+    console.error('[follows] followUser failed', error);
+    return false;
+  }
 
   // notify-follow re-checks the edge exists server-side before pushing —
   // best-effort, same idiom as every other notify-* invoke in this app.
@@ -27,11 +30,15 @@ export async function followUser(followerId: string, followeeId: string): Promis
 
 export async function unfollowUser(followerId: string, followeeId: string): Promise<boolean> {
   const { error } = await supabase.from('follows').delete().eq('follower_id', followerId).eq('followee_id', followeeId);
+  if (error) console.error('[follows] unfollowUser failed', error);
   return !error;
 }
 
 export async function getFollowerCount(userId: string): Promise<number> {
   const { count, error } = await supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('followee_id', userId);
-  if (error) return 0;
+  if (error) {
+    console.error('[follows] getFollowerCount failed', error);
+    return 0;
+  }
   return count ?? 0;
 }

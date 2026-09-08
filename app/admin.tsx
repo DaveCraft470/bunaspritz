@@ -58,7 +58,7 @@ export default function Admin() {
           </AnimatedPressable>
         )}
         <Text style={[styles.note, { color: theme.textSecondary }]}>
-          Accesul și acțiunile admin sunt doar pentru development local. Persistența securizată necesită roluri și politici backend.
+          Accesul admin e restricționat la nivel de server (roluri și politici backend); ecranul acesta doar ascunde/afișează opțiunile în interfață.
         </Text>
       </ScrollView>
     </SafeAreaView>

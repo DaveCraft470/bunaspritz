@@ -30,6 +30,14 @@ function formatEasterEggDate(happensAt: string) {
 
 const LOAD_TIMEOUT_MS = MAP_LOAD_TIMEOUT_MS;
 
+// JSON.stringify alone doesn't escape "</", so an event title/description
+// containing "</script>" could break out of the inline <script> block below
+// and inject arbitrary script into the WebView. Escaping the closing tag
+// keeps the JSON valid while making that breakout impossible.
+function jsonForInlineScript(value: unknown) {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
 type Provider = 'mapbox' | 'maplibre';
 
 // Sticky across remounts (theme toggle, pull-to-refresh reload) — once
@@ -194,9 +202,9 @@ function buildHtml(provider: Provider, styleUrl: string, initialEvents: PinData[
       }
       map.on('load', function () {
         send('loaded');
-        var events = ${JSON.stringify(initialEvents)};
+        var events = ${jsonForInlineScript(initialEvents)};
         events.forEach(addEventPin);
-        var easterEggs = ${JSON.stringify(easterEggPins)};
+        var easterEggs = ${jsonForInlineScript(easterEggPins)};
         easterEggs.forEach(addEasterEggPin);
       });
       map.on('idle', function () { send('debug:idle'); });
