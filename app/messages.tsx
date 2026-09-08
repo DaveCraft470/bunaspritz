@@ -34,6 +34,7 @@ import { extensionAndTypeForImage } from '@/lib/media';
 import { alertPermissionDenied } from '@/lib/permissions';
 import { showAlert, showConfirm } from '@/lib/alert';
 import { getUserJoinedEventIds } from '@/lib/events';
+import { getEventInvites, respondEventInvitation, subscribeToEventInvites, type EventInvite } from '@/lib/eventInvitations';
 import {
   DbMessage,
   MediaTooLargeError,
@@ -82,6 +83,7 @@ import { GifPickerModal } from '@/components/messaging/GifPickerModal';
 import { MessageActionsSheet, type MessageAction } from '@/components/messaging/MessageActionsSheet';
 import { PollComposerModal } from '@/components/messaging/PollComposerModal';
 import { PollCard } from '@/components/messaging/PollCard';
+import { EventInviteCard } from '@/components/messaging/EventInviteCard';
 import { PinnedMessagesBar } from '@/components/messaging/PinnedMessagesBar';
 import { SharedMediaModal } from '@/components/messaging/SharedMediaModal';
 import { GroupSearchModal } from '@/components/messaging/GroupSearchModal';
@@ -192,6 +194,7 @@ type DisplayMessage = {
   deletedAt?: string | null;
   pinnedAt?: string | null;
   pollId?: string | null;
+  eventInviteId?: string | null;
 };
 
 // One emoji's aggregated reaction count on a message, plus whether the
@@ -223,6 +226,7 @@ function messagePreview(message: DbMessage): string {
   if (message.media_type === 'image') return message.view_once ? '👁 Poză (vizualizare unică)' : '📷 Poză';
   if (message.media_type === 'gif') return '🎞 GIF';
   if (message.media_type === 'audio') return '🎤 Mesaj vocal';
+  if (message.event_invite_id) return '🎉 Invitație la eveniment';
   return message.text;
 }
 
@@ -619,6 +623,8 @@ export default function Messages() {
   const [pollComposerVisible, setPollComposerVisible] = useState(false);
   const [polls, setPolls] = useState<Record<string, DbGroupPoll>>({});
   const [pollResults, setPollResults] = useState<Record<string, PollResult[]>>({});
+  const [invites, setInvites] = useState<Record<string, EventInvite>>({});
+  const [respondingInviteId, setRespondingInviteId] = useState<string | null>(null);
   const [groupOptionsVisible, setGroupOptionsVisible] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [sharedMediaVisible, setSharedMediaVisible] = useState(false);
@@ -657,6 +663,55 @@ export default function Messages() {
 
   async function refreshPinned(eventId: string) {
     setPinnedMessages(await getPinnedMessages(eventId));
+  }
+
+  // Refetches every invite id currently referenced by the loaded thread —
+  // same "just refetch, don't try to patch from the raw payload" idiom as
+  // loadPollAndResults below. Runs whenever friendMessages changes (a new
+  // invite message arrives) and on any event_invites change for this user
+  // (accepted/declined from here or from the notifications screen).
+  const loadInvites = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    const rows = await getEventInvites(ids);
+    setInvites((current) => {
+      const next = { ...current };
+      rows.forEach((invite) => {
+        next[invite.id] = invite;
+      });
+      return next;
+    });
+  }, []);
+
+  // Read from a ref in the subscription callback below (mirrors activeChatRef
+  // above) — the callback is only ever set up once per user.id, so closing
+  // over friendMessages directly would freeze it at whatever the thread was
+  // (usually []) when the subscription was first created.
+  const friendMessageInviteIdsRef = useRef<string[]>([]);
+  friendMessageInviteIdsRef.current = [...new Set(friendMessages.map((m) => m.event_invite_id).filter((id): id is string => !!id))];
+
+  useEffect(() => {
+    loadInvites(friendMessageInviteIdsRef.current);
+  }, [friendMessages, loadInvites]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToEventInvites(user.id, () => {
+      loadInvites(friendMessageInviteIdsRef.current);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  async function handleRespondInvite(invitationId: string, accept: boolean) {
+    if (respondingInviteId) return;
+    light();
+    setRespondingInviteId(invitationId);
+    const ok = await respondEventInvitation(invitationId, accept);
+    setRespondingInviteId(null);
+    if (!ok) {
+      showAlert('A apărut o eroare', 'Nu am putut răspunde la invitație. Încearcă din nou.');
+      return;
+    }
+    loadInvites([invitationId]);
   }
 
   async function loadPollAndResults(pollId: string) {
@@ -1285,6 +1340,7 @@ export default function Messages() {
         viewedAt: m.viewed_at,
         durationMs: m.duration_ms,
         waveform: m.waveform,
+        eventInviteId: m.event_invite_id,
       }));
     }
     return [];
@@ -1589,11 +1645,12 @@ export default function Messages() {
                   ? replyTo.deletedAt
                     ? 'Mesaj șters'
                     : replyTo.text ||
-                      (replyTo.mediaType === 'image' ? '📷 Poză' : replyTo.mediaType === 'gif' ? '🎞 GIF' : replyTo.mediaType === 'audio' ? '🎤 Mesaj vocal' : replyTo.pollId ? '📊 Sondaj' : '')
+                      (replyTo.mediaType === 'image' ? '📷 Poză' : replyTo.mediaType === 'gif' ? '🎞 GIF' : replyTo.mediaType === 'audio' ? '🎤 Mesaj vocal' : replyTo.pollId ? '📊 Sondaj' : replyTo.eventInviteId ? '🎉 Invitație la eveniment' : '')
                   : '';
                 const reactionGroups = groupReactions(reactionsByMessage[message.id] ?? [], user?.id);
                 const poll = message.pollId ? polls[message.pollId] : undefined;
                 const pollResultsForMessage = message.pollId ? pollResults[message.pollId] ?? [] : [];
+                const invite = message.eventInviteId ? invites[message.eventInviteId] : undefined;
                 const isHighlighted = highlightedMessageId === message.id;
 
                 return (
@@ -1637,6 +1694,15 @@ export default function Messages() {
                             canClose={!!user && (poll.created_by === user.id || selectedGroup?.hostId === user.id)}
                             onVote={(optionId) => handleVotePoll(poll.id, optionId)}
                             onClose={() => handleClosePoll(poll.id)}
+                          />
+                        ) : invite ? (
+                          <EventInviteCard
+                            invite={invite}
+                            mine={message.mine}
+                            responding={respondingInviteId === invite.id}
+                            onAccept={() => handleRespondInvite(invite.id, true)}
+                            onDecline={() => handleRespondInvite(invite.id, false)}
+                            onOpenEvent={() => router.push(`/event/${invite.eventId}`)}
                           />
                         ) : (
                           <>

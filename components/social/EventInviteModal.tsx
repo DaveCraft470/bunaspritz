@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -7,7 +7,7 @@ import { colors, spacing, type SchemeColors } from '@/constants/theme';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import type { Profile } from '@/lib/social';
-import { getEventInvitationForPair } from '@/lib/eventInvitations';
+import { getActiveInvitedRecipientIds } from '@/lib/eventInvitations';
 
 export function EventInviteModal({
   visible,
@@ -30,6 +30,12 @@ export function EventInviteModal({
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
+  const [invitedIds, setInvitedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!visible) return;
+    getActiveInvitedRecipientIds(eventId, senderId).then(setInvitedIds);
+  }, [visible, eventId, senderId]);
 
   function close() {
     if (sending) return;
@@ -85,8 +91,7 @@ export function EventInviteModal({
             ) : (
               friends.map((friend) => {
                 const joined = joinedIds.has(friend.id);
-                const invitation = getEventInvitationForPair(eventId, senderId, friend.id);
-                const invited = invitation?.status === 'pending' || invitation?.status === 'accepted';
+                const invited = invitedIds.has(friend.id);
                 const disabled = joined || invited;
                 const selected = selectedIds.has(friend.id);
                 return (

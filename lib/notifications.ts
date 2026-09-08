@@ -135,7 +135,7 @@ type DbNotification = {
   type: NotificationType;
   title: string;
   body: string;
-  data: { target_id?: string } | null;
+  data: { target_id?: string; invitation_id?: string } | null;
   read_at: string | null;
   created_at: string;
 };
@@ -151,6 +151,11 @@ function fromDbNotification(row: DbNotification): Notification {
     body: row.body,
     createdAt: row.created_at,
     readAt: row.read_at,
+    // notify-event-invite/-response are the only functions that set this —
+    // carried through so app/notifications.tsx can look up the invite's
+    // live status (event_invites.status), not just this notification's
+    // frozen-at-creation title/body.
+    metadata: row.data?.invitation_id ? { invitationId: row.data.invitation_id } : undefined,
   };
 }
 

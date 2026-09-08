@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,14 +11,14 @@ import { useHaptics } from '@/contexts/HapticsContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import { useNotifications } from '@/contexts/NotificationContext';
-import { useEvents } from '@/contexts/EventsContext';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
 import { Avatar } from '@/components/common/Avatar';
 import { GlassSurface } from '@/components/common/GlassSurface';
 import { getProfile, type Profile } from '@/lib/social';
 import { ensureDevPeer } from '@/lib/devFixtures';
-import { simulateNotification, type Notification } from '@/lib/notifications';
-import { acceptEventInvitation, declineEventInvitation, getEventInvitation, simulateEventInvitation } from '@/lib/eventInvitations';
+import { type Notification } from '@/lib/notifications';
+import { respondEventInvitation, getEventInvites, subscribeToEventInvites, type EventInvite } from '@/lib/eventInvitations';
+import { showAlert } from '@/lib/alert';
 import { getHostJoinRequests, respondToJoinRequest, type HostJoinRequest } from '@/lib/events';
 
 const notificationIcons: Record<Notification['type'], keyof typeof Ionicons.glyphMap> = {
@@ -43,12 +43,13 @@ export default function Notifications() {
   const { light } = useHaptics();
   const { t, locale } = useLanguage();
   const { user } = useUser();
-  const { events } = useEvents();
   const { notifications, unreadCount, pendingReviewCount, markRead, markAllRead } = useNotifications();
   const [actors, setActors] = useState<Record<string, Profile>>({});
   const [joinRequests, setJoinRequests] = useState<HostJoinRequest[]>([]);
   const [joinRequestsLoading, setJoinRequestsLoading] = useState(false);
   const [respondingId, setRespondingId] = useState<string | null>(null);
+  const [invites, setInvites] = useState<Record<string, EventInvite>>({});
+  const [respondingInvitationId, setRespondingInvitationId] = useState<string | null>(null);
 
   const loadJoinRequests = useCallback(async () => {
     if (!user) {
@@ -113,22 +114,64 @@ export default function Notifications() {
     }
   }
 
-  function handleInvitationAction(notification: Notification, action: 'accept' | 'decline') {
-    if (!user || notification.type !== 'event_invite') return;
+  // Same "refetch whatever's currently referenced" idiom as
+  // app/messages.tsx's loadInvites — event_invites.status is the one shared
+  // source of truth, so accepting/declining from here shows as resolved in
+  // chat too (and vice versa: a live subscription below picks up a change
+  // made from the chat card).
+  const loadInvites = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    const rows = await getEventInvites(ids);
+    setInvites((current) => {
+      const next = { ...current };
+      rows.forEach((invite) => {
+        next[invite.id] = invite;
+      });
+      return next;
+    });
+  }, []);
+
+  // Read from a ref in the subscription callback below — the callback is
+  // only ever set up once per user.id, so closing over `notifications`
+  // directly would freeze it at whatever the (async-loaded) list was, often
+  // [], when the subscription was first created.
+  const inviteNotificationIdsRef = useRef<string[]>([]);
+  inviteNotificationIdsRef.current = [
+    ...new Set(
+      notifications
+        .filter((n) => n.type === 'event_invite')
+        .map((n) => n.metadata?.invitationId)
+        .filter((id): id is string => !!id),
+    ),
+  ];
+
+  useEffect(() => {
+    loadInvites(inviteNotificationIdsRef.current);
+  }, [notifications, loadInvites]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToEventInvites(user.id, () => {
+      loadInvites(inviteNotificationIdsRef.current);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  async function handleInvitationAction(notification: Notification, action: 'accept' | 'decline') {
+    if (!user || notification.type !== 'event_invite' || respondingInvitationId) return;
     const invitationId = notification.metadata?.invitationId;
     if (!invitationId) return;
-    const result = action === 'accept'
-      ? acceptEventInvitation(user.id, invitationId)
-      : declineEventInvitation(user.id, invitationId);
-    if (!result.ok) return;
-    markRead(notification.id);
-    if (action === 'accept') router.push(`/event/${notification.targetId}`);
-  }
-
-  function runDev(action: () => void) {
-    if (!__DEV__) return;
     light();
-    action();
+    setRespondingInvitationId(invitationId);
+    const ok = await respondEventInvitation(invitationId, action === 'accept');
+    setRespondingInvitationId(null);
+    if (!ok) {
+      showAlert('A apărut o eroare', 'Nu am putut răspunde la invitație. Încearcă din nou.');
+      return;
+    }
+    markRead(notification.id);
+    loadInvites([invitationId]);
+    if (action === 'accept') router.push(`/event/${notification.targetId}`);
   }
 
   return (
@@ -262,20 +305,22 @@ export default function Notifications() {
                 <Text style={[styles.notificationBody, { color: theme.textSecondary }]}>{notification.body}</Text>
                 <Text style={[styles.notificationDate, { color: theme.textSecondary }]}>{formatDate(notification.createdAt, locale)}</Text>
                 {notification.type === 'event_invite' && notification.metadata?.invitationId && (() => {
-                  const invitation = getEventInvitation(notification.metadata.invitationId);
+                  const invitation = invites[notification.metadata.invitationId];
                   if (!invitation || invitation.status !== 'pending') {
-                    return <Text style={[styles.invitationStatus, { color: theme.textSecondary }]}>{invitation?.status === 'accepted' ? t.notifications.accepted : t.notifications.declined}</Text>;
+                    return <Text style={[styles.invitationStatus, { color: theme.textSecondary }]}>{invitation?.status === 'accepted' ? t.notifications.accepted : invitation?.status === 'declined' ? t.notifications.declined : ''}</Text>;
                   }
                   return (
                     <View style={styles.invitationActions}>
                       <AnimatedPressable
                         onPress={() => handleInvitationAction(notification, 'accept')}
+                        disabled={respondingInvitationId === invitation.id}
                         style={[styles.invitationAccept, { backgroundColor: colors.green500 }]}
                       >
                         <Text style={styles.invitationAcceptText}>{t.notifications.accept}</Text>
                       </AnimatedPressable>
                       <AnimatedPressable
                         onPress={() => handleInvitationAction(notification, 'decline')}
+                        disabled={respondingInvitationId === invitation.id}
                         style={[styles.invitationDecline, { borderColor: theme.border }]}
                       >
                         <Text style={[styles.invitationDeclineText, { color: theme.textPrimary }]}>{t.notifications.decline}</Text>
@@ -288,37 +333,8 @@ export default function Notifications() {
             </AnimatedPressable>
           );
         })}
-
-        {__DEV__ && user && (
-          <View style={[styles.devTools, { backgroundColor: theme.surface, borderColor: theme.border }]}> 
-            <Text style={[styles.devTitle, { color: theme.textPrimary }]}>{t.notifications.devToolsTitle}</Text>
-            <Text style={[styles.devHint, { color: theme.textSecondary }]}>{t.notifications.devToolsHint}</Text>
-            <View style={styles.devGrid}>
-              <DevButton
-                label={t.notifications.devTestNotification}
-                onPress={() => runDev(() => simulateNotification(user.id, ensureDevPeer(user.id).id, user.id))}
-                theme={theme}
-              />
-              {events[0] && (
-                <DevButton
-                  label={t.notifications.devEventInvitation}
-                  onPress={() => runDev(() => simulateEventInvitation(user.id, events[0], ensureDevPeer(user.id).id, ensureDevPeer(user.id).name))}
-                  theme={theme}
-                />
-              )}
-            </View>
-          </View>
-        )}
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function DevButton({ label, onPress, theme }: { label: string; onPress: () => void; theme: typeof import('@/constants/theme').lightColors }) {
-  return (
-    <AnimatedPressable onPress={onPress} style={[styles.devButton, { borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}> 
-      <Text style={[styles.devButtonText, { color: theme.textPrimary }]}>{label}</Text>
-    </AnimatedPressable>
   );
 }
 
@@ -347,10 +363,4 @@ const styles = StyleSheet.create({
   invitationDecline: { minHeight: 42, borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
   invitationDeclineText: { fontSize: 11, fontWeight: '800' },
   unreadDot: { width: 9, height: 9, borderRadius: 5 },
-  devTools: { borderWidth: 1, borderRadius: 16, padding: 14, marginTop: 20 },
-  devTitle: { fontSize: 14, fontWeight: '800' },
-  devHint: { fontSize: 11, marginTop: 3, marginBottom: 12 },
-  devGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  devButton: { borderWidth: 1, borderRadius: 11, paddingHorizontal: 10, paddingVertical: 8 },
-  devButtonText: { fontSize: 11, fontWeight: '700' },
 });

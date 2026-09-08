@@ -41,10 +41,13 @@ export type DbMessage = {
   waveform: number[] | null;
   view_once: boolean;
   viewed_at: string | null;
+  // Set only for the one "you invited @x to Y" message an invite creates
+  // (see send_event_invitation()) — never set by a plain client send.
+  event_invite_id: string | null;
 };
 
 const MESSAGE_COLUMNS =
-  'id, sender_id, recipient_id, text, created_at, read_at, media_path, media_url, media_type, duration_ms, waveform, view_once, viewed_at';
+  'id, sender_id, recipient_id, text, created_at, read_at, media_path, media_url, media_type, duration_ms, waveform, view_once, viewed_at, event_invite_id';
 
 function threadFilter(myId: string, friendId: string) {
   return `and(sender_id.eq.${myId},recipient_id.eq.${friendId}),and(sender_id.eq.${friendId},recipient_id.eq.${myId})`;

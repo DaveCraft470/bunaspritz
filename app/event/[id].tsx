@@ -282,15 +282,15 @@ export default function EventDetail() {
     let sent = 0;
     let skipped = 0;
     for (const recipientId of recipientIds) {
-      const result = sendEventInvitation(event, user.id, recipientId, user.name);
+      const result = await sendEventInvitation(event.id, recipientId);
       if (result.ok) sent += 1;
       else skipped += 1;
     }
     setInviteModalOpen(false);
     if (sent > 0) {
-      Alert.alert(t.event.invitationsSentTitle, t.event.invitationsSentMessage(sent));
+      showAlert(t.event.invitationsSentTitle, t.event.invitationsSentMessage(sent));
     } else if (skipped > 0) {
-      Alert.alert(t.event.invitationsAlreadySentTitle, t.event.invitationsAlreadySentMessage);
+      showAlert(t.event.invitationsAlreadySentTitle, t.event.invitationsAlreadySentMessage);
     }
   }
 
