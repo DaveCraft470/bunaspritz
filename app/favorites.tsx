@@ -88,8 +88,13 @@ export default function Favorites() {
 
   async function handleRemoveLocation(id: string) {
     light();
+    const previous = locations;
     setLocations((current) => current.filter((l) => l.id !== id));
-    await removeFavoriteLocation(id);
+    const ok = await removeFavoriteLocation(id);
+    if (!ok) {
+      setLocations(previous);
+      showAlert('A apărut o eroare', 'Nu am putut elimina locația. Încearcă din nou.');
+    }
   }
 
   return (

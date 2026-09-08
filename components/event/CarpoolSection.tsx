@@ -7,6 +7,7 @@ import { useAppTheme } from '@/contexts/ThemeContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { Avatar } from '@/components/common/Avatar';
 import { AnimatedPressable } from '@/components/common/AnimatedPressable';
+import { showAlert } from '@/lib/alert';
 import {
   CarpoolOffer,
   CarpoolRequest,
@@ -59,18 +60,23 @@ export function CarpoolSection({
     const seats = Math.max(1, Math.min(8, Math.round(Number(seatsDraft) || 1)));
     light();
     setOfferModalOpen(false);
-    await offerCarpoolSeats(eventId, userId, seats, noteDraft.trim());
+    const ok = await offerCarpoolSeats(eventId, userId, seats, noteDraft.trim());
     load();
+    if (!ok) showAlert('A apărut o eroare', 'Nu am putut salva oferta de transport. Încearcă din nou.');
   }
 
   async function toggleRequest() {
     light();
-    if (myRequest) {
-      await removeCarpoolRequest(eventId, userId);
-    } else {
-      await requestCarpoolSeat(eventId, userId, '');
-    }
+    const ok = myRequest ? await removeCarpoolRequest(eventId, userId) : await requestCarpoolSeat(eventId, userId, '');
     load();
+    if (!ok) showAlert('A apărut o eroare', 'Nu am putut actualiza cererea de transport. Încearcă din nou.');
+  }
+
+  async function handleRemoveOffer() {
+    light();
+    const ok = await removeCarpoolOffer(eventId, userId);
+    load();
+    if (!ok) showAlert('A apărut o eroare', 'Nu am putut anula oferta de transport. Încearcă din nou.');
   }
 
   if (offers.length === 0 && requests.length === 0 && !myOffer && !myRequest) {
@@ -139,7 +145,7 @@ export function CarpoolSection({
 
       <View style={styles.actionsRow}>
         <AnimatedPressable
-          onPress={() => (myOffer ? removeCarpoolOffer(eventId, userId).then(load) : setOfferModalOpen(true))}
+          onPress={() => (myOffer ? handleRemoveOffer() : setOfferModalOpen(true))}
           style={[styles.actionButton, myOffer ? { backgroundColor: theme.surfaceMuted } : { backgroundColor: colors.green500 }]}
         >
           <Ionicons name="car-outline" size={15} color={myOffer ? theme.textPrimary : colors.white} />

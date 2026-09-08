@@ -31,7 +31,12 @@ export async function uploadEventPhoto(
   extension: string,
   contentType: string
 ): Promise<EventPhoto | null> {
-  const bytes = await (await fetch(localUri)).arrayBuffer();
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await (await fetch(localUri)).arrayBuffer();
+  } catch {
+    return null;
+  }
   if (bytes.byteLength === 0) return null;
 
   const path = `${eventId}/${uploaderId}-${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;

@@ -138,7 +138,12 @@ export async function createStory(input: {
 }): Promise<Story | null> {
   if (!input.userId || !input.localUri.trim()) return null;
 
-  const bytes = await (await fetch(input.localUri)).arrayBuffer();
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await (await fetch(input.localUri)).arrayBuffer();
+  } catch {
+    return null;
+  }
   if (bytes.byteLength === 0) return null;
 
   const path = `${input.userId}/${Date.now()}-${Math.random().toString(36).slice(2)}${input.extension}`;

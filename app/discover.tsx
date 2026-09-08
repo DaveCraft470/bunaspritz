@@ -23,6 +23,7 @@ import { useHaptics } from '@/contexts/HapticsContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 import type { Translations } from '@/lib/i18n/ro';
+import { showAlert } from '@/lib/alert';
 import {
   DEFAULT_DISCOVERY_FILTERS,
   DiscoveryDateFilter,
@@ -248,7 +249,16 @@ export default function Discover() {
     if (undoTimer.current) clearTimeout(undoTimer.current);
     setUndoEvent(event);
     undoTimer.current = setTimeout(() => setUndoEvent(null), 4000);
-    await dismissEvent(user.id, event.id);
+    const ok = await dismissEvent(user.id, event.id);
+    if (!ok) {
+      setDismissedIds((current) => {
+        const next = new Set(current);
+        next.delete(event.id);
+        return next;
+      });
+      setUndoEvent((current) => (current?.id === event.id ? null : current));
+      showAlert('A apărut o eroare', 'Nu am putut ascunde evenimentul. Încearcă din nou.');
+    }
   }
 
   async function handleUndoDismiss() {
@@ -261,13 +271,22 @@ export default function Discover() {
       next.delete(event.id);
       return next;
     });
-    await undoDismissEvent(user.id, event.id);
+    const ok = await undoDismissEvent(user.id, event.id);
+    if (!ok) {
+      setDismissedIds((current) => new Set(current).add(event.id));
+      showAlert('A apărut o eroare', 'Nu am putut anula ascunderea. Încearcă din nou.');
+    }
   }
 
   async function handleClearSearches() {
     if (!user) return;
+    const previous = recentSearches;
     setRecentSearches([]);
-    await clearRecentSearches(user.id);
+    const ok = await clearRecentSearches(user.id);
+    if (!ok) {
+      setRecentSearches(previous);
+      showAlert('A apărut o eroare', 'Nu am putut șterge căutările recente. Încearcă din nou.');
+    }
   }
 
   async function onRefresh() {

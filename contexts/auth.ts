@@ -286,7 +286,12 @@ export async function uploadAvatar(
   // warns "not supported on web") — fetch() reads both file:// (native) and
   // blob:/data: (web) uris the same way, so it works everywhere without a
   // platform branch (see lib/messaging.ts's sendMediaMessage for the same fix).
-  const bytes = await (await fetch(localUri)).arrayBuffer();
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await (await fetch(localUri)).arrayBuffer();
+  } catch {
+    return { ok: false, error: 'Nu am putut citi imaginea.' };
+  }
   if (bytes.byteLength === 0) {
     return { ok: false, error: 'Nu am putut citi imaginea.' };
   }
