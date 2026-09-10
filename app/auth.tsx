@@ -50,6 +50,7 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [over18, setOver18] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -67,6 +68,7 @@ export default function Auth() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
 
   const passwordChecks = PASSWORD_REQUIREMENTS.map((req) => ({ ...req, met: req.test(password) }));
   const passwordValid = passwordChecks.every((check) => check.met);
@@ -531,9 +533,20 @@ export default function Auth() {
                     placeholder={t.auth.confirmPasswordPlaceholder}
                     placeholderTextColor={theme.textSecondary}
                     style={[styles.input, { color: theme.textPrimary }]}
-                    secureTextEntry={!showNewPassword}
+                    secureTextEntry={!showConfirmNewPassword}
                     autoCapitalize="none"
                   />
+                  <Pressable
+                    onPress={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
+                    hitSlop={10}
+                    accessibilityLabel={showConfirmNewPassword ? t.auth.hidePassword : t.auth.showPassword}
+                  >
+                    <Ionicons
+                      name={showConfirmNewPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={20}
+                      color={theme.textSecondary}
+                    />
+                  </Pressable>
                 </View>
               </View>
 
@@ -885,9 +898,27 @@ export default function Auth() {
                     styles.input,
                     { color: theme.textPrimary },
                   ]}
-                  secureTextEntry={!showPassword}
+                  secureTextEntry={!showConfirmPassword}
                   autoCapitalize="none"
                 />
+
+                <Pressable
+                  onPress={() =>
+                    setShowConfirmPassword(!showConfirmPassword)
+                  }
+                  hitSlop={10}
+                  accessibilityLabel={showConfirmPassword ? t.auth.hidePassword : t.auth.showPassword}
+                >
+                  <Ionicons
+                    name={
+                      showConfirmPassword
+                        ? 'eye-off-outline'
+                        : 'eye-outline'
+                    }
+                    size={20}
+                    color={theme.textSecondary}
+                  />
+                </Pressable>
               </View>
             </View>
           )}
