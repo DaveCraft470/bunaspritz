@@ -38,6 +38,11 @@ export const ro = {
     verifyIdentity: 'Verificare identitate',
     verifyIdentityDoneDetail: 'Contul tău a trecut de verificarea 18+.',
     verifyIdentityPendingDetail: 'Verifică-ți identitatea și vârsta (18+).',
+    sectionLegal: 'Legal',
+    termsTitle: 'Termeni și condiții',
+    termsDetail: 'Regulile de utilizare a aplicației.',
+    privacyTitle: 'Politica de confidențialitate',
+    privacyDetail: 'Cum sunt folosite datele tale.',
   },
   auth: {
     subtitle: 'Descoperă evenimentele din jurul tău.',
@@ -64,7 +69,11 @@ export const ro = {
     signupSubmit: 'Continuă',
     noAccountYet: 'Nu ai încă un cont?',
     haveAccountAlready: 'Ai deja un cont?',
-    footer: 'Prin continuare accepți termenii și politica de confidențialitate.',
+    footerPrefix: 'Prin continuare accepți',
+    footerTermsLink: 'Termenii și condițiile',
+    footerMiddle: 'și',
+    footerPrivacyLink: 'Politica de confidențialitate',
+    footerSuffix: '.',
     devSkip: 'Sări peste (doar dev)',
     confirmEmailHeading: 'Confirmă emailul',
     confirmEmailDescription: (email: string) =>
@@ -428,6 +437,7 @@ export const ro = {
     preparing: 'Se pregătește...',
     startVerification: 'Începe verificarea',
     verificationRequiredNote: 'Verificarea este necesară pentru a te alătura unui Spritz.',
+    verificationRequiredNoteHost: 'Verificarea este necesară pentru a găzdui evenimente.',
   },
   organizer: {
     dateTbd: 'Data în curs de stabilire',
@@ -477,6 +487,11 @@ export const ro = {
     retry: 'Reîncearcă',
     noOneJoinedYet: 'Nimeni nu s-a înscris încă.',
     viewProfile: 'Vezi profil',
+  },
+  hostGate: {
+    verifyFirst: 'Trebuie să faci verificarea de identitate (KYC) mai întâi',
+    verifyShort: 'Verificare KYC necesară',
+    addEventLockedLabel: 'Verificare KYC necesară ca să găzduiești un eveniment',
   },
 } as const;
 

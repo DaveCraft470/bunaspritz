@@ -242,6 +242,34 @@ export default function Settings() {
         <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
       </AnimatedPressable>
 
+      <Text style={[styles.sectionLabel, styles.sectionLabelSpaced, { color: theme.textSecondary }]}>{t.settings.sectionLegal}</Text>
+      <AnimatedPressable
+        onPress={() => {
+          light();
+          router.push('/terms');
+        }}
+        style={[styles.card, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+      >
+        <View style={styles.rowText}>
+          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>{t.settings.termsTitle}</Text>
+          <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>{t.settings.termsDetail}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+      </AnimatedPressable>
+      <AnimatedPressable
+        onPress={() => {
+          light();
+          router.push('/privacy');
+        }}
+        style={[styles.card, styles.linkRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+      >
+        <View style={styles.rowText}>
+          <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>{t.settings.privacyTitle}</Text>
+          <Text style={[styles.rowDetail, { color: theme.textSecondary }]}>{t.settings.privacyDetail}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+      </AnimatedPressable>
+
       {isAdminAccessEnabled(user) && (
         <>
           <Text style={[styles.sectionLabel, styles.sectionLabelSpaced, { color: theme.textSecondary }]}>{t.settings.sectionAdmin}</Text>

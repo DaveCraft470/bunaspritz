@@ -155,19 +155,27 @@ function PublicCalendar({ onShowMap }: { onShowMap: () => void }) {
       <View style={styles.calendarTopBar}>
         <Text style={[styles.calendarTitle, { color: theme.textPrimary }]}>{t.home.publicCalendar}</Text>
         <View style={styles.calendarTopBarActions}>
-          {effectiveVerified && (
-            <AnimatedPressable
-              onPress={() => {
-                light();
+          <AnimatedPressable
+            onPress={() => {
+              light();
+              if (effectiveVerified) {
                 router.push('/new-event');
-              }}
-              hitSlop={10}
-              accessibilityLabel="Adaugă eveniment"
-              style={[styles.modeButton, shadows.soft, { borderColor: glassButton.border }]}
-            >
-              <Ionicons name="add" size={22} color={glassButton.icon} />
-            </AnimatedPressable>
-          )}
+              } else {
+                router.push({ pathname: '/verification', params: { returnTo: '/', reason: 'host' } });
+              }
+            }}
+            hitSlop={10}
+            accessibilityLabel={effectiveVerified ? 'Adaugă eveniment' : t.hostGate.addEventLockedLabel}
+            style={[
+              styles.modeButton,
+              shadows.soft,
+              effectiveVerified
+                ? { borderColor: glassButton.border }
+                : { backgroundColor: theme.surfaceMuted, borderColor: theme.border },
+            ]}
+          >
+            <Ionicons name={effectiveVerified ? 'add' : 'lock-closed'} size={effectiveVerified ? 22 : 18} color={effectiveVerified ? glassButton.icon : theme.textSecondary} />
+          </AnimatedPressable>
           <AnimatedPressable
             onPress={() => {
               light();
@@ -340,18 +348,20 @@ export default function Home() {
           <Ionicons name="compass-outline" size={18} color={colors.green700} />
           <Text style={styles.exploreButtonText}>{t.home.explore}</Text>
         </AnimatedPressable>
-        {effectiveVerified && (
-          <AnimatedPressable
-            onPress={() => {
-              light();
+        <AnimatedPressable
+          onPress={() => {
+            light();
+            if (effectiveVerified) {
               router.push('/new-event');
-            }}
-            style={styles.addEventFab}
-            accessibilityLabel="Adaugă eveniment"
-          >
-            <Ionicons name="add" size={26} color={colors.white} />
-          </AnimatedPressable>
-        )}
+            } else {
+              router.push({ pathname: '/verification', params: { returnTo: '/', reason: 'host' } });
+            }
+          }}
+          style={[styles.addEventFab, !effectiveVerified && styles.addEventFabLocked]}
+          accessibilityLabel={effectiveVerified ? 'Adaugă eveniment' : t.hostGate.addEventLockedLabel}
+        >
+          <Ionicons name={effectiveVerified ? 'add' : 'lock-closed'} size={effectiveVerified ? 26 : 20} color={effectiveVerified ? colors.white : colors.inkMuted} />
+        </AnimatedPressable>
         {(eventsLoading || joinedLoading || joinedError || recommendations.length > 0) && (
           <View style={styles.recommendationsPanel}>
             {eventsLoading || joinedLoading ? (
@@ -485,5 +495,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 4,
+  },
+  addEventFabLocked: {
+    backgroundColor: '#E2E8E4',
+    shadowOpacity: 0,
+    elevation: 0,
   },
 });

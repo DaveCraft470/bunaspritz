@@ -1,11 +1,11 @@
-// Temporary, whole-app switch to disable the identity-verification
-// requirement while it's being iterated on — every client-side gate below
-// checks this instead of user.verified directly, and the "verified hosts"
-// Postgres policy has a matching temporary migration
-// (20260905190000_temporarily_disable_verified_host_check.sql) so real event
-// creation isn't blocked server-side while this is off either.
+// Temporary switch for the *join-an-event* identity-verification
+// requirement only (see app/event/[id].tsx and app/profile.tsx) while it's
+// being iterated on.
 //
-// Flip back to true, and revert that migration (re-apply
-// 20260901190000_require_verified_host.sql's policy), to re-enable
-// enforcement everywhere at once.
+// Hosting an event is a separate, unconditional gate — it always requires
+// effectiveVerified regardless of this flag (see app/new-event.tsx and the
+// "verified hosts create their own events" Postgres policy, re-enabled by
+// 20260910120000_reenable_verified_host_check.sql), since anyone hosting a
+// real-world meetup should be identity-verified even while the join gate is
+// still being tuned.
 export const VERIFICATION_REQUIRED = false;

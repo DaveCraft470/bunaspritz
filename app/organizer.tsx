@@ -58,7 +58,7 @@ export default function Organizer() {
   const { colors: theme } = useAppTheme();
   const { t } = useLanguage();
   const { events, loading: eventsLoading, error: eventsError, refresh } = useEvents();
-  const { user } = useUser();
+  const { user, effectiveVerified } = useUser();
   const { light } = useHaptics();
   const [refreshing, setRefreshing] = useState(false);
   const [participantTotal, setParticipantTotal] = useState(0);
@@ -181,12 +181,21 @@ export default function Organizer() {
             <AnimatedPressable
               onPress={() => {
                 light();
-                router.push('/new-event');
+                if (effectiveVerified) {
+                  router.push('/new-event');
+                } else {
+                  router.push({ pathname: '/verification', params: { returnTo: '/organizer', reason: 'host' } });
+                }
               }}
-              style={[styles.createButton, { backgroundColor: colors.green500 }]}
+              style={[
+                styles.createButton,
+                effectiveVerified ? { backgroundColor: colors.green500 } : { backgroundColor: theme.surfaceMuted, borderWidth: 1, borderColor: theme.border },
+              ]}
             >
-              <Ionicons name="add" size={22} color={colors.white} />
-              <Text style={styles.createButtonText}>{t.organizer.createEvent}</Text>
+              <Ionicons name={effectiveVerified ? 'add' : 'lock-closed'} size={effectiveVerified ? 22 : 18} color={effectiveVerified ? colors.white : theme.textSecondary} />
+              <Text style={[styles.createButtonText, !effectiveVerified && { color: theme.textSecondary }]}>
+                {effectiveVerified ? t.organizer.createEvent : t.hostGate.verifyFirst}
+              </Text>
             </AnimatedPressable>
 
             {upcomingEvents.length > 0 && (

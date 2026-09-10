@@ -30,6 +30,12 @@ import { AnimatedSplash } from '@/components/common/AnimatedSplash';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+// Routes reachable before/without authentication (auth itself, the KYC
+// flow, and the legal pages — terms/privacy need to be readable from the
+// signup footer before anyone has an account) and that don't want the
+// floating tab bar floating over them.
+const CHROMELESS_SEGMENTS = new Set(['auth', 'verification', 'terms', 'privacy']);
+
 function RootStack() {
   const { colors: theme } = useAppTheme();
   const indexScreenOptions = {
@@ -54,6 +60,8 @@ function RootStack() {
       }}
     >
       <Stack.Screen name="verification" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="terms" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="privacy" options={{ animation: 'slide_from_right' }} />
       {/* The screen itself animates in (growing from the tapped map pin —
           see app/event/[id].tsx), so the native-stack transition is turned
           off here to avoid the two fighting/compounding. */}
@@ -77,7 +85,7 @@ function AuthGate() {
   }
 
   if (!authenticated) {
-    if (firstSegment !== 'auth' && firstSegment !== 'verification') {
+    if (!CHROMELESS_SEGMENTS.has(firstSegment ?? '')) {
       return <Redirect href="/auth" />;
     }
     return null;
@@ -95,7 +103,7 @@ function AuthGate() {
 function AppChrome() {
   const segments = useSegments();
   const firstSegment = segments[0];
-  const showNav = firstSegment !== 'auth' && firstSegment !== 'verification';
+  const showNav = !CHROMELESS_SEGMENTS.has(firstSegment ?? '');
 
   return (
     <>

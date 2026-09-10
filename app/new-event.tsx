@@ -9,7 +9,6 @@ import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 
 import { MAPBOX_INITIAL_VIEW, buildApproxStaticMapUrl } from '@/constants/mapbox';
-import { VERIFICATION_REQUIRED } from '@/constants/featureFlags';
 import { useEvents } from '@/contexts/EventsContext';
 import { useHaptics } from '@/contexts/HapticsContext';
 import { useUser } from '@/contexts/UserContext';
@@ -121,12 +120,15 @@ export default function NewEvent() {
     setDraftHydrated(true);
   }, []);
 
-  // settings.tsx already redirects to /verification before ever linking
-  // here, but guard against reaching this screen another way (deep link,
-  // back-forward) — hosting requires the same identity verification as
-  // joining does, enforced again server-side by the events INSERT policy.
+  // Hosting always requires identity verification, independent of the
+  // VERIFICATION_REQUIRED flag (which only governs the separate
+  // join-an-event gate — see constants/featureFlags.ts). The create/host
+  // buttons across the app (home FAB, organizer screens) already gray
+  // themselves out and steer here instead of letting the user tap through,
+  // but this guards against reaching the screen another way (deep link,
+  // back-forward) — enforced again server-side by the events INSERT policy.
   useEffect(() => {
-    if (VERIFICATION_REQUIRED && !effectiveVerified) {
+    if (!effectiveVerified) {
       router.replace({ pathname: '/verification', params: { returnTo: '/new-event' } });
     }
   }, [effectiveVerified]);

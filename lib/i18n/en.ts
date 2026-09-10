@@ -40,6 +40,11 @@ export const en: Translations = {
     verifyIdentity: 'Identity verification',
     verifyIdentityDoneDetail: 'Your account has passed 18+ verification.',
     verifyIdentityPendingDetail: 'Verify your identity and age (18+).',
+    sectionLegal: 'Legal',
+    termsTitle: 'Terms & Conditions',
+    termsDetail: 'The rules for using the app.',
+    privacyTitle: 'Privacy Policy',
+    privacyDetail: 'How your data is used.',
   },
   auth: {
     subtitle: 'Discover the events around you.',
@@ -66,7 +71,11 @@ export const en: Translations = {
     signupSubmit: 'Continue',
     noAccountYet: "Don't have an account yet?",
     haveAccountAlready: 'Already have an account?',
-    footer: 'By continuing you agree to the terms and privacy policy.',
+    footerPrefix: 'By continuing you agree to the',
+    footerTermsLink: 'Terms & Conditions',
+    footerMiddle: 'and',
+    footerPrivacyLink: 'Privacy Policy',
+    footerSuffix: '.',
     devSkip: 'Skip (dev only)',
     confirmEmailHeading: 'Confirm your email',
     confirmEmailDescription: (email: string) =>
@@ -430,6 +439,7 @@ export const en: Translations = {
     preparing: 'Preparing...',
     startVerification: 'Start verification',
     verificationRequiredNote: 'Verification is required to join a Spritz.',
+    verificationRequiredNoteHost: 'Verification is required to host events.',
   },
   organizer: {
     dateTbd: 'Date TBD',
@@ -479,5 +489,10 @@ export const en: Translations = {
     retry: 'Retry',
     noOneJoinedYet: "No one has joined yet.",
     viewProfile: 'View profile',
+  },
+  hostGate: {
+    verifyFirst: 'You need to verify your identity (KYC) first',
+    verifyShort: 'KYC verification required',
+    addEventLockedLabel: 'KYC verification required to host an event',
   },
 };

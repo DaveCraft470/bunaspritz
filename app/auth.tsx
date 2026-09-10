@@ -1003,7 +1003,15 @@ export default function Auth() {
             { color: theme.textSecondary },
           ]}
         >
-          {t.auth.footer}
+          {t.auth.footerPrefix}{' '}
+          <Text style={{ color: colors.green600, fontWeight: '800' }} onPress={() => router.push('/terms')}>
+            {t.auth.footerTermsLink}
+          </Text>{' '}
+          {t.auth.footerMiddle}{' '}
+          <Text style={{ color: colors.green600, fontWeight: '800' }} onPress={() => router.push('/privacy')}>
+            {t.auth.footerPrivacyLink}
+          </Text>
+          {t.auth.footerSuffix}
         </Text>
 
       </KeyboardAwareScrollView>

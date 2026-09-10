@@ -156,7 +156,7 @@ export default function OrganizerDashboard() {
   const { colors: theme } = useAppTheme();
   const { t } = useLanguage();
   const { events, loading: eventsLoading, error: eventsError, refresh } = useEvents();
-  const { user } = useUser();
+  const { user, effectiveVerified } = useUser();
   const [refreshing, setRefreshing] = useState(false);
   const [loadingCounts, setLoadingCounts] = useState(true);
   const [attendeeCounts, setAttendeeCounts] = useState<Record<string, number>>({});
@@ -208,8 +208,16 @@ export default function OrganizerDashboard() {
     setRefreshing(false);
   }
 
+  function goToVerification() {
+    router.push({ pathname: '/verification', params: { returnTo: '/organizer-dashboard', reason: 'host' } });
+  }
+
   function handleDuplicate(event: SpritzEvent) {
     setActionSheetEvent(null);
+    if (!effectiveVerified) {
+      goToVerification();
+      return;
+    }
     setEventPreviewDraft(duplicateDraftFromEvent(event));
     router.push('/new-event');
   }
@@ -230,12 +238,20 @@ export default function OrganizerDashboard() {
 
   async function handleOpenTemplatePicker() {
     if (!user) return;
+    if (!effectiveVerified) {
+      goToVerification();
+      return;
+    }
     setTemplatePickerVisible(true);
     setTemplates(await getEventTemplates(user.id));
   }
 
   function handleUseTemplate(template: EventTemplate) {
     setTemplatePickerVisible(false);
+    if (!effectiveVerified) {
+      goToVerification();
+      return;
+    }
     setEventPreviewDraft(draftFromTemplate(template));
     router.push('/new-event');
   }
@@ -328,13 +344,30 @@ export default function OrganizerDashboard() {
             </View>
 
             <View style={styles.quickActionsRow}>
-              <AnimatedPressable onPress={() => router.push('/new-event')} style={[styles.quickAction, { backgroundColor: colors.green500 }]}>
-                <Ionicons name="add" size={16} color={colors.white} />
-                <Text style={styles.quickActionTextLight}>Eveniment nou</Text>
+              <AnimatedPressable
+                onPress={() => (effectiveVerified ? router.push('/new-event') : goToVerification())}
+                style={[
+                  styles.quickAction,
+                  effectiveVerified ? { backgroundColor: colors.green500 } : { backgroundColor: theme.surfaceMuted, borderColor: theme.border, borderWidth: 1 },
+                ]}
+              >
+                <Ionicons name={effectiveVerified ? 'add' : 'lock-closed'} size={16} color={effectiveVerified ? colors.white : theme.textSecondary} />
+                <Text style={effectiveVerified ? styles.quickActionTextLight : [styles.quickActionText, { color: theme.textSecondary }]}>
+                  {effectiveVerified ? 'Eveniment nou' : t.hostGate.verifyShort}
+                </Text>
               </AnimatedPressable>
-              <AnimatedPressable onPress={handleOpenTemplatePicker} style={[styles.quickAction, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
-                <Ionicons name="copy-outline" size={16} color={theme.textPrimary} />
-                <Text style={[styles.quickActionText, { color: theme.textPrimary }]}>Din șablon</Text>
+              <AnimatedPressable
+                onPress={handleOpenTemplatePicker}
+                style={[
+                  styles.quickAction,
+                  { borderWidth: 1 },
+                  effectiveVerified ? { backgroundColor: theme.surface, borderColor: theme.border } : { backgroundColor: theme.surfaceMuted, borderColor: theme.border },
+                ]}
+              >
+                <Ionicons name={effectiveVerified ? 'copy-outline' : 'lock-closed'} size={16} color={effectiveVerified ? theme.textPrimary : theme.textSecondary} />
+                <Text style={[styles.quickActionText, { color: effectiveVerified ? theme.textPrimary : theme.textSecondary }]}>
+                  {effectiveVerified ? 'Din șablon' : t.hostGate.verifyShort}
+                </Text>
               </AnimatedPressable>
             </View>
 
@@ -370,9 +403,17 @@ export default function OrganizerDashboard() {
               <>
                 <Ionicons name="calendar-outline" size={42} color={theme.textSecondary} />
                 <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>{t.organizerDashboard.noEventsCreated}</Text>
-                <AnimatedPressable onPress={() => router.push('/new-event')} style={[styles.createButton, { backgroundColor: colors.green500 }]}>
-                  <Ionicons name="add" size={20} color={colors.white} />
-                  <Text style={styles.primaryButtonText}>{t.organizer.createEvent}</Text>
+                <AnimatedPressable
+                  onPress={() => (effectiveVerified ? router.push('/new-event') : goToVerification())}
+                  style={[
+                    styles.createButton,
+                    effectiveVerified ? { backgroundColor: colors.green500 } : { backgroundColor: theme.surfaceMuted, borderWidth: 1, borderColor: theme.border },
+                  ]}
+                >
+                  <Ionicons name={effectiveVerified ? 'add' : 'lock-closed'} size={20} color={effectiveVerified ? colors.white : theme.textSecondary} />
+                  <Text style={[styles.primaryButtonText, !effectiveVerified && { color: theme.textSecondary }]}>
+                    {effectiveVerified ? t.organizer.createEvent : t.hostGate.verifyFirst}
+                  </Text>
                 </AnimatedPressable>
               </>
             )}

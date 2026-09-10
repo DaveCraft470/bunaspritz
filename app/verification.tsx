@@ -30,7 +30,7 @@ export default function Verification() {
   const { colors: theme } = useAppTheme();
   const { t } = useLanguage();
   const { user, effectiveVerified } = useUser();
-  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
+  const { returnTo, reason } = useLocalSearchParams<{ returnTo?: string; reason?: string }>();
 
   const [status, setStatus] = useState<Status>('idle');
 
@@ -147,7 +147,7 @@ export default function Verification() {
         <View style={styles.security}>
           <Ionicons name="information-circle-outline" size={16} color={theme.textSecondary} />
           <Text style={[styles.securityText, { color: theme.textSecondary }]}>
-            {t.verification.verificationRequiredNote}
+            {reason === 'host' ? t.verification.verificationRequiredNoteHost : t.verification.verificationRequiredNote}
           </Text>
         </View>
       </ScrollView>
